@@ -2,8 +2,14 @@
 
 A provider plugin for using ZCode models, tools, and conversation history in [Paseo](https://github.com/getpaseo/paseo). It connects directly to the official host from your installed ZCode app through the public Provider API. No Paseo core patches or ACP adapter are required.
 
-> [!IMPORTANT]
+> [!NOTE]
 > This plugin is under development. It requires a compatible public Provider API; the published Paseo v0.7.2 SDK alone is not sufficient. Initialization and model listing have been verified against the actual ZCode host, but sending prompts, running tools, and restoring conversations after a restart through the Paseo UI remain unverified. See the [verification notes](docs/verification.md) for details.
+
+> [!IMPORTANT]
+> This project is an unofficial tool and is not officially released, endorsed, or maintained by ZCode or Z.ai.
+
+> [!WARNING]
+> This plugin uses ZCode's undocumented headless mode. It does not modify the ZCode application itself or include any implementation that bypasses its communications. However, there is no guarantee that it will not be interpreted as violating the [Terms of Service](https://zcode.z.ai/en/terms). Therefore, please use it at your own risk.
 
 ## Features
 
