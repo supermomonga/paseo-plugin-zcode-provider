@@ -1,0 +1,27 @@
+{
+  "name": "paseo-plugin-zcode-provider",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:upstream": "node scripts/check-upstream.mjs",
+    "test:runtime": "node scripts/check-runtime.mjs",
+    "build": "node scripts/build.mjs",
+    "format": "prettier --write index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json",
+    "format:check": "prettier --check index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json"
+  },
+  "devDependencies": {
+    "@getpaseo/protocol": "0.7.2",
+    "@types/node": "22.18.3",
+    "esbuild": "0.25.12",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2",
+    "vitest": "3.2.7",
+    "zod": "4.4.3"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2024"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": { "@getpaseo/plugin/provider": ["./vendor/paseo/provider.ts"] }
+  },
+  "include": [
+    "index.server.ts",
+    "server/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts"
+  ]
+}
