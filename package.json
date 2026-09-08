@@ -12,16 +12,21 @@
     "test:upstream": "node scripts/check-upstream.mjs",
     "test:runtime": "node scripts/check-runtime.mjs",
     "build": "node scripts/build.mjs",
-    "format": "prettier --write index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json",
-    "format:check": "prettier --check index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json"
+    "format": "prettier --write index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json .github/workflows",
+    "format:check": "prettier --check index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json .github/workflows",
+    "check:zcode-releases": "node scripts/check-zcode-releases.mjs",
+    "check:paseo-releases": "node scripts/check-paseo-releases.mjs"
   },
   "devDependencies": {
     "@getpaseo/client": "0.8.0-beta.1",
     "@getpaseo/plugin": "0.8.0-beta.1",
     "@getpaseo/protocol": "0.8.0-beta.1",
     "@types/node": "22.18.3",
+    "cheerio": "1.2.0",
     "esbuild": "0.25.12",
     "prettier": "3.6.2",
+    "semver": "7.8.5",
+    "turndown": "7.2.4",
     "typescript": "5.9.2",
     "vitest": "3.2.7",
     "zod": "4.4.3"

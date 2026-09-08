@@ -29,3 +29,24 @@ From a local checkout, run `npm ci` to install development dependencies before r
 - `docs/` — Architecture decisions, verification notes, and remaining work.
 
 Development and tests use the published `@getpaseo/plugin/server/provider` module. Paseo supplies this SDK module at runtime; it remains external to the build. See the [ADRs](adr/README.md) for design rationale and [NOTICE.md](../NOTICE.md) for source and icon attribution.
+
+## Release monitoring
+
+GitHub Actions checks the official [ZCode changelog](https://zcode.z.ai/en/changelog) daily at 09:17 JST and the [Paseo changelog](https://paseo.sh/changelog) at 09:27 JST. Both workflows also support `workflow_dispatch`. Scheduled execution starts after the workflow is on `main`; GitHub may delay scheduled runs.
+
+The ZCode baseline comes from `CURRENT_ZCODE_ARTIFACT.appVersion` in the compatibility manifest. The Paseo baseline comes from the exact `@getpaseo/plugin` development dependency. Update these through normal compatibility work; the checks do not change supported versions automatically.
+
+All newer versions are candidates, including Paseo betas and release candidates. SemVer ordering treats `0.8.0-beta.1 < 0.8.0-beta.2 < 0.8.0-rc.1 < 0.8.0`: a stable release gets its own issue even if a beta issue already exists. Versions older than or equal to the baseline are not reported.
+
+Preview candidates locally without GitHub credentials or issue creation:
+
+```bash
+npm run check:zcode-releases -- --dry-run
+npm run check:paseo-releases -- --dry-run
+```
+
+Dry runs print candidate titles and bodies without checking existing GitHub issues. Normal execution requires `GH_TOKEN` and `GITHUB_REPOSITORY=owner/name`; Actions supplies its standard token with `contents: read` and `issues: write`. No personal access token is required.
+
+Each candidate issue includes its release notes and a product/version marker. The checks use `gh` to read all open and closed issues, exclude pull requests, and skip exact matching titles or markers. Keep the marker when renaming an issue. Closing an issue does not cause it to be recreated. Product-specific concurrency prevents overlapping workflow executions, and rerunning a failed check skips issues already created.
+
+HTTP, parsing, missing notes, and GitHub API errors fail the workflow. Inspect the failed run's logs and fix the source structure or access problem before rerunning. An error is never treated as “no newer release.” The checks create tracking issues only; they do not implement compatibility changes or reopen existing issues.
