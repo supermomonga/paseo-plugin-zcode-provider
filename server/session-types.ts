@@ -4,7 +4,7 @@ import type {
   ProviderPermissionResponse,
   ProviderTimelineItem,
   ProviderUsage,
-} from "@getpaseo/plugin/provider";
+} from "@getpaseo/plugin/server/provider";
 
 export type NativePromptInput = string | ProviderContent[];
 type WithoutIdentity<T> = T extends ProviderTimelineItem

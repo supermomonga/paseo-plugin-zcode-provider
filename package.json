@@ -16,7 +16,9 @@
     "format:check": "prettier --check index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json"
   },
   "devDependencies": {
-    "@getpaseo/protocol": "0.7.2",
+    "@getpaseo/client": "0.8.0-beta.1",
+    "@getpaseo/plugin": "0.8.0-beta.1",
+    "@getpaseo/protocol": "0.8.0-beta.1",
     "@types/node": "22.18.3",
     "esbuild": "0.25.12",
     "prettier": "3.6.2",

@@ -11,7 +11,7 @@ import {
   type ProviderCapability,
   type ProviderPersistence,
   type ProviderError,
-} from "@getpaseo/plugin/provider";
+} from "@getpaseo/plugin/server/provider";
 import { homedir } from "node:os";
 import { z } from "zod";
 import {

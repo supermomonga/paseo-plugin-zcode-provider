@@ -11,7 +11,7 @@ import type {
   ProviderThinkingOption,
   ProviderMcpServerConfig,
   ProviderToolCallDetail,
-} from "@getpaseo/plugin/provider";
+} from "@getpaseo/plugin/server/provider";
 import { AdapterError } from "./errors.js";
 import type {
   PermissionRequest,

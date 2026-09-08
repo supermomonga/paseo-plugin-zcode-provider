@@ -7,14 +7,15 @@ const result = await build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external: ["@getpaseo/plugin/provider", "zod"],
+  external: ["@getpaseo/plugin/server/provider", "zod"],
   sourcemap: true,
   metafile: true,
 });
-if (
-  Object.keys(result.metafile.inputs).some((path) => path.startsWith("vendor/"))
-) {
-  throw new Error(
-    "The development SDK snapshot must not enter the runtime bundle",
-  );
+const output = result.metafile.outputs["dist/index.server.js"];
+for (const module of ["@getpaseo/plugin/server/provider", "zod"]) {
+  if (
+    !output.imports.some((entry) => entry.path === module && entry.external)
+  ) {
+    throw new Error(`Runtime module must remain external: ${module}`);
+  }
 }

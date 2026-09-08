@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { runInThisContext } from "node:vm";
 import { build } from "esbuild";
+import * as sdk from "@getpaseo/plugin/server/provider";
 
 const source = process.argv[2];
 if (!source)
@@ -19,11 +20,19 @@ const directory = await realpath(
   await mkdtemp(join(tmpdir(), "zcode-upstream-")),
 );
 try {
-  const publicApi = join(upstream, "packages/plugin/src/provider.ts");
+  const upstreamPackage = JSON.parse(
+    await readFile(join(upstream, "packages/plugin/package.json"), "utf8"),
+  );
+  const installedPackage = JSON.parse(
+    await readFile(
+      join(root, "node_modules/@getpaseo/plugin/package.json"),
+      "utf8",
+    ),
+  );
   assert.equal(
-    await readFile(publicApi, "utf8"),
-    await readFile(join(root, "vendor/paseo/provider.ts"), "utf8"),
-    "The SDK snapshot differs; review the upstream contract first",
+    upstreamPackage.version,
+    installedPackage.version,
+    "Use the upstream release matching the installed SDK",
   );
   await symlink(join(root, "node_modules"), join(directory, "node_modules"));
   const options = {
@@ -31,7 +40,6 @@ try {
     platform: "node",
     format: "esm",
     nodePaths: [join(root, "node_modules")],
-    alias: { "@getpaseo/plugin/provider": publicApi },
   };
   const sources = {
     compiler: join(upstream, "packages/server/src/server/plugins/compiler.ts"),
@@ -39,7 +47,6 @@ try {
       upstream,
       "packages/server/src/server/agent/plugin-provider.ts",
     ),
-    sdk: publicApi,
     provider: join(root, "server/provider.ts"),
     fake: join(root, "test/fake-host.ts"),
   };
@@ -48,21 +55,22 @@ try {
       ...options,
       entryPoints: [entry],
       outfile: join(directory, `${name}.mjs`),
-      external: ["esbuild"],
+      external: ["esbuild", "@getpaseo/plugin/server/provider"],
     });
   const load = (name) =>
     import(pathToFileURL(join(directory, `${name}.mjs`)).href);
   const { compilePlugin } = await load("compiler");
-  const sdk = await load("sdk");
   const { serverBundle, clientBundle } = await compilePlugin({
     server: join(root, "index.server.ts"),
     client: null,
   });
   assert.equal(clientBundle, null);
-  assert.ok(serverBundle.includes('require("@getpaseo/plugin/provider")'));
+  assert.ok(
+    serverBundle.includes('require("@getpaseo/plugin/server/provider")'),
+  );
   const nodeRequire = createRequire(join(root, "package.json"));
   const contribution = runInThisContext(serverBundle)((name) =>
-    name === "@getpaseo/plugin/provider" ? sdk : nodeRequire(name),
+    name === "@getpaseo/plugin/server/provider" ? sdk : nodeRequire(name),
   );
   let registered;
   const dispose = contribution.default({

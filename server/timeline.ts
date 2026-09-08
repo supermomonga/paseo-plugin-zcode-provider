@@ -1,4 +1,4 @@
-import type { ProviderTimelineItem } from "@getpaseo/plugin/provider";
+import type { ProviderTimelineItem } from "@getpaseo/plugin/server/provider";
 import type { NativeTimelineItem } from "./session-types.js";
 
 export class TimelineSnapshots {

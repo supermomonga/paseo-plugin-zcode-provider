@@ -11,7 +11,7 @@ import type {
   ProviderUsage,
   ProviderToolCallDetail,
   ProviderConfigState,
-} from "@getpaseo/plugin/provider";
+} from "@getpaseo/plugin/server/provider";
 import type {
   NativeTimelineItem,
   NativeSessionEvent,

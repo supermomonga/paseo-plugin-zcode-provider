@@ -7,8 +7,7 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "paths": { "@getpaseo/plugin/provider": ["./vendor/paseo/provider.ts"] }
+    "types": ["node"]
   },
   "include": [
     "index.server.ts",
