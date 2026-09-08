@@ -1,5 +1,16 @@
 # 検証記録
 
+## 2026-09-08: macOS・Linux・Windows 対応
+
+zcode-acp `7b3af187d7ee732e9043aed873a863fc855625c2` を参照し、macOS arm64/x64、Linux arm64/x64、Windows x64 の検出・起動経路を実装しました。
+
+- 自動テストは OS 別のファイルシステムと子プロセスを模擬し、5 対象の metadata 照合、3 OS の既定パスと明示パス、環境変数の優先順位、バージョン取得、host 起動への引数・環境変数の伝播を確認しています。Windows ケースは `node:path.win32` を用い、空白を含む Windows パスを検証します。
+- 未対応環境、metadata 不一致、相対パス、ファイル欠落、インストール先外の参照、バージョン・host hash/export 不一致を検証しています。中断は開始前と子プロセス起動時を模擬し、タイムアウトは spawn の設定と SIGTERM 終了時の拒否を確認しています。60 秒の実時間待機や他 OS のプロセス終了動作を検証したものではありません。
+- `npm run typecheck`、`npm test`（9 ファイル・70 テスト）、`npm run build`、`npm run format:check`、`git diff --check` が成功。
+- macOS arm64 の実 ZCode 3.11.2 で `npm run test:runtime` が成功。公開 Provider 経由の初期化、3 モデル・4 モード・既定モデルあり、host 終了を確認。プロンプト送信・会話作成は行っていません。
+- Linux、Windows、macOS x64 の実 ZCode 起動と UI 操作は未実施。上記の自動テストは各 OS の実機動作を証明しません。
+- ADR 3 を Accepted とし、ADR 2 への Amends / Amended by 関係と生成済み目次を更新。doctor の既存 ADR 1 に関する warning 1 / info 1 は変更していません。
+
 ## 2026-09-08: 公開 SDK 0.8.0-beta.1 への移行
 
 インストール済み Paseo.app のバージョンは `0.8.0-beta.1`。npm 公開済みの `@getpaseo/plugin`、`@getpaseo/client`、`@getpaseo/protocol` を同版に固定しました。Provider API の公開先は `@getpaseo/plugin/server/provider` です。リリースタグの Provider API ソースは従来の複製と一致しており、ADR 2 の移行条件を満たしたため複製と alias を削除しました。

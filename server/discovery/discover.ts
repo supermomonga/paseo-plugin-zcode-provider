@@ -23,7 +23,7 @@ const BundleMetadataSchema = z
   .object({
     runtime: z.literal("electron-node"),
     entry: z.literal("zcode.cjs"),
-    platform: z.literal("darwin-arm64"),
+    platform: z.string().min(1),
     source: z.literal("apps/zcode-cli/packages/cli/dist/zcode.cjs"),
   })
   .strict();
@@ -109,13 +109,30 @@ export async function discoverRuntime(
 ): Promise<DiscoveredRuntime> {
   const platform = options.platform ?? process.platform;
   const architecture = options.architecture ?? process.arch;
-  if (platform !== "darwin" || architecture !== "arm64") {
+  options.signal?.throwIfAborted();
+  const detectedPlatform = `${platform}-${architecture}`;
+  if (
+    ![
+      "darwin-arm64",
+      "darwin-x64",
+      "linux-arm64",
+      "linux-x64",
+      "win32-x64",
+    ].includes(detectedPlatform)
+  ) {
     throw new AdapterError(
       "UNSUPPORTED_PLATFORM",
-      "ZCode supports only darwin-arm64",
+      `Unsupported platform: ${detectedPlatform}`,
     );
   }
-  const configuredRoot = options.installRoot ?? "/Applications/ZCode.app";
+  const environment: NodeJS.ProcessEnv = {
+    ...(options.environment ?? process.env),
+    ELECTRON_RUN_AS_NODE: "1",
+  };
+  const configuredRoot =
+    options.installRoot ??
+    environment.PASEO_ZCODE_INSTALL ??
+    defaultInstallRoot(platform);
   if (!isAbsolute(configuredRoot)) {
     throw new AdapterError(
       "INVALID_CONFIGURATION",
@@ -133,18 +150,14 @@ export async function discoverRuntime(
       { cause: error },
     );
   }
-  const paths = resolveRuntimePaths(installRoot);
+  const paths = resolveRuntimePaths(installRoot, platform);
   await validatePaths(paths);
   const metadataValue: unknown = JSON.parse(
     await readFile(paths.metadata, "utf8"),
   );
-  const bundle = BundleMetadataSchema.parse(metadataValue) as BundleMetadata;
-  const environment = {
-    ...(options.environment ?? process.env),
-    ELECTRON_RUN_AS_NODE: "1",
-  };
+  const bundle = validateBundleMetadata(metadataValue, detectedPlatform);
   const [appVersion, cliSha256, metadataSha256, cliResult] = await Promise.all([
-    readPlist(paths.appMetadata!, "CFBundleShortVersionString", options.signal),
+    readAppVersion(paths, environment, options.signal),
     sha256(paths.cliEntry),
     sha256(paths.metadata),
     run(paths.executable, [paths.cliEntry, "version"], {
@@ -158,7 +171,7 @@ export async function discoverRuntime(
       ? cliResult.stdout.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/u)?.[0]
       : undefined;
   const identity = {
-    platform: "darwin-arm64",
+    platform: detectedPlatform,
     appVersion,
     ...(cliVersion === undefined ? {} : { cliVersion }),
     cliSha256,
@@ -258,7 +271,59 @@ export function assertRuntimeSupported(runtime: DiscoveredRuntime): void {
   }
 }
 
-function resolveRuntimePaths(installRoot: string): RuntimePaths {
+export function defaultInstallRoot(platform: NodeJS.Platform): string {
+  switch (platform) {
+    case "darwin":
+      return "/Applications/ZCode.app";
+    case "linux":
+      return "/opt/ZCode";
+    case "win32":
+      return "C:\\Program Files\\ZCode";
+    default:
+      throw new AdapterError(
+        "UNSUPPORTED_PLATFORM",
+        `Unsupported platform: ${platform}`,
+      );
+  }
+}
+
+export function validateBundleMetadata(
+  value: unknown,
+  detectedPlatform: string,
+): BundleMetadata {
+  const bundle = BundleMetadataSchema.parse(value);
+  if (bundle.platform !== detectedPlatform) {
+    throw new AdapterError(
+      "UNSUPPORTED_PLATFORM",
+      "ZCode bundle platform does not match the current process",
+    );
+  }
+  return bundle;
+}
+
+export function resolveRuntimePaths(
+  installRoot: string,
+  platform: NodeJS.Platform,
+): RuntimePaths {
+  if (platform === "linux" || platform === "win32") {
+    return {
+      installRoot,
+      executable: join(
+        installRoot,
+        platform === "win32" ? "ZCode.exe" : "zcode",
+      ),
+      cliEntry: join(installRoot, "resources/glm/zcode.cjs"),
+      metadata: join(installRoot, "resources/glm/.node-bundle-meta.json"),
+      appPackage: join(installRoot, "resources/app.asar/package.json"),
+      hostArchive: join(installRoot, "resources/app.asar"),
+    };
+  }
+  if (platform !== "darwin") {
+    throw new AdapterError(
+      "UNSUPPORTED_PLATFORM",
+      `Unsupported platform: ${platform}`,
+    );
+  }
   return {
     installRoot,
     executable: join(
@@ -282,7 +347,7 @@ async function validatePaths(paths: RuntimePaths): Promise<void> {
       paths.executable,
       paths.cliEntry,
       paths.metadata,
-      paths.appMetadata!,
+      ...(paths.appMetadata === undefined ? [] : [paths.appMetadata]),
     ]) {
       const resolved = await realpath(candidate);
       ensureInside(paths.installRoot, resolved);
@@ -322,9 +387,40 @@ async function sha256(file: string): Promise<string> {
     .digest("hex");
 }
 
+async function readAppVersion(
+  paths: RuntimePaths,
+  environment: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (paths.appMetadata !== undefined) {
+    return readPlist(
+      paths.appMetadata,
+      "CFBundleShortVersionString",
+      environment,
+      signal,
+    );
+  }
+  const script =
+    `const value=require(${JSON.stringify(paths.appPackage)});` +
+    'if(typeof value.version!=="string")process.exit(2);process.stdout.write(value.version)';
+  const result = await run(paths.executable, ["-e", script], {
+    cwd: paths.installRoot,
+    environment,
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (result.exitCode !== 0 || result.stdout.trim() === "") {
+    throw new AdapterError(
+      "RUNTIME_DISCOVERY_FAILED",
+      "ZCode app package version is unavailable",
+    );
+  }
+  return result.stdout.trim();
+}
+
 async function readPlist(
   file: string,
   key: string,
+  environment: NodeJS.ProcessEnv,
   signal?: AbortSignal,
 ): Promise<string> {
   const result = await run(
@@ -332,7 +428,7 @@ async function readPlist(
     ["-c", `Print :${key}`, file],
     {
       cwd: dirname(file),
-      environment: process.env,
+      environment,
       ...(signal === undefined ? {} : { signal }),
     },
   );

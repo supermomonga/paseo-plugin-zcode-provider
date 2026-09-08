@@ -9,3 +9,5 @@ ZCode のプログラム、認証情報、モデル設定は同梱していま�
 `icon.svg` は [Paseo main c424f829 の glm-acp-agent.svg](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/app/src/assets/acp-provider-icons/glm-acp-agent.svg) のコピーです。上流のライセンスに記載された第三者素材の扱いが適用されます。
 
 アイコンの出典に対応する上流ライセンスを [vendor/paseo/LICENSE](vendor/paseo/LICENSE) に保持しています。Copyright (c) 2025-present Mohamed Boudra。
+
+3 OS 対応の検出処理は [zcode-acp commit 7b3af187d7ee732e9043aed873a863fc855625c2](https://github.com/supermomonga/zcode-acp/tree/7b3af187d7ee732e9043aed873a863fc855625c2) の `src/zcode/discovery/discover.ts` と ADR 0003・0005 を参考にしています。OS 別の配置解決、metadata と実行環境の照合、同梱 Electron によるアプリバージョン取得を Node.js 向けに移植しています。macOS の plist 取得は既存方式を維持し、インストール先の環境変数には `PASEO_ZCODE_INSTALL` を使用します。ACP 層・Bun ランタイム・認証情報の移行処理は取り込んでいません。
