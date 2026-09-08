@@ -25,15 +25,19 @@ The ZCode host manages credentials, model settings, and conversation storage. Th
 
 These requirements apply to the **machine running the Paseo daemon**.
 
-| Component          | Supported configuration                 |
-| ------------------ | --------------------------------------- |
-| OS / CPU           | macOS / Apple Silicon (`darwin-arm64`)  |
-| ZCode              | **3.11.2**, with bundled CLI **0.16.5** |
-| ZCode installation | `/Applications/ZCode.app`               |
-| Node.js            | **22.12.0 or later**                    |
-| Paseo              | **0.8.0-beta.1 or later**.              |
+| Component          | Supported configuration                       |
+| ------------------ | --------------------------------------------- |
+| OS / CPU           | macOS arm64/x64, Linux arm64/x64, Windows x64 |
+| ZCode              | **3.11.2**, with bundled CLI **0.16.5**       |
+| ZCode installation | Official installation; default paths below    |
+| Node.js            | **22.12.0 or later**                          |
+| Paseo              | **0.8.0-beta.1 or later**.                    |
 
-Set up authentication and your models in ZCode first. The plugin checks your ZCode installation at startup and rejects unsupported versions or modified host files.
+Default installation paths are `/Applications/ZCode.app` on macOS, `/opt/ZCode` on Linux, and `C:\Program Files\ZCode` on Windows. For a nonstandard location, set `PASEO_ZCODE_INSTALL` to its absolute path in the Paseo daemon environment. An invalid explicit path fails instead of reverting to the default. The installed bundle's OS and CPU must match the daemon process; emulation does not bypass this check.
+
+All three OS layouts are implemented and covered by automated tests. Actual ZCode host initialization and model listing have been verified on macOS arm64 only; Linux, Windows, and macOS x64 runtime checks remain unperformed.
+
+Set up authentication and your models in ZCode first. The plugin checks your ZCode installation at startup and rejects unsupported versions or modified host files. A CLI-only hash difference is diagnostic and does not reject an otherwise matching host.
 
 ## Installation
 
@@ -97,8 +101,8 @@ paseo plugin logs zcode-provider
 | Symptom                                          | What to check                                                                                                         |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | Plugin fails to load                             | Plugins are enabled on the target daemon, the public Provider API is supported, and the installation path is correct. |
-| `UNSUPPORTED_PLATFORM`                           | The daemon is running on macOS / arm64.                                                                               |
-| `RUNTIME_DISCOVERY_FAILED` / `UNSUPPORTED_ZCODE` | ZCode's installation path, supported versions, and host file integrity.                                               |
+| `UNSUPPORTED_PLATFORM`                           | The daemon uses a supported OS / CPU and the installed ZCode bundle matches that OS / CPU.                            |
+| `RUNTIME_DISCOVERY_FAILED` / `UNSUPPORTED_ZCODE` | ZCode's installation path (including `PASEO_ZCODE_INSTALL`), supported versions, and host file integrity.             |
 | `RUNTIME_SMOKE_FAILED`                           | The bundled CLI works and can access ZCode's user data.                                                               |
 | `INVALID_CONFIGURATION`                          | No custom system prompt or nonpersistent session has been requested.                                                  |
 

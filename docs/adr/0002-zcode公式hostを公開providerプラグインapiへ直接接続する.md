@@ -3,6 +3,9 @@ number: 2
 title: ZCode公式hostを公開ProviderプラグインAPIへ直接接続する
 status: accepted
 date: 2026-09-07
+links:
+  - target: 3
+    kind: amendedby
 ---
 
 # ZCode公式hostを公開ProviderプラグインAPIへ直接接続する
