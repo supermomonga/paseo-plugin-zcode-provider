@@ -17,9 +17,6 @@ try {
     bundle: true,
     platform: "node",
     format: "esm",
-    alias: {
-      "@getpaseo/plugin/provider": join(root, "vendor/paseo/provider.ts"),
-    },
   });
   const { createZCodeProvider, CAPABILITIES } = await import(
     pathToFileURL(join(directory, "provider.mjs")).href

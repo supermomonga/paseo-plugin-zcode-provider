@@ -9,7 +9,7 @@ import {
   type ProviderEvent,
   type ProviderInput,
   type ProviderSessionConfig,
-} from "@getpaseo/plugin/provider";
+} from "@getpaseo/plugin/server/provider";
 import {
   createZCodeProvider,
   type ZCodeConnection,

@@ -4,8 +4,8 @@
 
 ZCode のプログラム、認証情報、モデル設定は同梱していません。利用者がインストール済みの公式 host を実行時に使用します。
 
-`vendor/paseo/provider.ts` は [Paseo main c424f829 の公開 Provider API](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/plugin/src/provider.ts) の無変更コピーです。Copyright (c) 2025-present Mohamed Boudra。上流のライセンスを [vendor/paseo/LICENSE](vendor/paseo/LICENSE) に収録しています。ファイルの SHA-256 は `8c8fafa9d8b9e6bacc38cdc9e6d35397e2ea9e2784d3bc367f383bce7cc359f2` です。
+開発とテストには公開済みの `@getpaseo/plugin@0.8.0-beta.1` を使用します。Provider API のソースコピーは削除しました。ビルドは `@getpaseo/plugin/server/provider` と `zod` を外部モジュールとして維持し、実行環境の Paseo に解決させます。`index.server.ts` は公開の `PluginServerContext` を使用します。
 
-このコピーは型検査とテストのためだけに使用します。ビルドは `@getpaseo/plugin/provider` と `zod` を外部モジュールとして維持し、実行環境の Paseo main に解決させます。古い SDK 向けの互換処理ではありません。`index.server.ts` は公開コンテキストのうち実際に使う `registerProvider` メンバーだけを型に記述しています。
+`icon.svg` は [Paseo main c424f829 の glm-acp-agent.svg](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/app/src/assets/acp-provider-icons/glm-acp-agent.svg) のコピーです。上流のライセンスに記載された第三者素材の扱いが適用されます。
 
-`icon.svg` は [同じ Paseo main の glm-acp-agent.svg](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/app/src/assets/acp-provider-icons/glm-acp-agent.svg) のコピーです。上流のライセンスに記載された第三者素材の扱いが適用されます。
+アイコンの出典に対応する上流ライセンスを [vendor/paseo/LICENSE](vendor/paseo/LICENSE) に保持しています。Copyright (c) 2025-present Mohamed Boudra。
