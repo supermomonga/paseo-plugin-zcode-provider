@@ -2,8 +2,10 @@
 
 Use ZCode models, tools, and conversation history in [Paseo](https://github.com/getpaseo/paseo). This plugin connects to your installed ZCode app and uses the authentication and models you have configured there.
 
+![ZCode conversation in Paseo](images/zcode-conversation.png)
+
 > [!NOTE]
-> This plugin is under development. It requires Paseo **0.8.0-beta.1 or later**. Initialization and model listing have been verified against the actual ZCode host, but sending prompts, running tools, and restoring conversations after a restart through the Paseo UI remain unverified. See the [verification notes](docs/verification.md) for details.
+> This plugin is under development. It requires Paseo **0.8.0-beta.1 or later**. On macOS arm64, actual-host initialization, model listing, prompt responses, plan approval, and session restoration across separate processes have been verified. UI checks used an isolated daemon with the provider registered as `codex`; the screenshot above was supplied by the author and shows a ZCode conversation in Paseo. Actual tool execution and conversation restoration after restarting the Paseo app remain unverified. See the [verification notes](docs/verification.md) for details.
 
 > [!IMPORTANT]
 > This project is an unofficial tool and is not officially released, endorsed, or maintained by ZCode or Z.ai.
@@ -118,3 +120,7 @@ Verify the installed versions and files instead of disabling compatibility check
 ## Contributing
 
 For build and test commands and the project structure, see the [development guide](docs/development.md). See [NOTICE.md](NOTICE.md) for source and icon attribution.
+
+## License
+
+Original code is licensed under the [MIT License](LICENSE). Third-party materials retain their own licenses: `icon.svg` is distributed under Apache-2.0, and the screenshot includes third-party application UI and branding. See [NOTICE.md](NOTICE.md) for attribution and license scope.
