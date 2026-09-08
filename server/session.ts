@@ -126,6 +126,8 @@ export class ZCodeSession {
   private contextUsage: ProviderUsage | undefined;
   private snapshotRead: Promise<void> | undefined;
   private snapshotRevision = 0;
+  private editingMode: string;
+  private configuringMode = false;
 
   private constructor(
     private readonly bridge: HostBridge,
@@ -137,6 +139,10 @@ export class ZCodeSession {
     assertSnapshotWorkspace(snapshot, workspace);
     requireMode(snapshot.settings.mode.current);
     this.snapshot = snapshot;
+    this.editingMode =
+      snapshot.settings.mode.current === "plan"
+        ? "build"
+        : snapshot.settings.mode.current;
     this.contextUsage = this.readContextUsage(snapshot);
     this.id = snapshot.session.sessionId;
     this.history = historyTimeline(snapshot);
@@ -175,12 +181,15 @@ export class ZCodeSession {
     if (config.thinkingOption !== undefined) {
       await this.setThinkingOption(config.thinkingOption);
     }
-    if (config.mode !== undefined) await this.setMode(config.mode);
+    await this.configureMode(
+      config.mode,
+      config.settings?.plan_mode as boolean | undefined,
+    );
   }
 
   async startTurn(
     prompt: NativePromptInput,
-    options?: { clientMessageId: string },
+    options?: { clientMessageId: string; beforeSend?: () => Promise<void> },
   ): Promise<{ turnId: string }> {
     const turn = await this.beginTurn(prompt, options);
     void turn.completion.catch(() => undefined);
@@ -200,14 +209,21 @@ export class ZCodeSession {
     const selected = models.find((entry) => entry.id === model)!;
     return {
       model,
-      mode: requireMode(this.snapshot.settings.mode.current),
+      mode: this.editingMode,
       thinkingOption:
         this.snapshot.settings.thoughtLevel.current ??
         selected.defaultThinkingOptionId,
       models,
       modes: ZCODE_MODES,
       thinkingOptions: selected.thinkingOptions ?? [],
-      settings: [],
+      settings: [
+        {
+          type: "toggle",
+          id: "plan_mode",
+          label: "Toggle plan mode",
+          value: this.snapshot.settings.mode.current === "plan",
+        },
+      ],
     };
   }
 
@@ -226,6 +242,38 @@ export class ZCodeSession {
       error: error.message,
       code: error.code,
     });
+  }
+
+  async configureMode(mode?: string | null, plan?: boolean): Promise<void> {
+    this.assertIdle();
+    if (
+      mode === null ||
+      (mode !== undefined && !ZCODE_MODES.some((item) => item.id === mode))
+    )
+      throw new AdapterError(
+        "INVALID_CONFIGURATION",
+        "ZCode editing mode must be build, edit, or yolo",
+      );
+    const nextMode = mode ?? this.editingMode;
+    const nextPlan = plan ?? this.snapshot.settings.mode.current === "plan";
+    this.configuringMode = true;
+    try {
+      // Enter from the selected editing mode so native ExitPlanMode returns to it.
+      if (nextPlan) {
+        await this.setMode(nextMode);
+        await this.setMode("plan");
+      } else if (this.snapshot.settings.mode.current !== nextMode) {
+        await this.setMode(nextMode);
+      }
+      this.editingMode = nextMode;
+    } catch (error) {
+      // A partial native transition must not leave a usable, misleading UI state.
+      this.runtimeFailed(error instanceof AdapterError ? error : undefined);
+      throw error;
+    } finally {
+      this.configuringMode = false;
+    }
+    this.emit({ type: "config_changed" });
   }
 
   async setMode(modeId: string): Promise<void> {
@@ -508,7 +556,7 @@ export class ZCodeSession {
 
   private async beginTurn(
     prompt: NativePromptInput,
-    options?: { clientMessageId: string },
+    options?: { clientMessageId: string; beforeSend?: () => Promise<void> },
   ): Promise<ActiveTurn> {
     this.assertOpen();
     if (this.active !== undefined) {
@@ -518,6 +566,8 @@ export class ZCodeSession {
       );
     }
     const nativePrompt = await mapPrompt(prompt, this.workspace);
+    this.assertIdle();
+    await options?.beforeSend?.();
     this.assertIdle();
     const id = randomUUID();
     let resolve!: (result: void) => void;
@@ -1340,7 +1390,8 @@ export class ZCodeSession {
       this.contextUsage = usage;
       this.emit({ type: "usage_updated", usage });
     }
-    if (modeId !== previousModeId) {
+    if (modeId !== "plan") this.editingMode = modeId;
+    if (modeId !== previousModeId && !this.configuringMode) {
       this.emit({ type: "config_changed" });
     }
   }

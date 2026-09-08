@@ -9,9 +9,15 @@ import {
   type ProviderEvent,
   type ProviderInput,
   type ProviderCapability,
-  type ProviderPersistence,
   type ProviderError,
 } from "@getpaseo/plugin/server/provider";
+import { randomUUID } from "node:crypto";
+import {
+  SessionPersistenceStore,
+  parsePersistence,
+  persistenceHandle,
+  type PersistenceData,
+} from "./persistence.js";
 import { homedir } from "node:os";
 import { z } from "zod";
 import {
@@ -67,15 +73,13 @@ async function createHost(
   return ZCodeHostBridge.start(runtime, logger, env);
 }
 
-const persistenceData = z
-  .object({ sessionId: z.string().min(1), cwd: z.string().min(1) })
-  .strict();
-const optionsSchema = z
-  .object({ planReturnMode: z.enum(["build", "edit", "yolo"]).optional() })
-  .strict();
+const optionsSchema = z.object({}).strict();
+const settingsSchema = z.object({ plan_mode: z.boolean().optional() }).strict();
 
 interface SessionEntry {
   native: ZCodeSession;
+  persistence: PersistenceData;
+  submitted: boolean;
   bridge: HostBridge;
   unsubscribe: () => void;
   unsubscribeFailure: () => void;
@@ -87,6 +91,7 @@ interface SessionEntry {
 
 export function createZCodeProvider(
   bridgeFactory: BridgeFactory = createHost,
+  persistenceStore = new SessionPersistenceStore(),
 ): ProviderRegistration {
   return {
     id: "zcode",
@@ -100,6 +105,7 @@ export function createZCodeProvider(
       return new ZCodeConnection(
         negotiateProviderCapabilities(request.capabilities, CAPABILITIES),
         bridgeFactory,
+        persistenceStore,
       );
     },
   };
@@ -119,6 +125,7 @@ export class ZCodeConnection implements ProviderConnection {
   constructor(
     readonly capabilities: readonly string[],
     private readonly bridgeFactory: BridgeFactory,
+    private readonly persistenceStore: SessionPersistenceStore,
   ) {}
 
   onEvent(listener: (event: ProviderEvent) => void): () => void {
@@ -162,6 +169,8 @@ export class ZCodeConnection implements ProviderConnection {
             entry.prompt.resolved
           )
             return;
+          if (entry?.prompt?.id === input.prompt.clientMessageId)
+            entry.prompt.resolved = true;
           this.emit({
             type: "session.prompt_result",
             sessionId: input.sessionId,
@@ -252,7 +261,10 @@ export class ZCodeConnection implements ProviderConnection {
               models,
               modes: ZCODE_MODES,
               defaultModel: models.find((model) => model.isDefault)?.id,
-              defaultMode: settings.mode.current,
+              defaultMode:
+                settings.mode.current === "plan"
+                  ? "build"
+                  : settings.mode.current,
             },
           });
         } else {
@@ -270,8 +282,8 @@ export class ZCodeConnection implements ProviderConnection {
                 );
               return {
                 persistence: {
-                  version: 1,
-                  data: { sessionId: row.sessionId, cwd },
+                  version: 2,
+                  data: { kind: "native", sessionId: row.sessionId, cwd },
                 },
                 cwd,
                 title: row.title,
@@ -319,32 +331,80 @@ export class ZCodeConnection implements ProviderConnection {
           )
         )
           throw new Error("Unknown ZCode command");
+        // ZCode desktop implements /plan as setMode plus an optional task.
+        // sendPrompt does not interpret this shortcut; forwarding it asks the model.
+        const text =
+          prompt.type === "message" && prompt.content[0]?.type === "text"
+            ? prompt.content[0].text.trim()
+            : undefined;
+        const planTask =
+          prompt.type === "command" && prompt.name === "plan"
+            ? prompt.arguments.trim()
+            : (text?.match(/^\/plan(?:\s+([\s\S]*))?$/)?.[1]?.trim() ??
+              (text === "/plan" ? "" : undefined));
+        if (planTask !== undefined) {
+          if (prompt.type === "message" && prompt.content.length !== 1)
+            throw new AdapterError(
+              "INVALID_CONFIGURATION",
+              "The /plan shortcut requires text without attachments",
+            );
+          await entry.native.configureMode(undefined, true);
+          if (!planTask) {
+            this.emit({
+              type: "session.prompt_result",
+              sessionId: input.sessionId,
+              clientMessageId: input.prompt.clientMessageId,
+              result: { type: "completed" },
+            });
+            return;
+          }
+        }
         entry.prompt = { id: input.prompt.clientMessageId, resolved: false };
         await entry.native.startTurn(
-          prompt.type === "command"
-            ? `/${prompt.name}${prompt.arguments ? ` ${prompt.arguments}` : ""}`
-            : prompt.content,
-          { clientMessageId: input.prompt.clientMessageId },
+          planTask ??
+            (prompt.type === "command"
+              ? `/${prompt.name}${prompt.arguments ? ` ${prompt.arguments}` : ""}`
+              : prompt.content),
+          {
+            clientMessageId: input.prompt.clientMessageId,
+            beforeSend: async () => {
+              if (!entry.submitted) {
+                await this.persistenceStore.save(
+                  entry.persistence,
+                  entry.native.id,
+                );
+                entry.submitted = true;
+              }
+            },
+          },
         );
         return;
       }
-      case "session.configure":
+      case "session.configure": {
+        const settings = settingsSchema.parse(input.changes.settings ?? {});
         if (
-          input.changes.settings &&
-          Object.keys(input.changes.settings).length
+          input.changes.mode !== undefined &&
+          !ZCODE_MODES.some((mode) => mode.id === input.changes.mode)
         )
-          throw new Error("ZCode has no custom settings");
+          throw new AdapterError(
+            "INVALID_CONFIGURATION",
+            "ZCode editing mode must be build, edit, or yolo",
+          );
         if (input.changes.model !== undefined)
           await entry.native.setModel(input.changes.model);
         if (input.changes.thinkingOption !== undefined)
           await entry.native.setThinkingOption(input.changes.thinkingOption);
-        if (input.changes.mode !== undefined) {
-          if (input.changes.mode === null)
-            throw new Error("ZCode mode cannot be cleared");
-          await entry.native.setMode(input.changes.mode);
-        }
+        if (
+          input.changes.mode !== undefined ||
+          settings.plan_mode !== undefined
+        )
+          await entry.native.configureMode(
+            input.changes.mode,
+            settings.plan_mode,
+          );
         this.emitConfig(input.sessionId, entry);
         break;
+      }
       case "session.interrupt":
         await entry.native.interrupt();
         break;
@@ -366,11 +426,16 @@ export class ZCodeConnection implements ProviderConnection {
     input: Extract<ProviderInput, { type: "session.open" }>,
   ): Promise<void> {
     const config = input.config;
-    const options = optionsSchema.parse(config.providerOptions ?? {});
-    if (options.planReturnMode && config.mode !== "plan")
-      throw new Error("planReturnMode requires initial plan mode");
-    if (Object.keys(config.settings).length)
-      throw new Error("ZCode has no custom settings");
+    optionsSchema.parse(config.providerOptions ?? {});
+    const settings = settingsSchema.parse(config.settings);
+    if (
+      config.mode !== undefined &&
+      !ZCODE_MODES.some((mode) => mode.id === config.mode)
+    )
+      throw new AdapterError(
+        "INVALID_CONFIGURATION",
+        "ZCode editing mode must be build, edit, or yolo",
+      );
     if (config.systemPrompt?.trim())
       throw new AdapterError(
         "INVALID_CONFIGURATION",
@@ -382,31 +447,30 @@ export class ZCodeConnection implements ProviderConnection {
         "The verified ZCode host requires persistent sessions",
       );
     const cwd = await resolveWorkspace(config.cwd);
-    let persisted: z.output<typeof persistenceData> | undefined;
-    if (input.persistence) {
-      if (input.persistence.version !== 1)
-        throw new Error("Unsupported ZCode persistence version");
-      persisted = persistenceData.parse(input.persistence.data);
-      if (persisted.cwd !== cwd)
-        throw new Error("ZCode persistence belongs to another workspace");
-    }
+    const persistence = input.persistence
+      ? parsePersistence(input.persistence)
+      : { kind: "logical" as const, id: randomUUID(), cwd };
+    if (persistence.cwd !== cwd)
+      throw new AdapterError(
+        "INVALID_WORKSPACE",
+        "ZCode persistence belongs to another workspace",
+      );
+    const nativeId = await this.persistenceStore.resolve(persistence);
     const host = await this.host(config.env);
     let native: ZCodeSession | undefined;
     try {
       await initializeWorkspace(host, cwd);
       const snapshot = await host.request(
-        persisted ? "resumeSession" : "createSession",
+        nativeId ? "resumeSession" : "createSession",
         {
           workspacePath: cwd,
-          ...(persisted
-            ? { sessionId: persisted.sessionId }
-            : { persistence: "immediate" }),
+          ...(nativeId ? { sessionId: nativeId } : { persistence: "deferred" }),
           mcpServers: mapMcpServers(config.mcpServers),
         },
         SessionSnapshotSchema,
         60000,
       );
-      if (persisted && snapshot.session.sessionId !== persisted.sessionId)
+      if (nativeId && snapshot.session.sessionId !== nativeId)
         throw new Error("ZCode resumed a different session");
       native = await ZCodeSession.create({
         bridge: host,
@@ -415,15 +479,20 @@ export class ZCodeConnection implements ProviderConnection {
         snapshot,
         onClose() {},
       });
-      await native.applyInitialConfig(
-        !persisted && options.planReturnMode
-          ? { ...config, mode: options.planReturnMode }
-          : config,
-      );
-      if (!persisted && options.planReturnMode) await native.setMode("plan");
+      await native.applyInitialConfig({
+        ...config,
+        settings: {
+          ...settings,
+          plan_mode:
+            settings.plan_mode ??
+            (nativeId ? snapshot.settings.mode.current === "plan" : false),
+        },
+      });
       if (this.closed) throw new Error("ZCode connection is closed");
       const entry: SessionEntry = {
         native,
+        persistence,
+        submitted: nativeId !== undefined,
         bridge: host,
         unsubscribe() {},
         unsubscribeFailure() {},
@@ -432,17 +501,13 @@ export class ZCodeConnection implements ProviderConnection {
         queue: Promise.resolve(),
       };
       this.sessions.set(input.sessionId, entry);
-      const persistence: ProviderPersistence = {
-        version: 1,
-        data: { sessionId: native.id, cwd },
-      };
       this.emit({
         type: "session.opened",
         requestId: input.requestId,
         sessionId: input.sessionId,
         capabilities: this.capabilities,
         restoration: "core",
-        persistence,
+        persistence: persistenceHandle(persistence),
         cwd,
         title: config.title ?? snapshot.session.title,
       });
@@ -616,11 +681,20 @@ export class ZCodeConnection implements ProviderConnection {
 }
 
 function publicError(error: unknown): ProviderError {
+  const persistenceMessages: Record<string, string> = {
+    PERSISTENCE_VERSION_UNSUPPORTED:
+      "ZCode persistence version is unsupported. Import the saved conversation from the session list.",
+    PERSISTENCE_INVALID:
+      "ZCode resume information is unreadable or invalid. No replacement conversation was created.",
+    PERSISTENCE_WRITE_FAILED:
+      "ZCode resume information could not be saved. The prompt was not sent.",
+  };
   return {
     code: error instanceof AdapterError ? error.code : "INVALID_CONFIGURATION",
     message:
       error instanceof AdapterError
-        ? `ZCode operation failed (${error.code})`
+        ? (persistenceMessages[error.code] ??
+          `ZCode operation failed (${error.code})`)
         : "Invalid ZCode provider request",
   };
 }

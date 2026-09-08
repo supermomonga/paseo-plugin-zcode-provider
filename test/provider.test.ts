@@ -2,6 +2,7 @@ import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { SessionPersistenceStore } from "../server/persistence.js";
 import { AdapterError } from "../server/errors.js";
 import {
   PROVIDER_CAPABILITIES,
@@ -74,12 +75,13 @@ async function fixture() {
   cleanup.push(() => rm(cwd, { recursive: true, force: true }));
   const hosts: FakeBridge[] = [];
   const environments: Readonly<Record<string, string>>[] = [];
+  const store = new SessionPersistenceStore(join(cwd, "provider-state"));
   const registration = createZCodeProvider(async (env) => {
     environments.push(env);
     const host = new FakeBridge(snapshot(cwd));
     hosts.push(host);
     return host;
-  });
+  }, store);
   const connection = (await registration.connect({
     versions: [1],
     capabilities: PROVIDER_CAPABILITIES,
@@ -157,6 +159,7 @@ async function fixture() {
   }
   return {
     cwd,
+    store,
     config,
     connection,
     registration,
@@ -205,7 +208,7 @@ it("discovers workspace models and native sessions and closes discovery hosts", 
   });
   const catalog = await f.wait("catalog");
   expect(catalog.catalog).toMatchObject({
-    defaultMode: "plan",
+    defaultMode: "build",
     models: [
       { id: '["provider","model",null]', thinkingOptions: [{ id: "high" }] },
     ],
@@ -221,7 +224,10 @@ it("discovers workspace models and native sessions and closes discovery hosts", 
   expect((await f.wait("sessions")).sessions).toMatchObject([
     {
       title: "Session",
-      persistence: { version: 1, data: { sessionId: "session-1", cwd: f.cwd } },
+      persistence: {
+        version: 2,
+        data: { kind: "native", sessionId: "session-1", cwd: f.cwd },
+      },
     },
   ]);
   await vi.waitFor(() => expect(f.hosts[1]!.closed).toBe(true));
@@ -233,15 +239,15 @@ it("opens with environment and MCP, sets model before modes, and returns persist
     env: { ZCODE_TEST: "one" },
     model: '["provider","model",null]',
     thinkingOption: "high",
-    mode: "plan",
-    providerOptions: { planReturnMode: "edit" },
+    mode: "edit",
+    settings: { plan_mode: true },
     mcpServers: { test: { type: "stdio", command: "/usr/bin/test-server" } },
   });
   expect(f.environments).toEqual([{ ZCODE_TEST: "one" }]);
   expect(
     host.calls.find((c) => c.method === "createSession")?.params,
   ).toMatchObject({
-    persistence: "immediate",
+    persistence: "deferred",
     mcpServers: [{ name: "test", command: "/usr/bin/test-server" }],
   });
   expect(
@@ -257,10 +263,15 @@ it("opens with environment and MCP, sets model before modes, and returns persist
     ["setMode", "plan"],
   ]);
   expect((await f.wait("session.opened")).persistence).toEqual({
-    version: 1,
-    data: { sessionId: "session-1", cwd: f.cwd },
+    version: 2,
+    data: { kind: "logical", id: expect.any(String), cwd: f.cwd },
   });
   expect((await f.wait("session.commands")).commands).toEqual([
+    {
+      name: "plan",
+      description: "Switch to Plan mode",
+      argumentHint: "[task]",
+    },
     { name: "review", description: "Review", argumentHint: "<path>" },
   ]);
 });
@@ -270,8 +281,8 @@ it.each(["permission", "question"] as const)(
   async (source) => {
     const f = await fixture();
     const host = await f.open({
-      mode: "plan",
-      providerOptions: { planReturnMode: "edit" },
+      mode: "edit",
+      settings: { plan_mode: true },
     });
     await f.prompt();
     await requestPlan(host, source);
@@ -423,6 +434,8 @@ it("rejects simultaneous turns and duplicate message IDs without losing the acti
 it("resumes only matching workspace persistence and replays native history", async () => {
   const f = await fixture();
   const first = await f.open();
+  await f.prompt();
+  await completeTurn(first);
   const persistence = (await f.wait("session.opened")).persistence!;
   await f.connection.send({
     type: "session.close",
@@ -447,8 +460,8 @@ it("resumes only matching workspace persistence and replays native history", asy
     config: f.config,
     history: "replay",
     persistence: {
-      version: 1,
-      data: { sessionId: "session-1", cwd: "/another" },
+      version: 2,
+      data: { kind: "native", sessionId: "session-1", cwd: "/another" },
     },
   });
   expect(await f.wait("request.failed")).toMatchObject({
@@ -650,4 +663,346 @@ it("times out an interrupt if the native terminal event never arrives", async ()
     f.events.find((e) => e.type === "session.runtime_failed"),
   ).toMatchObject({ error: { code: "NATIVE_TIMEOUT" } });
   expect(host.closed).toBe(true);
+});
+
+async function configure(
+  f: Awaited<ReturnType<typeof fixture>>,
+  changes: Extract<ProviderInput, { type: "session.configure" }>["changes"],
+  requestId = "configure",
+) {
+  await f.connection.send({
+    type: "session.configure",
+    sessionId: "public-1",
+    requestId,
+    changes,
+  });
+  await vi.waitFor(() =>
+    expect(
+      f.events.some(
+        (e) =>
+          (e.type === "request.completed" || e.type === "request.failed") &&
+          e.requestId === requestId,
+      ),
+    ).toBe(true),
+  );
+}
+
+it.each(["build", "edit", "yolo"])(
+  "keeps %s independent of planning and publishes only final transitions",
+  async (mode) => {
+    const f = await fixture();
+    const host = await f.open({ mode, settings: { plan_mode: true } });
+    host.emitModeOnSet = true;
+    const config = () =>
+      f.events.filter((e) => e.type === "session.config").at(-1)!.config;
+    expect(config()).toMatchObject({
+      mode,
+      modes: [{ id: "build" }, { id: "edit" }, { id: "yolo" }],
+      settings: [{ id: "plan_mode", value: true, label: "Toggle plan mode" }],
+    });
+    f.events.length = 0;
+    const next = mode === "edit" ? "yolo" : "edit";
+    await configure(f, { mode: next });
+    expect(
+      f.events
+        .filter((e) => e.type === "session.config")
+        .every(
+          (e) => e.config.mode === next && e.config.settings[0]?.value === true,
+        ),
+    ).toBe(true);
+    expect(
+      host.calls
+        .filter((c) => c.method === "setMode")
+        .slice(-2)
+        .map((c) => (c.params as { mode: string }).mode),
+    ).toEqual([next, "plan"]);
+    await configure(f, { settings: { plan_mode: false } }, "off");
+    expect(config()).toMatchObject({
+      mode: next,
+      settings: [{ value: false }],
+    });
+    await configure(f, { settings: { plan_mode: true } }, "on");
+    await f.prompt();
+    await requestPlan(host, "permission");
+    const request = (await f.wait("session.permission")).request;
+    await f.connection.send({
+      type: "session.permission",
+      sessionId: "public-1",
+      permissionId: request.id,
+      response: { behavior: "allow", selectedActionId: "approve" },
+    });
+    await f.wait("session.permission_resolved");
+    await host.emit(modeEvent(next, "plan", 1));
+    expect(config()).toMatchObject({
+      mode: next,
+      settings: [{ value: false }],
+    });
+    await completeTurn(host, 2);
+  },
+);
+
+it("tracks command mode changes and retains planning on rejection", async () => {
+  const f = await fixture();
+  const host = await f.open({ mode: "yolo" });
+  const event = modeEvent("plan", "yolo", 1);
+  if (event.type === "session.event") event.event.payload.source = "command";
+  await host.emit(event);
+  expect((await f.wait("session.config")).config).toMatchObject({
+    mode: "yolo",
+    settings: [{ value: true }],
+  });
+  await f.prompt();
+  await requestPlan(host, "permission");
+  const request = (await f.wait("session.permission")).request;
+  await f.connection.send({
+    type: "session.permission",
+    sessionId: "public-1",
+    permissionId: request.id,
+    response: { behavior: "deny", selectedActionId: "dismiss" },
+  });
+  await f.wait("session.permission_resolved");
+  expect((await f.wait("session.config")).config).toMatchObject({
+    mode: "yolo",
+    settings: [{ value: true }],
+  });
+  await completeTurn(host, 2);
+  const modeCalls = host.calls.filter((c) => c.method === "setMode").length;
+  await f.connection.send({
+    type: "session.prompt",
+    sessionId: "public-1",
+    prompt: {
+      clientMessageId: "revision",
+      delivery: "auto",
+      input: {
+        type: "message",
+        content: [
+          { type: "text", text: "Revise the plan; do not implement it." },
+        ],
+      },
+    },
+  });
+  await vi.waitFor(() =>
+    expect(host.calls.filter((c) => c.method === "sendPrompt")).toHaveLength(2),
+  );
+  expect(host.calls.filter((c) => c.method === "setMode")).toHaveLength(
+    modeCalls,
+  );
+  expect((await f.wait("session.config")).config).toMatchObject({
+    mode: "yolo",
+    settings: [{ value: true }],
+  });
+});
+
+it("serializes successive editing and plan changes", async () => {
+  const f = await fixture();
+  await f.open({ mode: "build" });
+  await Promise.all([
+    configure(f, { settings: { plan_mode: true } }, "one"),
+    configure(f, { mode: "yolo" }, "two"),
+    configure(f, { settings: { plan_mode: false } }, "three"),
+  ]);
+  expect((await f.wait("session.config")).config).toMatchObject({
+    mode: "yolo",
+    settings: [{ value: false }],
+  });
+});
+
+it("reopens unsent handles without writing state and preserves supplied draft settings", async () => {
+  const f = await fixture();
+  await f.open({ mode: "edit", settings: { plan_mode: true } });
+  const persistence = (await f.wait("session.opened")).persistence!;
+  const { readFile } = await import("node:fs/promises");
+  await expect(readFile(f.store.directory)).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await f.connection.send({
+    type: "session.close",
+    sessionId: "public-1",
+    requestId: "close",
+  });
+  await f.wait("session.closed");
+  f.events.length = 0;
+  const host = await f.open(
+    { mode: "edit", settings: { plan_mode: true } },
+    { persistence },
+  );
+  expect(host.calls.some((c) => c.method === "resumeSession")).toBe(false);
+  expect((await f.wait("session.opened")).persistence).toEqual(persistence);
+  expect((await f.wait("session.config")).config).toMatchObject({
+    mode: "edit",
+    settings: [{ value: true }],
+  });
+});
+
+it("does not send when state cannot be saved and permits a corrected retry", async () => {
+  const f = await fixture();
+  const host = await f.open();
+  await writeFile(f.store.directory, "not a directory");
+  await f.prompt();
+  expect(host.calls.some((c) => c.method === "sendPrompt")).toBe(false);
+  expect((await f.wait("session.prompt_result")).result.type).toBe("failed");
+  await rm(f.store.directory);
+  await f.prompt("retry");
+  expect(host.calls.filter((c) => c.method === "sendPrompt")).toHaveLength(1);
+});
+
+it("rejects legacy handles, removed options, and non-boolean plan settings", async () => {
+  for (const changes of [
+    { mode: "plan" },
+    { providerOptions: { planReturnMode: "edit" } },
+    { settings: { plan_mode: "true" } },
+  ]) {
+    const f = await fixture();
+    await f.connection.send({
+      type: "session.open",
+      sessionId: "bad",
+      requestId: "bad",
+      config: { ...f.config, ...changes },
+      history: "skip",
+    });
+    await f.wait("request.failed");
+    expect(f.hosts).toHaveLength(0);
+  }
+  const f = await fixture();
+  await f.connection.send({
+    type: "session.open",
+    sessionId: "bad",
+    requestId: "bad",
+    config: f.config,
+    history: "skip",
+    persistence: { version: 1, data: { sessionId: "session-1", cwd: f.cwd } },
+  });
+  await f.wait("request.failed");
+  expect(f.hosts).toHaveLength(0);
+});
+
+it("fails the runtime after a partial native mode transition", async () => {
+  const f = await fixture();
+  const host = await f.open({ mode: "build", settings: { plan_mode: true } });
+  const original = host.request.bind(host);
+  vi.spyOn(host, "request").mockImplementation(
+    async (method, params, schema) => {
+      if (method === "setMode" && (params as { mode: string }).mode === "plan")
+        throw new AdapterError("NATIVE_PROTOCOL_ERROR", "set mode failed");
+      return original(method, params, schema);
+    },
+  );
+  f.events.length = 0;
+  await configure(f, { mode: "edit" });
+  await f.wait("session.runtime_failed");
+  expect(f.events.some((e) => e.type === "session.config")).toBe(false);
+});
+
+it("imports native handles without creating another conversation", async () => {
+  const f = await fixture();
+  const host = await f.open(
+    {},
+    {
+      persistence: {
+        version: 2,
+        data: { kind: "native", sessionId: "session-1", cwd: f.cwd },
+      },
+    },
+  );
+  expect(host.calls.some((c) => c.method === "resumeSession")).toBe(true);
+  expect(host.calls.some((c) => c.method === "createSession")).toBe(false);
+  expect((await f.wait("session.opened")).persistence).toEqual({
+    version: 2,
+    data: { kind: "native", sessionId: "session-1", cwd: f.cwd },
+  });
+});
+
+it("does not replace a missing native conversation with a new session", async () => {
+  const f = await fixture();
+  // The returned session ID deliberately differs from the requested native ID.
+  await f.connection.send({
+    type: "session.open",
+    sessionId: "bad",
+    requestId: "missing",
+    config: f.config,
+    history: "skip",
+    persistence: {
+      version: 2,
+      data: { kind: "native", sessionId: "missing", cwd: f.cwd },
+    },
+  });
+  await f.wait("request.failed");
+  expect(f.hosts[0]!.calls.some((c) => c.method === "createSession")).toBe(
+    false,
+  );
+  expect(f.events.some((e) => e.type === "session.opened")).toBe(false);
+});
+
+it("rejects a corrupt logical mapping before starting the host", async () => {
+  const f = await fixture();
+  const { randomUUID } = await import("node:crypto");
+  const { mkdir } = await import("node:fs/promises");
+  const id = randomUUID();
+  await mkdir(f.store.directory);
+  await writeFile(join(f.store.directory, `${id}.json`), "broken");
+  await f.connection.send({
+    type: "session.open",
+    sessionId: "bad",
+    requestId: "corrupt",
+    config: f.config,
+    history: "skip",
+    persistence: { version: 2, data: { kind: "logical", id, cwd: f.cwd } },
+  });
+  await f.wait("request.failed");
+  expect(f.hosts).toHaveLength(0);
+});
+
+it.each(["command", "message"])(
+  "executes bare /plan from %s without model input or a saved mapping",
+  async (type) => {
+    const f = await fixture();
+    const host = await f.open({ mode: "edit" });
+    await f.connection.send({
+      type: "session.prompt",
+      sessionId: "public-1",
+      prompt: {
+        clientMessageId: "plan-command",
+        delivery: "auto",
+        input:
+          type === "command"
+            ? { type: "command", name: "plan", arguments: "" }
+            : { type: "message", content: [{ type: "text", text: "/plan" }] },
+      },
+    });
+    await f.wait("session.prompt_result");
+    expect((await f.wait("session.prompt_result")).result).toEqual({
+      type: "completed",
+    });
+    expect((await f.wait("session.config")).config).toMatchObject({
+      mode: "edit",
+      settings: [{ value: true }],
+    });
+    expect(host.calls.some((c) => c.method === "sendPrompt")).toBe(false);
+    const { stat } = await import("node:fs/promises");
+    await expect(stat(f.store.directory)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  },
+);
+
+it("enters planning before sending the /plan task alone", async () => {
+  const f = await fixture();
+  const host = await f.open({ mode: "yolo" });
+  await f.connection.send({
+    type: "session.prompt",
+    sessionId: "public-1",
+    prompt: {
+      clientMessageId: "plan-task",
+      delivery: "auto",
+      input: { type: "command", name: "plan", arguments: "Design a greeting" },
+    },
+  });
+  await f.wait("session.prompt_result");
+  expect(
+    host.calls.find((c) => c.method === "sendPrompt")?.params,
+  ).toMatchObject({ content: "Design a greeting" });
+  expect((await f.wait("session.config")).config).toMatchObject({
+    mode: "yolo",
+    settings: [{ value: true }],
+  });
 });
