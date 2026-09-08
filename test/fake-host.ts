@@ -35,6 +35,7 @@ export function snapshot(workspace: string): SessionSnapshot {
     runtime: {},
     todos: [],
     slashCommands: [
+      { name: "plan", description: "Switch to Plan mode", inputHint: "[task]" },
       { name: "review", description: "Review", inputHint: "<path>" },
     ],
   };
@@ -155,6 +156,19 @@ export class FakeBridge implements HostBridge {
   }
 
   async emit(event: DynamicEvent): Promise<void> {
+    if (
+      event.type === "session.event" &&
+      event.event.type === "session.updated" &&
+      typeof event.event.payload.mode === "string"
+    ) {
+      this.current = {
+        ...this.current,
+        settings: {
+          ...this.current.settings,
+          mode: { current: event.event.payload.mode },
+        },
+      };
+    }
     if (this.handler === undefined) throw new Error("not subscribed");
     await this.handler(event);
   }

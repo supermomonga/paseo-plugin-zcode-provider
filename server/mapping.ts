@@ -33,11 +33,6 @@ export const ZCODE_MODES: ProviderMode[] = [
     description: "Edit files automatically while keeping other approvals",
   },
   {
-    id: "plan",
-    label: "Plan Mode",
-    description: "Inspect the workspace and present a plan before editing",
-  },
-  {
     id: "yolo",
     label: "Full Access",
     description: "Run tools without approval",
@@ -45,7 +40,10 @@ export const ZCODE_MODES: ProviderMode[] = [
 ];
 
 export function requireMode(mode: string): string {
-  if (!ZCODE_MODES.some((candidate) => candidate.id === mode)) {
+  if (
+    mode !== "plan" &&
+    !ZCODE_MODES.some((candidate) => candidate.id === mode)
+  ) {
     throw new AdapterError(
       "NATIVE_PROTOCOL_ERROR",
       `ZCode returned an unknown mode: ${mode}`,

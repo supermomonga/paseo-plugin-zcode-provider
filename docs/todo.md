@@ -11,12 +11,6 @@
   - 完了条件: 本体に使用枠の Provider 登録 API と host セッションに対応する取得経路、リセット日時の表示契約が追加されること。その後に ZCode の取得処理を接続し、標準 UI を検証すること。
   - 根拠: [quota service](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/services/quota-fetcher/service.ts)、[公開 Provider 契約](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/plugin/src/provider.ts)。
 
-- [ ] **作成画面で `edit → plan` などと選んだ履歴の保持**
-  - patcher は作成前に選んでいたモードを `planReturnMode` として伝えます。main の draft には最終的な `modeId` しかなく、Provider には選択履歴を取得する口がありません。
-  - 現在は明示的な `providerOptions.planReturnMode` を扱えます。セッション作成後のモード変更、計画承認、その後のモード同期も実装済みです。作成前の選択履歴は推測しません。
-  - 完了条件: draft が以前の実行モードを保持し、作成時の `providerOptions` など公開契約で渡すこと。標準画面から build / edit / yolo の各復帰先を検証すること。
-  - 根拠: [draft の型](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/app/src/stores/workspace-draft-submission-store.ts)、[mapSessionConfig](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/plugin-provider.ts#L1524)。
-
 - [ ] **作成・再開直後のコンテキスト使用量を標準 UI に反映**
   - プラグインは native snapshot の使用量を `session.ready` より前に `session.usage` として送信します。
   - main のアダプターは初期イベントを内部履歴に取り込みますが、その後の `subscribe` で使用量を再通知しません。AgentManager の履歴復元も timeline 以外を使用量として反映しません。以降に到着する使用量更新は通知できます。

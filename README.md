@@ -13,7 +13,7 @@ Use ZCode models, tools, and conversation history in [Paseo](https://github.com/
 
 ## Features
 
-- **Model and mode selection** — Model discovery, thinking settings, and `build` / `edit` / `plan` / `yolo` modes.
+- **Model and mode selection** — Model discovery, thinking settings, and `build` / `edit` / `yolo` editing modes with an independent plan toggle.
 - **Conversations and tools** — Text and image prompts, slash commands, streaming responses, and tool execution status.
 - **Approvals and questions** — Tool permissions, structured questions, plan approval and rejection, and generation interruption.
 - **Persistence and restoration** — Conversation lists per workspace, importing existing ZCode conversations, and history restoration.
@@ -63,9 +63,17 @@ Paseo downloads and compiles the plugin automatically; no manual clone, dependen
 
 ## Usage
 
-Open a workspace on the daemon where you installed the plugin. When creating an agent, select **ZCode** as the provider, then choose a model and mode.
+Open a workspace on the daemon where you installed the plugin. When creating an agent, select **ZCode** as the provider, then choose a model and editing mode. Turn on **Toggle plan mode** (the Settings2 icon to the right of the mode selector) to plan first. The selected editing mode remains the destination after plan approval; changing it while planning updates that destination.
 
 Authentication and available models are managed in the ZCode app. Configure them there before using the provider in Paseo.
+
+### Session storage
+
+Metadata discovery and unsent drafts use ZCode's deferred persistence and do not leave saved conversations. The first prompt saves the conversation in ZCode. The plugin records its stable Paseo identifier's native conversation ID under `$XDG_STATE_HOME/paseo-plugin-zcode-provider/sessions`, or `~/.local/state/paseo-plugin-zcode-provider/sessions` when `XDG_STATE_HOME` is unset. Keep this directory when reinstalling or backing up the plugin; it contains identifiers and workspace paths, not message contents.
+
+The plugin writes this mapping before sending. A write failure prevents sending; corrupt mappings or missing native conversations fail instead of creating a replacement conversation. A process exit between writing the mapping and ZCode saving the first prompt also produces an explicit resume error. Unsent handles without a mapping reopen as deferred drafts.
+
+Provider API callers use `settings.plan_mode: boolean` alongside `mode: "build" | "edit" | "yolo"`. `mode: "plan"` and `providerOptions.planReturnMode` are no longer accepted. Persistence handles now use version 2; older handles are rejected, without automatic migration. Existing saved ZCode conversations can still be imported from the session list.
 
 ## Updates
 
@@ -84,7 +92,6 @@ The installation command above tracks this repository's default branch. Check th
 - **Custom system prompts and `persist: false` are unsupported.** Both produce `INVALID_CONFIGURATION`. This also applies to additional instructions configured in the Paseo daemon or Agent Profiles.
 - Integration with the standard account quota, reset time, and provider diagnostics panels is not implemented.
 - In the verified Paseo version, initial context usage is not reflected in the standard UI immediately after creating or resuming a session. Subsequent usage updates are delivered.
-- The plugin cannot retrieve the mode selected in the creation screen before entering plan mode. API callers can explicitly set `providerOptions.planReturnMode` to `build`, `edit`, or `yolo` when the initial mode is `plan`.
 - Steering during generation, conversation rewind, structured output, independent child session management, and automatic conversion of persistence handles from the old patcher are unsupported.
 
 See [remaining work](docs/todo.md) for the evidence and conditions for resolving each limitation.

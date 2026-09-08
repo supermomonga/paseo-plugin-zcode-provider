@@ -6,6 +6,8 @@ date: 2026-09-07
 links:
   - target: 3
     kind: amendedby
+  - target: 5
+    kind: amendedby
 ---
 
 # ZCode公式hostを公開ProviderプラグインAPIへ直接接続する
