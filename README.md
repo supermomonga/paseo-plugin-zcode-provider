@@ -1,4 +1,4 @@
-# ![ZCode](icon.svg) ZCode Provider for Paseo
+# ZCode Provider for Paseo
 
 Use ZCode models, tools, and conversation history in [Paseo](https://github.com/getpaseo/paseo). This plugin connects to your installed ZCode app and uses the authentication and models you have configured there.
 
