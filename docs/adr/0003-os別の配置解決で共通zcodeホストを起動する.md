@@ -6,6 +6,8 @@ date: 2026-09-08
 links:
   - target: 2
     kind: amends
+  - target: 6
+    kind: amendedby
 ---
 
 # OS別の配置解決で共通ZCodeホストを起動する

@@ -133,7 +133,12 @@ describe("runtime discovery on each OS", () => {
     async (target) => {
       const f = await fixture(target);
       const signal = new AbortController().signal;
-      const environment = { TEST_ENV: "retained" };
+      const environment = {
+        TEST_ENV: "retained",
+        ...(f.platform === "win32"
+          ? { LOCALAPPDATA: "C:\\Users\\code\\AppData\\Local" }
+          : {}),
+      };
       const runtime = await f.discoverRuntime({
         platform: f.platform,
         architecture: f.architecture,
@@ -144,7 +149,7 @@ describe("runtime discovery on each OS", () => {
       expect(runtime.identity.platform).toBe(target);
       const root =
         f.platform === "win32"
-          ? "C:\\Program Files\\ZCode"
+          ? "C:\\Users\\code\\AppData\\Local\\Programs\\ZCode"
           : f.platform === "linux"
             ? "/opt/ZCode"
             : "/Applications/ZCode.app";
@@ -193,6 +198,92 @@ describe("runtime discovery on each OS", () => {
       ]);
     },
   );
+
+  test.each([
+    "C:\\Users\\code\\AppData\\Local",
+    "D:\\Users\\開発 User\\AppData\\Local",
+  ])(
+    "discovers the Windows user installation under %s",
+    async (localAppData) => {
+      const f = await fixture("win32-x64");
+      const root = `${localAppData}\\Programs\\ZCode`;
+      f.files.realpath.mockImplementation(async (value) => {
+        if (value !== root && !value.startsWith(`${root}\\`))
+          throw new Error("missing");
+        return value;
+      });
+      const runtime = await f.discoverRuntime({
+        platform: f.platform,
+        architecture: f.architecture,
+        environment: { LOCALAPPDATA: localAppData },
+      });
+      expect(runtime.paths).toEqual({
+        installRoot: root,
+        executable: `${root}\\ZCode.exe`,
+        cliEntry: `${root}\\resources\\glm\\zcode.cjs`,
+        metadata: `${root}\\resources\\glm\\.node-bundle-meta.json`,
+        appPackage: `${root}\\resources\\app.asar\\package.json`,
+        hostArchive: `${root}\\resources\\app.asar`,
+      });
+      expect(runtime.compatibility).toBe("supported");
+      expect(f.spawn).toHaveBeenCalledWith(
+        `${root}\\ZCode.exe`,
+        [`${root}\\resources\\glm\\zcode.cjs`, "version"],
+        expect.objectContaining({
+          cwd: root,
+          env: { LOCALAPPDATA: localAppData, ELECTRON_RUN_AS_NODE: "1" },
+        }),
+      );
+    },
+  );
+
+  test.each([undefined, "", "relative", "C:relative"])(
+    "rejects invalid Windows LOCALAPPDATA %s only when using the default",
+    async (localAppData) => {
+      const f = await fixture("win32-x64");
+      const options = {
+        platform: f.platform,
+        architecture: f.architecture,
+        environment:
+          localAppData === undefined ? {} : { LOCALAPPDATA: localAppData },
+      };
+      await expect(f.discoverRuntime(options)).rejects.toMatchObject({
+        code: "INVALID_CONFIGURATION",
+        message: expect.stringMatching(/LOCALAPPDATA.*PASEO_ZCODE_INSTALL/u),
+      });
+      expect(f.files.realpath).not.toHaveBeenCalled();
+      expect(f.spawn).not.toHaveBeenCalled();
+      const root = "C:\\Program Files\\ZCode";
+      expect(
+        (await f.discoverRuntime({ ...options, installRoot: root })).paths
+          .installRoot,
+      ).toBe(root);
+      expect(
+        (
+          await f.discoverRuntime({
+            ...options,
+            environment: { ...options.environment, PASEO_ZCODE_INSTALL: root },
+          })
+        ).paths.installRoot,
+      ).toBe(root);
+    },
+  );
+
+  test("does not search another Windows installation when the default is missing", async () => {
+    const f = await fixture("win32-x64");
+    f.files.realpath.mockRejectedValueOnce(new Error("missing"));
+    await expect(
+      f.discoverRuntime({
+        platform: f.platform,
+        architecture: f.architecture,
+        environment: { LOCALAPPDATA: "C:\\Users\\code\\AppData\\Local" },
+      }),
+    ).rejects.toMatchObject({ code: "RUNTIME_DISCOVERY_FAILED" });
+    expect(f.files.realpath.mock.calls).toEqual([
+      ["C:\\Users\\code\\AppData\\Local\\Programs\\ZCode"],
+    ]);
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
 
   test.each(["darwin-arm64", "linux-x64", "win32-x64"])(
     "uses explicit roots without fallback on %s",

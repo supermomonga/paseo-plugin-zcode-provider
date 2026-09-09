@@ -1,5 +1,13 @@
 # 検証記録
 
+## 2026-09-09: Windowsの既定インストール先の修正
+
+- Windowsの既定値を `%LOCALAPPDATA%\Programs\ZCode` に変更。検出処理と同じ環境を参照し、明示指定がある場合は `LOCALAPPDATA` を要求しません。既定値を使う場合の未設定・空・相対パスは `INVALID_CONFIGURATION` になります。
+- 報告された `C:\Users\code\AppData\Local\Programs\ZCode` と、別ドライブ・空白・日本語を含む配置を模擬し、実行ファイル、CLI、metadata、host archiveの解決と起動引数・環境を確認しました。明示指定の優先順位と既定パス不在時に別の場所を探索しないことも検証しました。
+- `npm run typecheck`、`npm test`（11ファイル・129テスト）、`npm run build` が成功。整形チェックと差分チェックも成功。
+- ADR 6「Windowsの既定インストール先をユーザー別の場所にする」をAcceptedとし、ADR 3へのAmends / Amended byと目次を更新。doctorはエラー0、既存ADR 1のwarning 1 / info 1のみ。
+- Windowsのファイルシステムと子プロセスは模擬しています。Windows実機でのZCode起動・モデル一覧取得は未実施であり、今回の成功結果は実機動作を証明しません。
+
 ## 2026-09-08: macOS・Linux・Windows 対応
 
 zcode-acp `7b3af187d7ee732e9043aed873a863fc855625c2` を参照し、macOS arm64/x64、Linux arm64/x64、Windows x64 の検出・起動経路を実装しました。
