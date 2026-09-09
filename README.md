@@ -35,7 +35,7 @@ These requirements apply to the **machine running the Paseo daemon**.
 | Node.js            | **22.12.0 or later**                          |
 | Paseo              | **0.8.0-beta.1 or later**.                    |
 
-Default installation paths are `/Applications/ZCode.app` on macOS, `/opt/ZCode` on Linux, and `C:\Program Files\ZCode` on Windows. For a nonstandard location, set `PASEO_ZCODE_INSTALL` to its absolute path in the Paseo daemon environment. An invalid explicit path fails instead of reverting to the default. The installed bundle's OS and CPU must match the daemon process; emulation does not bypass this check.
+Default installation paths are `/Applications/ZCode.app` on macOS, `/opt/ZCode` on Linux, and `%LOCALAPPDATA%\Programs\ZCode` on Windows. For a nonstandard location, set `PASEO_ZCODE_INSTALL` to its absolute path in the Paseo daemon environment. Specify the installation directory, not `zcode.cjs`. On Windows, the default requires `LOCALAPPDATA` to be a nonempty absolute path in that same environment; otherwise set `PASEO_ZCODE_INSTALL` explicitly. Installations under Program Files also require explicit configuration. An invalid explicit path fails instead of reverting to the default. The installed bundle's OS and CPU must match the daemon process; emulation does not bypass this check.
 
 All three OS layouts are implemented and covered by automated tests. Actual ZCode host initialization and model listing have been verified on macOS arm64 only; Linux, Windows, and macOS x64 runtime checks remain unperformed.
 

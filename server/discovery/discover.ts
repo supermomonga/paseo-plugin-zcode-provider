@@ -132,7 +132,7 @@ export async function discoverRuntime(
   const configuredRoot =
     options.installRoot ??
     environment.PASEO_ZCODE_INSTALL ??
-    defaultInstallRoot(platform);
+    defaultInstallRoot(platform, environment);
   if (!isAbsolute(configuredRoot)) {
     throw new AdapterError(
       "INVALID_CONFIGURATION",
@@ -271,14 +271,25 @@ export function assertRuntimeSupported(runtime: DiscoveredRuntime): void {
   }
 }
 
-export function defaultInstallRoot(platform: NodeJS.Platform): string {
+export function defaultInstallRoot(
+  platform: NodeJS.Platform,
+  environment: NodeJS.ProcessEnv,
+): string {
   switch (platform) {
     case "darwin":
       return "/Applications/ZCode.app";
     case "linux":
       return "/opt/ZCode";
-    case "win32":
-      return "C:\\Program Files\\ZCode";
+    case "win32": {
+      const localAppData = environment.LOCALAPPDATA;
+      if (!localAppData || !isAbsolute(localAppData)) {
+        throw new AdapterError(
+          "INVALID_CONFIGURATION",
+          "Set LOCALAPPDATA to an absolute path or set PASEO_ZCODE_INSTALL to the absolute ZCode install root",
+        );
+      }
+      return join(localAppData, "Programs", "ZCode");
+    }
     default:
       throw new AdapterError(
         "UNSUPPORTED_PLATFORM",
