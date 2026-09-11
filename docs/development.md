@@ -4,6 +4,8 @@ For installation and usage, see the [README](../README.md#installation).
 
 From a local checkout, run `npm ci` to install development dependencies before running the commands below. Development SDKs are pinned to **0.8.0**. The npm `prepare` hook generates ignored `server/build-info.ts` from `package.json`; `prebuild` regenerates it after version edits. This keeps runtime version metadata inside Paseo's permitted module directories without duplicating the version source.
 
+For Git installation and updates, `paseo-plugin.json` declares `npm ci --include=dev` as its preparation command. Paseo runs this command in the new checkout before compiling the source entry. It installs the locked dependencies, including build-time packages declared in `devDependencies` even under `NODE_ENV=production`, and runs `prepare` to generate the version metadata. No separate `npm run build` is needed for this path: Paseo compiles `index.server.ts` itself.
+
 | Command                                                        | Purpose                                                                                          |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `npm run typecheck`                                            | Check TypeScript types.                                                                          |
@@ -13,11 +15,19 @@ From a local checkout, run `npm ci` to install development dependencies before r
 | `npm run test:upstream -- /absolute/path/to/upstream-checkout` | Run integration checks using a compatible Paseo checkout's actual compiler and provider adapter. |
 | `npm run test:runtime -- /absolute/path/to/workspace`          | Initialize the installed ZCode host and retrieve its model catalog.                              |
 
-`test:upstream` requires a Paseo checkout at `v0.8.0` (commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f`). It checks that the checkout matches the installed SDK version and uses the released SDK with the actual upstream compiler and provider adapter. Dependencies resolve from this plugin's `node_modules`. It uses a test implementation of the ZCode host.
+`test:upstream` requires a Paseo checkout at `v0.8.0` (commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f`). It checks that the checkout matches the installed SDK version and uses the released SDK with the actual upstream manifest reader, preparation runner, compiler, and provider adapter. The harness dependencies resolve from this plugin's `node_modules`. It uses a test implementation of the ZCode host.
+
+The Git preparation checks copy only Git-tracked files, using their current working-tree contents, into separate temporary directories outside the harness's dependency tree. They start without `node_modules` or `server/build-info.ts`, execute only the manifest's preparation commands, and verify compilation and provider registration. They run with `NODE_ENV` unset and with `NODE_ENV=production`; each candidate must resolve `es-module-lexer` from its own installed dependencies. These checks require npm registry access and remove their temporary directories on completion or failure.
 
 The check covers registration, model discovery, streaming, usage updates, and provider replacement. After replacement it waits for the old connection to close, verifies that the old session rejects prompts, and resumes through a new provider instance using the saved persistence handle. It checks native-session reuse, transcript replay, and a subsequent turn. Persistence records stay in a temporary directory removed when the check finishes. This does not exercise the daemon's automatic recovery or the app UI.
 
 `test:runtime` accesses ZCode's existing user data but does not create conversations or send prompts. Successful model listing or CLI diagnostics alone do not verify that prompts can be sent to a real model.
+
+## Pull request CI
+
+The CI workflow runs on every pull request opening, update, and reopening, and on pushes to `main`, without path filters. On Ubuntu with Node.js 22, it installs locked dependencies, checks types, runs unit tests, builds the plugin, and runs `test:upstream`, including both clean Git preparation scenarios. It checks out the exact Paseo commit above alongside the plugin; no installed ZCode app, credentials, or running Paseo daemon is required. CI does not run `test:runtime`.
+
+The workflow has read-only repository permissions and a 20-minute timeout. New runs cancel older runs for the same pull request or branch. When upgrading the Paseo SDK, update the pinned upstream commit in the workflow and these verification instructions together.
 
 ## Project structure
 

@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, realpath, rm, symlink } from "node:fs/promises";
+import {
+  access,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+} from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { runInThisContext } from "node:vm";
@@ -43,6 +52,11 @@ try {
   };
   const sources = {
     compiler: join(upstream, "packages/server/src/server/plugins/compiler.ts"),
+    manifest: join(upstream, "packages/server/src/server/plugins/manifest.ts"),
+    preparation: join(
+      upstream,
+      "packages/server/src/server/plugins/preparation.ts",
+    ),
     adapter: join(
       upstream,
       "packages/server/src/server/agent/plugin-provider.ts",
@@ -61,27 +75,19 @@ try {
   const load = (name) =>
     import(pathToFileURL(join(directory, `${name}.mjs`)).href);
   const { compilePlugin } = await load("compiler");
-  const { serverBundle, clientBundle } = await compilePlugin({
-    server: join(root, "index.server.ts"),
-    client: null,
-  });
-  assert.equal(clientBundle, null);
-  assert.ok(
-    serverBundle.includes('require("@getpaseo/plugin/server/provider")'),
-  );
-  const nodeRequire = createRequire(join(root, "package.json"));
-  const contribution = runInThisContext(serverBundle)((name) =>
-    name === "@getpaseo/plugin/server/provider" ? sdk : nodeRequire(name),
-  );
-  let registered;
-  const dispose = contribution.default({
-    registerProvider(provider) {
-      registered = provider;
-    },
-  });
-  assert.equal(registered.id, "zcode");
-  assert.equal(typeof dispose, "function");
-  await dispose();
+  const { readPluginManifest } = await load("manifest");
+  const { runPluginBuild } = await load("preparation");
+  const gitPreparation = [];
+  for (const nodeEnv of [undefined, "production"]) {
+    gitPreparation.push(
+      await checkGitPreparation({
+        compilePlugin,
+        readPluginManifest,
+        runPluginBuild,
+        nodeEnv,
+      }),
+    );
+  }
 
   const { PluginAgentClientRegistry } = await load("adapter");
   const { createZCodeProvider } = await load("provider");
@@ -305,8 +311,7 @@ try {
         commit: execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], {
           encoding: "utf8",
         }).trim(),
-        compiledBytes: Buffer.byteLength(serverBundle),
-        registration: "passed",
+        gitPreparation,
         coreAdapter: "passed",
         providerReplacement: "passed",
         persistenceResume: "passed",
@@ -319,4 +324,91 @@ try {
   );
 } finally {
   await rm(directory, { recursive: true, force: true });
+}
+
+async function checkGitPreparation({
+  compilePlugin,
+  readPluginManifest,
+  runPluginBuild,
+  nodeEnv,
+}) {
+  console.log(`Checking Git preparation (NODE_ENV=${nodeEnv ?? "unset"})`);
+  // Keep the candidate outside the harness directory and its node_modules symlink.
+  const candidate = await realpath(
+    await mkdtemp(join(tmpdir(), "zcode-git-preparation-")),
+  );
+  try {
+    const files = execFileSync("git", ["ls-files", "-z"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+      .split("\0")
+      .filter(Boolean);
+    // Copy working-tree contents so local, uncommitted fixes are tested too.
+    for (const file of files) {
+      const destination = join(candidate, file);
+      await mkdir(dirname(destination), { recursive: true });
+      await copyFile(join(root, file), destination);
+    }
+    const nodeRequire = createRequire(join(candidate, "package.json"));
+    await assert.rejects(access(join(candidate, "node_modules")), {
+      code: "ENOENT",
+    });
+    await assert.rejects(access(join(candidate, "server/build-info.ts")), {
+      code: "ENOENT",
+    });
+    assert.throws(() => nodeRequire.resolve("es-module-lexer"), {
+      code: "MODULE_NOT_FOUND",
+    });
+
+    const manifest = await readPluginManifest(candidate);
+    const previousNodeEnv = process.env.NODE_ENV;
+    try {
+      if (nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = nodeEnv;
+      await runPluginBuild(candidate, manifest.build, {
+        info(fields, message) {
+          console.log(message, fields.output ?? fields.command);
+        },
+      });
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+    }
+
+    await access(join(candidate, "server/build-info.ts"));
+    assert.ok(
+      relative(candidate, nodeRequire.resolve("es-module-lexer")).startsWith(
+        `node_modules${sep}`,
+      ),
+      "Resolve the lexer from the prepared candidate's own dependencies",
+    );
+    const { serverBundle, clientBundle } = await compilePlugin({
+      server: join(candidate, "index.server.ts"),
+      client: null,
+    });
+    assert.equal(clientBundle, null);
+    assert.ok(
+      serverBundle.includes('require("@getpaseo/plugin/server/provider")'),
+    );
+    const contribution = runInThisContext(serverBundle)((name) =>
+      name === "@getpaseo/plugin/server/provider" ? sdk : nodeRequire(name),
+    );
+    let registered;
+    const dispose = contribution.default({
+      registerProvider(provider) {
+        registered = provider;
+      },
+    });
+    assert.equal(registered.id, "zcode");
+    assert.equal(typeof dispose, "function");
+    await dispose();
+    return {
+      nodeEnv: nodeEnv ?? "unset",
+      compiledBytes: Buffer.byteLength(serverBundle),
+      registration: "passed",
+    };
+  } finally {
+    await rm(candidate, { recursive: true, force: true });
+  }
 }
