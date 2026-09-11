@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v6
+        with:
+          path: plugin
+          persist-credentials: false
+      - name: Check out matching Paseo release
+        uses: actions/checkout@v6
+        with:
+          repository: getpaseo/paseo
+          ref: b8e24677e12b226c7c38c1c3a40649daa9f1152f # v0.8.0
+          path: paseo
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+      - name: Install dependencies and generate build metadata
+        run: npm ci --include=dev
+      - name: Check types
+        run: npm run typecheck
+      - name: Run unit tests
+        run: npm test
+      - name: Build plugin
+        run: npm run build
+      - name: Check Git preparation and upstream integration
+        run: npm run test:upstream -- "$GITHUB_WORKSPACE/paseo"
