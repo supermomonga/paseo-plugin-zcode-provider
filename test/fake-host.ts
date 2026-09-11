@@ -43,6 +43,59 @@ export function snapshot(workspace: string): SessionSnapshot {
 }
 
 export class FakeBridge implements HostBridge {
+  conversationRevision = 0;
+  conversationOrdinal = 0;
+  conversationPhase:
+    | "draft"
+    | "running"
+    | "completedSuccess"
+    | "completedInterrupted"
+    | "error" = "draft";
+  autoDrain = true;
+  confirmCancellation = true;
+  queueItems: Array<{
+    sourceCommandId: string;
+    queueItemId: string;
+    clientId: string;
+    delivery: { requested: "guide" | "queue"; admitted: "queue" | "guide" };
+    dispatch: { state: "queued" };
+  }> = [];
+  async emitConversation(): Promise<void> {
+    const n = ++this.conversationOrdinal;
+    await this.emit({
+      type: "conversation.frame",
+      frame: {
+        wireVersion: 3,
+        kind: "complete",
+        deliveryKind: "online",
+        logicalFrameId: `frame-${n}`,
+        logicalFrameOrdinal: n,
+        topic: "conversation/session-1",
+        subscriptionId: "conversation-sub",
+        frame: {
+          topic: "conversation/session-1",
+          subscriptionId: "conversation-sub",
+          fromSeq: 0,
+          toSeq: n,
+          sentAt: n,
+          payload: {
+            kind: "snapshot",
+            snapshot: {
+              sessionId: "session-1",
+              logEpoch: "epoch",
+              seq: n,
+              revision: ++this.conversationRevision,
+              control: {
+                phase: this.conversationPhase,
+                canStop: this.conversationPhase === "running",
+              },
+              queue: { autoDrain: this.autoDrain, items: this.queueItems },
+            },
+          },
+        },
+      },
+    });
+  }
   readonly diagnostic = {
     appVersion: "3.11.2",
     cliVersion: "0.16.5",
@@ -79,8 +132,78 @@ export class FakeBridge implements HostBridge {
       result = this.current;
     } else if (method === "listSessions") {
       result = [this.current.session];
-    } else if (method === "sendPrompt") {
-      result = { sessionId: "session-1", accepted: true };
+    } else if (method === "sendConversationCommandV4") {
+      const { envelope: e } = params as {
+        envelope: {
+          type: string;
+          commandId: string;
+          payload: {
+            autoDrain?: boolean;
+            queueItemId?: string;
+            requestedDelivery?: "queue" | "guide";
+          };
+        };
+      };
+      if (e.type === "sendText") {
+        const running = this.conversationPhase === "running";
+        if (running)
+          this.queueItems.push({
+            sourceCommandId: e.commandId,
+            queueItemId: `queue-${e.commandId}`,
+            clientId: "paseo-zcode-provider",
+            delivery: {
+              requested: e.payload.requestedDelivery!,
+              admitted: e.payload.requestedDelivery!,
+            },
+            dispatch: { state: "queued" },
+          });
+        this.conversationPhase = "running";
+        await this.emitConversation();
+        result = {
+          commandId: e.commandId,
+          status: "accepted",
+          revisionAtDecision: this.conversationRevision,
+          result: {
+            type: "inputAccepted",
+            inputId: e.commandId,
+            delivery: running ? "queue" : "startNow",
+          },
+        };
+      } else {
+        if (e.type === "setAutoDrain") this.autoDrain = e.payload.autoDrain!;
+        else if (e.type === "deleteQueueItem")
+          this.queueItems = this.queueItems.filter(
+            (item) => item.queueItemId !== e.payload.queueItemId,
+          );
+        else throw new Error(`Unexpected command ${e.type}`);
+        await this.emitConversation();
+        result = {
+          commandId: e.commandId,
+          status: "accepted",
+          revisionAtDecision: this.conversationRevision,
+        };
+      }
+    } else if (method === "attachmentBeginV4") {
+      result = {
+        uploadId: (params as { uploadId: string }).uploadId,
+        state: "staging",
+        nextChunkIndex: 0,
+      };
+    } else if (method === "attachmentChunkV4") {
+      const chunk = params as { uploadId: string; chunkIndex: number };
+      result = {
+        uploadId: chunk.uploadId,
+        nextChunkIndex: chunk.chunkIndex + 1,
+      };
+    } else if (method === "attachmentCommitV4") {
+      result = {
+        ref: `artifact://${(params as { uploadId: string }).uploadId}`,
+      };
+    } else if (method === "attachmentAbortV4") {
+      result = {};
+    } else if (method === "cancelGeneration" && this.confirmCancellation) {
+      this.conversationPhase = "completedInterrupted";
+      await this.emitConversation();
     } else if (method === "getTaskTokenUsage") {
       result = {
         sessionId: "session-1",
@@ -138,6 +261,7 @@ export class FakeBridge implements HostBridge {
   ): Promise<HostSubscription> {
     this.calls.push({ method: "subscribe", params: null });
     this.handler = handler;
+    await this.emitConversation();
     return {
       dispose: async () => {
         this.calls.push({ method: "unsubscribe", params: null });
@@ -177,6 +301,16 @@ export class FakeBridge implements HostBridge {
     }
     if (this.handler === undefined) throw new Error("not subscribed");
     await this.handler(event);
+    if (
+      event.type === "session.event" &&
+      event.event.type === "turn.completed"
+    ) {
+      this.conversationPhase =
+        event.event.payload.resultType === "cancelled"
+          ? "completedInterrupted"
+          : "completedSuccess";
+      await this.emitConversation();
+    }
   }
 }
 

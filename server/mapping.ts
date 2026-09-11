@@ -288,6 +288,19 @@ export function historyTimeline(
 ): NativeTimelineItem[] {
   const result: NativeTimelineItem[] = [];
   for (const message of snapshot.messages) {
+    let userMessage:
+      | Extract<NativeTimelineItem, { type: "user_message" }>
+      | undefined;
+    const append = (item: NativeTimelineItem) => {
+      if (item.type === "user_message") {
+        if (userMessage) {
+          userMessage.text += `\n\n${item.text}`;
+          return;
+        }
+        userMessage = item;
+      }
+      result.push(item);
+    };
     for (const part of message.parts) {
       if (
         part.type === "timeline" ||
@@ -303,7 +316,7 @@ export function historyTimeline(
             "Persisted text part is malformed",
           );
         }
-        result.push(
+        append(
           part.type === "reasoning"
             ? { type: "reasoning", text: part.text }
             : message.info.role === "user"
@@ -330,7 +343,7 @@ export function historyTimeline(
         const label =
           typeof part.filename === "string" ? part.filename : "file";
         const text = `[${label}](${part.url})`;
-        result.push(
+        append(
           message.info.role === "user"
             ? { type: "user_message", text, messageId: message.info.messageId }
             : {
@@ -372,7 +385,7 @@ export function historyTimeline(
           input: jsonValue(state.input ?? null),
           output,
         };
-        result.push(
+        append(
           status === "failed"
             ? { type: "tool_call", callId, name, detail, status, error: output }
             : { type: "tool_call", callId, name, detail, status, error: null },

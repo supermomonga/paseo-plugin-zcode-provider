@@ -51,6 +51,7 @@ export const CAPABILITIES = [
   "prompt.message",
   "prompt.command",
   "prompt.image",
+  "prompt.steer",
   "session.configure",
   "session.list",
   "session.persistence",
@@ -99,9 +100,9 @@ interface SessionEntry {
   unsubscribe: () => void;
   unsubscribeFailure: () => void;
   timeline: TimelineSnapshots;
-  messages: Set<string>;
+  messages: Map<string, boolean>;
+  inputGeneration: number;
   queue: Promise<void>;
-  prompt?: { id: string; resolved: boolean };
 }
 
 export function createZCodeProvider(
@@ -165,14 +166,31 @@ export class ZCodeConnection implements ProviderConnection {
       const entry = this.requireSession(input.sessionId);
       if (entry.messages.has(input.prompt.clientMessageId))
         throw new Error("Duplicate ZCode clientMessageId");
-      entry.messages.add(input.prompt.clientMessageId);
+      entry.messages.set(input.prompt.clientMessageId, false);
     }
+    if (input.type === "session.interrupt")
+      this.requireSession(input.sessionId).inputGeneration++;
     const entry =
       input.type === "session.prompt" || input.type === "session.configure"
         ? this.requireSession(input.sessionId)
         : undefined;
+    const releaseInput =
+      input.type === "session.prompt"
+        ? entry!.native.reserveInput()
+        : undefined;
+    const inputGeneration = entry?.inputGeneration;
     const operation = entry
-      ? entry.queue.then(() => this.dispatch(input))
+      ? entry.queue.then(() => {
+          if (
+            input.type === "session.prompt" &&
+            inputGeneration !== entry.inputGeneration
+          )
+            throw new AdapterError(
+              "SESSION_BUSY",
+              "ZCode input was cancelled before sending",
+            );
+          return this.dispatch(input);
+        })
       : this.dispatch(input);
     if (entry) entry.queue = operation.catch(() => undefined);
     const job = operation
@@ -188,14 +206,9 @@ export class ZCodeConnection implements ProviderConnection {
         );
         logger.error("zcode.provider.request_failed", error);
         if (input.type === "session.prompt") {
-          const entry = this.sessions.get(input.sessionId);
-          if (
-            entry?.prompt?.id === input.prompt.clientMessageId &&
-            entry.prompt.resolved
-          )
-            return;
-          if (entry?.prompt?.id === input.prompt.clientMessageId)
-            entry.prompt.resolved = true;
+          const promptEntry = entry ?? this.sessions.get(input.sessionId);
+          if (promptEntry?.messages.get(input.prompt.clientMessageId)) return;
+          promptEntry?.messages.set(input.prompt.clientMessageId, true);
           this.emit({
             type: "session.prompt_result",
             sessionId: input.sessionId,
@@ -229,6 +242,7 @@ export class ZCodeConnection implements ProviderConnection {
         }
       })
       .finally(() => {
+        releaseInput?.();
         this.jobs.delete(job);
         if (input.type === "session.open") this.opening.delete(input.sessionId);
       });
@@ -343,12 +357,28 @@ export class ZCodeConnection implements ProviderConnection {
     const entry = this.requireSession(input.sessionId);
     switch (input.type) {
       case "session.prompt": {
-        if (entry.prompt && !entry.prompt.resolved)
+        const prompt = input.prompt.input;
+        if (input.prompt.clearPendingPermissions)
+          throw new AdapterError(
+            "INTERACTION_UNSUPPORTED",
+            "Steering does not resolve pending ZCode permissions",
+          );
+        if (input.prompt.delivery === "steer" && !entry.native.hasActiveTurn())
           throw new AdapterError(
             "SESSION_BUSY",
-            "ZCode is accepting another prompt",
+            "ZCode has no active turn to steer",
           );
-        const prompt = input.prompt.input;
+        if (
+          entry.native.hasActiveTurn() &&
+          (prompt.type === "command" ||
+            prompt.content.some(
+              (part) => part.type === "text" && /^\s*\//.test(part.text),
+            ))
+        )
+          throw new AdapterError(
+            "SESSION_BUSY",
+            "Commands cannot run while ZCode is processing input",
+          );
         if (
           prompt.type === "command" &&
           !(await entry.native.listCommands()).some(
@@ -357,7 +387,7 @@ export class ZCodeConnection implements ProviderConnection {
         )
           throw new Error("Unknown ZCode command");
         // ZCode desktop implements /plan as setMode plus an optional task.
-        // sendPrompt does not interpret this shortcut; forwarding it asks the model.
+        // Native text admission does not interpret this shortcut.
         const text =
           prompt.type === "message" && prompt.content[0]?.type === "text"
             ? prompt.content[0].text.trim()
@@ -375,6 +405,7 @@ export class ZCodeConnection implements ProviderConnection {
             );
           await entry.native.configureMode(undefined, true);
           if (!planTask) {
+            entry.messages.set(input.prompt.clientMessageId, true);
             this.emit({
               type: "session.prompt_result",
               sessionId: input.sessionId,
@@ -384,7 +415,6 @@ export class ZCodeConnection implements ProviderConnection {
             return;
           }
         }
-        entry.prompt = { id: input.prompt.clientMessageId, resolved: false };
         await entry.native.startTurn(
           planTask ??
             (prompt.type === "command"
@@ -392,6 +422,7 @@ export class ZCodeConnection implements ProviderConnection {
               : prompt.content),
           {
             clientMessageId: input.prompt.clientMessageId,
+            delivery: input.prompt.delivery,
             beforeSend: async () => {
               if (!entry.submitted) {
                 await this.persistenceStore.save(
@@ -522,7 +553,8 @@ export class ZCodeConnection implements ProviderConnection {
         unsubscribe() {},
         unsubscribeFailure() {},
         timeline: new TimelineSnapshots(),
-        messages: new Set(),
+        messages: new Map(),
+        inputGeneration: 0,
         queue: Promise.resolve(),
       };
       this.sessions.set(input.sessionId, entry);
@@ -597,6 +629,9 @@ export class ZCodeConnection implements ProviderConnection {
     event: NativeSessionEvent,
   ): void {
     switch (event.type) {
+      case "timeline_boundary":
+        entry.timeline.boundary();
+        break;
       case "timeline":
         this.emit({
           type: "timeline.item",
@@ -612,15 +647,20 @@ export class ZCodeConnection implements ProviderConnection {
           usage: event.usage,
         });
         break;
-      case "turn_started":
-        if (!entry.prompt) throw new Error("ZCode started an unrequested turn");
-        entry.prompt.resolved = true;
+      case "prompt_accepted":
+        if (!entry.messages.has(event.clientMessageId))
+          throw new Error("ZCode accepted an unrequested input");
+        if (entry.messages.get(event.clientMessageId))
+          throw new Error("ZCode accepted an input twice");
+        entry.messages.set(event.clientMessageId, true);
         this.emit({
           type: "session.prompt_result",
           sessionId: id,
-          clientMessageId: entry.prompt.id,
-          result: { type: "turn", turnId: event.turnId },
+          clientMessageId: event.clientMessageId,
+          result: { type: event.delivery, turnId: event.turnId },
         });
+        break;
+      case "turn_started":
         this.emit({
           type: "session.turn",
           sessionId: id,

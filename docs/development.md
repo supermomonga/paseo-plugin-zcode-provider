@@ -34,6 +34,10 @@ The check covers registration, model discovery, streaming, usage updates, and pr
 
 `test:runtime` accesses ZCode's existing user data but does not create conversations or send prompts. Successful model listing or CLI diagnostics alone do not verify that prompts can be sent to a real model.
 
+### Real steering and queue checks
+
+`npm run test:steering-runtime` is opt-in and submits real model requests using your existing ZCode authentication. It creates a temporary workspace and provider mapping store, then checks text guidance, attachment queue execution, a single final completion, stop, native history restoration, cancelled-input absence, and clean shutdown. Temporary local files are removed afterward; ZCode retains the test conversations in its own storage. This checks direct Provider connections, not a Paseo daemon or UI. It is not run in CI.
+
 ## Pull request CI
 
 The CI workflow runs on every pull request opening, update, and reopening, and on pushes to `main`, without path filters. On Ubuntu with Node.js 22, it installs locked dependencies, checks types, runs unit tests, builds the plugin, and runs `test:upstream`, including both clean Git preparation scenarios. It checks out the exact Paseo commit above alongside the plugin; no installed ZCode app, credentials, or running Paseo daemon is required. CI does not run `test:runtime`.
@@ -47,7 +51,9 @@ The workflow has read-only repository permissions and a 20-minute timeout. New r
 - `client/` — React Native settings screen.
 - `shared/` — Runtime-neutral contracts shared by the daemon and the app.
 - `server/provider.ts` — Connection to the public API.
-- `server/session.ts` — Conversation, approval, and plan handling.
+- `server/session.ts` — Public-run and native-turn lifecycle, input correlation, approval, and plan handling.
+- `server/conversation.ts` — V4 command and conversation-state validation, including fragmented frames.
+- `server/attachments.ts` — Native persisted attachment uploads.
 - `server/status.ts` — Read-only diagnostics handler behind the settings screen.
 - `server/discovery/` — Installed ZCode discovery and compatibility checks.
 - `server/host/`, `server/protocol/` — Official host startup, communication, and schema validation.

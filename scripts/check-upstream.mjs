@@ -175,7 +175,9 @@ try {
           },
         },
       });
+    const firstCompleted = waitForCompletion(session, turn.turnId);
     await completeTurn(host, 3);
+    await firstCompleted;
     const completed = events.find((event) => event.type === "turn_completed");
     assert.equal(completed.turnId, turn.turnId);
     assert.equal(
@@ -230,7 +232,8 @@ try {
     await session.close();
     assert.equal(connectionCloseCount, 1);
     assert.equal(
-      host.calls.filter(({ method }) => method === "sendPrompt").length,
+      host.calls.filter(({ method }) => method === "sendConversationCommandV4")
+        .length,
       1,
     );
 
@@ -274,7 +277,9 @@ try {
     const resumedTurn = await resumed.startTurn("After reload", {
       clientMessageId: "after-reload",
     });
+    const resumedCompleted = waitForCompletion(resumed, resumedTurn.turnId);
     await completeTurn(resumedHost);
+    await resumedCompleted;
     assert.equal(
       resumedEvents.find((event) => event.type === "turn_completed").turnId,
       resumedTurn.turnId,
@@ -289,8 +294,93 @@ try {
       ["After reload"],
     );
     assert.equal(
-      resumedHost.calls.filter(({ method }) => method === "sendPrompt").length,
+      resumedHost.calls.filter(
+        ({ method }) => method === "sendConversationCommandV4",
+      ).length,
       1,
+    );
+    // Exercise Paseo's actual steering decision, including an attachment queued
+    // by ZCode. An unavailable result would trigger replacement in AgentManager.
+    const run = await resumed.startTurn("Steering integration", {
+      clientMessageId: "steering-start",
+    });
+    let seq = 1;
+    const nativeEvent = (type, payload, turnId = "native-steering") =>
+      resumedHost.emit({
+        type: "session.event",
+        event: {
+          type,
+          payload,
+          turnId,
+          eventId: `steering-${++seq}`,
+          seq,
+          sessionId: "session-1",
+          timestamp: seq,
+          deliveryKind: "desktop-continuous",
+        },
+      });
+    const inputs = () =>
+      resumedHost.calls
+        .filter((c) => c.method === "sendConversationCommandV4")
+        .map((c) => c.params.envelope)
+        .filter((e) => e.type === "sendText");
+    await nativeEvent("turn.started", { inputId: inputs().at(-1).commandId });
+    assert.deepEqual(
+      await resumed.steerActiveTurn("Additional text", {
+        expectedTurnId: run.turnId,
+        clientMessageId: "steering-text",
+      }),
+      { status: "accepted" },
+    );
+    assert.deepEqual(
+      await resumed.steerActiveTurn(
+        [
+          { type: "text", text: "Queued attachment" },
+          { type: "image", mimeType: "image/png", data: "dGVzdA==" },
+        ],
+        { expectedTurnId: run.turnId, clientMessageId: "steering-image" },
+      ),
+      { status: "accepted" },
+    );
+    assert.equal(inputs().length, 4);
+    const [guide, queued] = resumedHost.queueItems;
+    await nativeEvent("turn.steerDrained", {
+      targetTurnId: "native-steering",
+      pendingInputIds: [guide.queueItemId],
+    });
+    resumedHost.queueItems.shift();
+    await nativeEvent("turn.completed", { resultType: "success" });
+    assert.equal(
+      resumedEvents.filter(
+        (e) => e.type === "turn_completed" && e.turnId === run.turnId,
+      ).length,
+      0,
+    );
+    resumedHost.conversationPhase = "running";
+    await nativeEvent(
+      "turn.started",
+      { inputId: queued.sourceCommandId },
+      "native-queued",
+    );
+    resumedHost.queueItems = [];
+    await resumedHost.emitConversation();
+    const queuedCompleted = waitForCompletion(resumed, run.turnId);
+    await nativeEvent(
+      "turn.completed",
+      { resultType: "success" },
+      "native-queued",
+    );
+    await queuedCompleted;
+    assert.equal(
+      resumedEvents.filter(
+        (e) => e.type === "turn_completed" && e.turnId === run.turnId,
+      ).length,
+      1,
+    );
+    assert.equal(
+      inputs().length,
+      4,
+      "accepted steering must not be resent or replace the run",
     );
     await resumed.close();
     assert.equal(resumedHost.closed, true);
@@ -313,6 +403,9 @@ try {
         }).trim(),
         gitPreparation,
         coreAdapter: "passed",
+        textSteering: "passed",
+        attachmentQueue: "passed",
+        singleCompletion: "passed",
         providerReplacement: "passed",
         persistenceResume: "passed",
         historyReplay: "passed",
@@ -338,10 +431,14 @@ async function checkGitPreparation({
     await mkdtemp(join(tmpdir(), "zcode-git-preparation-")),
   );
   try {
-    const files = execFileSync("git", ["ls-files", "-z"], {
-      cwd: root,
-      encoding: "utf8",
-    })
+    const files = execFileSync(
+      "git",
+      ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+      {
+        cwd: root,
+        encoding: "utf8",
+      },
+    )
       .split("\0")
       .filter(Boolean);
     // Copy working-tree contents so local, uncommitted fixes are tested too.
@@ -447,4 +544,20 @@ async function checkGitPreparation({
   } finally {
     await rm(candidate, { recursive: true, force: true });
   }
+}
+
+function waitForCompletion(session, turnId) {
+  return new Promise((resolve, reject) => {
+    const unsubscribe = session.subscribe((event) => {
+      if (event.type === "turn_completed" && event.turnId === turnId) {
+        clearTimeout(timer);
+        unsubscribe();
+        resolve();
+      }
+    });
+    const timer = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Adapter did not complete the public turn"));
+    }, 5000);
+  });
 }

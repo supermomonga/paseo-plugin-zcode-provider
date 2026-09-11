@@ -1,3 +1,5 @@
+import { PROVIDER_VERSION } from "../build-info.js";
+
 const ZCODE_HOST_WORKER_SOURCE = String.raw`
 import { parentPort, workerData } from "node:worker_threads";
 if (!parentPort) throw new Error("ZCode host worker requires a parent port");
@@ -109,14 +111,27 @@ if (!agentService) throw new Error("ZCode host protocol has no agent service");
 const subscriptions = new Map();
 const commonAgentMethods = new Set([
   "initialize", "readWorkspaceState", "createSession", "resumeSession", "listSessions",
-  "readSession", "readSessionMessages", "readSessionEvents", "sendPrompt",
+  "readSession", "readSessionMessages", "readSessionEvents", "sendConversationCommandV4",
   "closeSession", "setModel", "setThoughtLevel", "setMode", "getTaskTokenUsage",
-  "respondProviderRuntimeHeaders", "disposeWorkspace"
+  "respondProviderRuntimeHeaders", "disposeWorkspace",
+  "attachmentBeginV4", "attachmentChunkV4", "attachmentCommitV4", "attachmentAbortV4"
 ]);
 const contractOperations = new Set(Object.values(hostProtocol.operations).map(operation =>
   operation.service + ":" + operation.method
 ));
 let shuttingDown = false;
+let conversationHandshake;
+
+async function initializeConversation() {
+  conversationHandshake ??= (async () => {
+    const hello = await agentService.helloConversationV4();
+    if (hello?.kind !== "hello" || hello.protocolVersion !== 3 || hello.clientMode !== "desktop-continuous")
+      throw new Error("Unsupported V4 conversation handshake");
+    await agentService.initializeConversationV4({ kind: "clientHello", protocolVersion: 3,
+      clientId: "paseo-zcode-provider", appVersion: ${JSON.stringify(PROVIDER_VERSION)} });
+  })();
+  await conversationHandshake;
+}
 
 function write(value) {
   process.stdout.write(JSON.stringify(value) + "\n");
@@ -130,16 +145,33 @@ async function dispatch(message) {
       const subscriptionId = message.params?.subscriptionId;
       if (typeof subscriptionId !== "string" || !subscriptionId) throw new Error("Invalid subscription id");
       if (subscriptions.has(subscriptionId)) throw new Error("Duplicate subscription id");
-      const disposable = agentService.onDynamicSessionEvent(message.params.target)(event => {
+      await initializeConversation();
+      const target = message.params.target;
+      const disposable = agentService.onDynamicSessionEvent(target)(event => {
         write({ method: "event", params: { subscriptionId, event } });
       });
-      subscriptions.set(subscriptionId, disposable);
+      const conversation = agentService.onDynamicConversationFrame(target)(frame => {
+        if (frame.topic === "conversation/" + target.sessionId)
+          write({ method: "event", params: { subscriptionId, event: { type: "conversation.frame", frame } } });
+      });
+      let nativeSubscription;
+      try {
+        const result = await agentService.subscribeConversationV4(target);
+        if (!result?.ack?.subscriptionId) throw new Error("Missing V4 conversation subscription");
+        nativeSubscription = result.ack.subscriptionId;
+      } catch (error) {
+        conversation.dispose(); disposable.dispose(); throw error;
+      }
+      subscriptions.set(subscriptionId, { async dispose() {
+        conversation.dispose(); disposable.dispose();
+        await agentService.unsubscribeConversationV4({ ...target, subscriptionId: nativeSubscription });
+      } });
       write({ id, result: { subscribed: true } });
       return;
     }
     if (message.method === "__unsubscribe") {
       const disposable = subscriptions.get(message.params?.subscriptionId);
-      disposable?.dispose();
+      await disposable?.dispose();
       subscriptions.delete(message.params?.subscriptionId);
       write({ id, result: { unsubscribed: true } });
       return;
@@ -163,7 +195,7 @@ async function dispatch(message) {
 function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  for (const disposable of subscriptions.values()) disposable.dispose();
+  for (const disposable of subscriptions.values()) void Promise.resolve(disposable.dispose()).catch(() => {});
   subscriptions.clear();
   try { worker.postMessage({ data: { type: "dispose" }, ports: [] }); } catch {}
   setTimeout(() => process.exit(0), 2000).unref();

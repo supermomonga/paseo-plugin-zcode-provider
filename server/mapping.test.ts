@@ -1,3 +1,4 @@
+import { snapshot } from "../test/fake-host.js";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -346,4 +347,26 @@ describe("ZCode interactions", () => {
       ),
     ).toThrow(/allow and deny/u);
   });
+});
+
+it("restores text and attachments as one native user message", () => {
+  const value = snapshot("/workspace");
+  value.messages = [
+    {
+      info: { role: "user", messageId: "queued-input" },
+      parts: [
+        { type: "text", text: "Read attachment" },
+        { type: "file", url: "artifact://attachment", filename: "input.txt" },
+      ],
+    },
+  ];
+  expect(
+    historyTimeline(value).filter((item) => item.type === "user_message"),
+  ).toEqual([
+    {
+      type: "user_message",
+      messageId: "queued-input",
+      text: "Read attachment\n\n[input.txt](artifact://attachment)",
+    },
+  ]);
 });

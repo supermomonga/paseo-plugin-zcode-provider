@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConversationWireSchema } from "../../conversation.js";
 
 const RecordSchema = z.record(z.string(), z.unknown());
 
@@ -286,6 +287,12 @@ export const SessionEventSchema = z
   .strict();
 
 export const DynamicEventSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("conversation.frame"),
+      frame: ConversationWireSchema,
+    })
+    .strict(),
   z
     .object({ type: z.literal("snapshot"), snapshot: SessionSnapshotSchema })
     .strict(),

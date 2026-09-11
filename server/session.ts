@@ -1,4 +1,7 @@
+import { uploadAttachments } from "./attachments.js";
 import { randomUUID } from "node:crypto";
+import { Conversation, conversationCommand } from "./conversation.js";
+import { z } from "zod";
 import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
 import { jsonValue, jsonObject } from "./mapping.js";
 import { isAbsolute } from "node:path";
@@ -43,7 +46,6 @@ import {
   SessionModeChangedSchema,
   SessionSnapshotSchema,
   StateUpdatedNotificationSchema,
-  SendPromptResultSchema,
   TokenUsageSchema,
   UnknownResultSchema,
   WorkspaceStateResultSchema,
@@ -57,7 +59,6 @@ import {
 
 const KNOWN_NOOP_EVENTS = new Set([
   "streamRecovery.updated",
-  "turn.started",
   "permission.requested",
   "permission.resolved",
   "checkpoint.created",
@@ -67,6 +68,24 @@ interface ActiveTurn {
   id: string;
   inputId: string;
   nativeTurnId?: string;
+  inputs: Map<
+    string,
+    {
+      clientMessageId?: string;
+      accepted: boolean;
+      consumed: boolean;
+      queueItemId?: string;
+      nativeTurnId?: string;
+    }
+  >;
+  completedNativeTurns: Set<string>;
+  inFlight: number;
+  announced: boolean;
+  buffered: NativeSessionEvent[];
+  lastTerminal?: Record<string, unknown>;
+  finishing: boolean;
+  completionRevision: number;
+  stopping?: Promise<void>;
   tools: Map<
     string,
     {
@@ -121,6 +140,8 @@ export class ZCodeSession {
   private subscription!: HostSubscription;
   private snapshot: SessionSnapshot;
   private active: ActiveTurn | undefined;
+  private pendingAdmissions = 0;
+  private readonly cancelledNativeTurns = new Set<string>();
   private lastSequence: number | undefined;
   private closed = false;
   private failed = false;
@@ -129,6 +150,7 @@ export class ZCodeSession {
   private snapshotRevision = 0;
   private editingMode: string;
   private configuringMode = false;
+  private readonly conversation: Conversation;
 
   private constructor(
     private readonly bridge: HostBridge,
@@ -146,6 +168,7 @@ export class ZCodeSession {
         : snapshot.settings.mode.current;
     this.contextUsage = this.readContextUsage(snapshot);
     this.id = snapshot.session.sessionId;
+    this.conversation = new Conversation(this.id);
     this.history = historyTimeline(snapshot);
   }
 
@@ -172,6 +195,15 @@ export class ZCodeSession {
       },
       (event) => session.handleDynamicEvent(event),
     );
+    await session.waitForState(() => session.conversation.state !== undefined);
+    session.assertOpen();
+    // Native resume discards persisted, unconsumed inputs. Do not recreate or
+    // replay them locally, or attach to work not started by this connection.
+    if (!session.conversation.idle)
+      throw new AdapterError(
+        "NATIVE_PROTOCOL_ERROR",
+        "ZCode restored a conversation with unresolved native work",
+      );
     return session;
   }
 
@@ -190,11 +222,31 @@ export class ZCodeSession {
 
   async startTurn(
     prompt: NativePromptInput,
-    options?: { clientMessageId: string; beforeSend?: () => Promise<void> },
+    options?: {
+      clientMessageId: string;
+      delivery?: "auto" | "steer";
+      beforeSend?: () => Promise<void>;
+    },
   ): Promise<{ turnId: string }> {
     const turn = await this.beginTurn(prompt, options);
     void turn.completion.catch(() => undefined);
     return { turnId: turn.id };
+  }
+
+  reserveInput(): () => void {
+    this.pendingAdmissions++;
+    if (this.active) {
+      this.active.finishing = false;
+      this.active.completionRevision++;
+    }
+    return () => {
+      this.pendingAdmissions--;
+      if (this.active) void this.maybeComplete(this.active);
+    };
+  }
+
+  hasActiveTurn(): boolean {
+    return this.active !== undefined;
   }
 
   subscribe(callback: (event: NativeSessionEvent) => void): () => void {
@@ -241,6 +293,7 @@ export class ZCodeSession {
     if (error !== undefined) this.logger.error("zcode.session.failed", failure);
     error = failure;
     this.failed = true;
+    this.stateChanged();
     this.failActive(error, false);
     this.emit({
       type: "runtime_failed",
@@ -420,40 +473,73 @@ export class ZCodeSession {
 
   async interrupt(): Promise<void> {
     const active = this.active;
-    if (active === undefined) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (!active) return;
+    active.cancelled = true;
+    active.cancelSent = true;
+    active.stopping ??= this.stopAndClear(active);
     try {
-      if (!active.cancelSent) {
-        active.cancelSent = true;
-        active.cancelled = true;
-        await this.cancelPending(true);
-        await this.bridge.request(
-          "cancelGeneration",
-          { workspacePath: this.workspace, sessionId: this.id },
-          UnknownResultSchema,
-        );
-      }
-      await Promise.race([
-        active.completion.catch(() => undefined),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () =>
-              reject(
-                new AdapterError(
-                  "NATIVE_TIMEOUT",
-                  "ZCode did not stop generation",
-                ),
-              ),
-            30_000,
-          );
-        }),
-      ]);
+      await active.stopping;
+      if (this.active === active) this.finishCancelled(active);
     } catch (error) {
       this.runtimeFailed(error instanceof AdapterError ? error : undefined);
       throw error;
-    } finally {
-      clearTimeout(timer);
     }
+  }
+
+  private async stopAndClear(active: ActiveTurn): Promise<void> {
+    await this.controlCommand("setAutoDrain", { autoDrain: false });
+    await this.waitForState(() => active.inFlight === 0);
+    await this.cancelPending(true);
+    await this.bridge.request(
+      "cancelGeneration",
+      { workspacePath: this.workspace, sessionId: this.id },
+      UnknownResultSchema,
+    );
+    await this.waitForState(
+      () =>
+        !!this.conversation.state &&
+        !this.conversation.state.control.canStop &&
+        this.conversation.state.control.phase !== "running" &&
+        this.conversation.state.control.phase !== "prewarming",
+    );
+    for (const item of this.conversation.state!.queue.items) {
+      await this.controlCommand("deleteQueueItem", {
+        queueItemId: item.queueItemId,
+      });
+    }
+    await this.waitForState(() => this.conversation.idle);
+  }
+
+  private readonly stateListeners = new Set<() => void>();
+  private stateChanged(): void {
+    for (const listener of this.stateListeners) listener();
+  }
+  private waitForState(predicate: () => boolean): Promise<void> {
+    if (predicate()) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const done = () => {
+        if (this.failed || predicate()) {
+          clearTimeout(timer);
+          this.stateListeners.delete(done);
+          if (this.failed)
+            reject(
+              new AdapterError("NATIVE_EXITED", "ZCode stopped responding"),
+            );
+          else resolve();
+        }
+      };
+      const timer = setTimeout(() => {
+        this.stateListeners.delete(done);
+        reject(
+          new AdapterError(
+            "NATIVE_TIMEOUT",
+            "ZCode did not confirm the requested state",
+          ),
+        );
+      }, 30_000);
+      this.stateListeners.add(done);
+      done();
+    });
   }
 
   async close(): Promise<void> {
@@ -463,12 +549,14 @@ export class ZCodeSession {
       if (!this.failed) {
         await this.interrupt();
         await this.cancelPending(true);
+        // Stop event-driven reads before destroying the native session.
+        await this.subscription.dispose();
+        await this.snapshotRead;
         await this.bridge.request(
           "closeSession",
           { workspacePath: this.workspace, sessionId: this.id },
           UnknownResultSchema,
         );
-        await this.subscription.dispose();
       }
     } finally {
       this.listeners.clear();
@@ -560,32 +648,26 @@ export class ZCodeSession {
     this.emit({ type: "config_changed" });
   }
 
-  private async beginTurn(
-    prompt: NativePromptInput,
-    options?: { clientMessageId: string; beforeSend?: () => Promise<void> },
-  ): Promise<ActiveTurn> {
-    this.assertOpen();
-    if (this.active !== undefined) {
-      throw new AdapterError(
-        "SESSION_BUSY",
-        "ZCode session already has an active turn",
-      );
-    }
-    const nativePrompt = await mapPrompt(prompt, this.workspace);
-    this.assertIdle();
-    await options?.beforeSend?.();
-    this.assertIdle();
+  private createActive(): ActiveTurn {
     const id = randomUUID();
-    let resolve!: (result: void) => void;
+    let resolve!: () => void;
     let reject!: (error: unknown) => void;
     const completion = new Promise<void>((ok, fail) => {
       resolve = ok;
       reject = fail;
     });
-    const active: ActiveTurn = {
+    void completion.catch(() => undefined);
+    return {
       id,
       inputId: id,
       tools: new Map(),
+      inputs: new Map(),
+      completedNativeTurns: new Set(),
+      inFlight: 0,
+      announced: false,
+      buffered: [],
+      finishing: false,
+      completionRevision: 0,
       cancelled: false,
       cancelSent: false,
       settled: false,
@@ -593,44 +675,248 @@ export class ZCodeSession {
       resolve,
       reject,
     };
-    void completion.catch(() => undefined);
-    this.active = active;
-    this.emit({
-      type: "turn_started",
-      turnId: id,
-    });
-    const userItem: NativeTimelineItem = {
-      type: "user_message",
-      text: nativePrompt.content,
-      messageId: id,
-      ...(options?.clientMessageId === undefined
-        ? {}
-        : { clientMessageId: options.clientMessageId }),
-    };
-    this.pushTimeline(active, userItem);
-    try {
-      await this.bridge.request(
-        "sendPrompt",
-        {
-          workspacePath: this.workspace,
-          sessionId: this.id,
-          inputId: active.inputId,
-          content: nativePrompt.content,
-          attachments: nativePrompt.attachments,
-        },
-        SendPromptResultSchema,
-        60_000,
-        { sessionId: this.id, inputId: active.inputId },
+  }
+
+  private async beginTurn(
+    prompt: NativePromptInput,
+    options?: {
+      clientMessageId: string;
+      delivery?: "auto" | "steer";
+      beforeSend?: () => Promise<void>;
+    },
+  ): Promise<ActiveTurn> {
+    this.assertOpen();
+    const previous = this.active;
+    if (options?.delivery === "steer" && !previous)
+      throw new AdapterError(
+        "SESSION_BUSY",
+        "ZCode has no active turn to steer",
       );
+    if (previous?.cancelled)
+      throw new AdapterError(
+        "SESSION_BUSY",
+        "ZCode is finishing the current run",
+      );
+    const active = previous ?? this.createActive();
+    this.active = active;
+    active.finishing = false;
+    active.completionRevision++;
+    active.inFlight++;
+    const commandId = previous ? randomUUID() : active.inputId;
+    const input = {
+      clientMessageId: options?.clientMessageId,
+      accepted: false,
+      consumed: false,
+    };
+    active.inputs.set(commandId, input);
+    let sent = false;
+    try {
+      const nativePrompt = await mapPrompt(prompt, this.workspace);
+      if (!nativePrompt.content.trim() && nativePrompt.attachments.length === 0)
+        throw new AdapterError(
+          "UNSUPPORTED_CONTENT",
+          "ZCode requires nonempty input",
+        );
+      await options?.beforeSend?.();
+      this.assertOpen();
+      if (active.cancelled)
+        throw new AdapterError(
+          "SESSION_BUSY",
+          "ZCode input was cancelled before sending",
+        );
+      // A previous stop holds the native queue. Re-enable only for a new explicit run.
+      if (!previous && this.conversation.state?.queue.autoDrain === false)
+        await this.controlCommand("setAutoDrain", { autoDrain: true });
+      const attachments = await uploadAttachments(
+        this.bridge,
+        this.workspace,
+        this.id,
+        nativePrompt.attachments,
+        () => {
+          this.assertOpen();
+          if (active.cancelled)
+            throw new AdapterError(
+              "SESSION_BUSY",
+              "ZCode input was cancelled before sending",
+            );
+        },
+      );
+      this.assertOpen();
+      if (active.cancelled)
+        throw new AdapterError(
+          "SESSION_BUSY",
+          "ZCode input was cancelled before sending",
+        );
+      sent = true;
+      const ack = await conversationCommand(
+        this.bridge,
+        this.workspace,
+        this.id,
+        "sendText",
+        {
+          text: nativePrompt.content,
+          requestedDelivery: attachments.length ? "queue" : "guide",
+          ...(attachments.length ? { attachments } : {}),
+        },
+        { commandId },
+      );
+      if (ack.status !== "accepted") {
+        if (
+          ack.status === "failed" ||
+          ack.status === "rejected" ||
+          ack.status === "stale" ||
+          ack.status === "noop"
+        )
+          throw new AdapterError(
+            "NATIVE_INPUT_REJECTED",
+            "ZCode did not accept the input",
+          );
+        throw new AdapterError(
+          "NATIVE_PROTOCOL_ERROR",
+          "Unexpected duplicate command acknowledgement",
+        );
+      }
+      if (
+        ack.result?.type !== "inputAccepted" ||
+        ack.result.inputId !== commandId ||
+        !ack.result.delivery
+      )
+        throw new AdapterError(
+          "NATIVE_PROTOCOL_ERROR",
+          "ZCode input acknowledgement is inconsistent",
+        );
+      this.assertOpen();
+      input.accepted = true;
+      if (ack.result.delivery === "startNow") input.consumed = true;
+      if (options?.clientMessageId)
+        this.emit({
+          type: "prompt_accepted",
+          clientMessageId: options.clientMessageId,
+          turnId: active.id,
+          delivery: previous ? "steer" : "turn",
+        });
+      if (!active.announced) {
+        active.announced = true;
+        this.emit({ type: "turn_started", turnId: active.id });
+      }
+      this.pushTimeline(active, {
+        type: "user_message",
+        text: nativePrompt.content,
+        messageId: commandId,
+        ...(options?.clientMessageId
+          ? { clientMessageId: options.clientMessageId }
+          : {}),
+      });
+      for (const event of active.buffered.splice(0)) this.emit(event);
       return active;
     } catch (error) {
-      this.failActive(error);
+      if (
+        !sent ||
+        (error instanceof AdapterError &&
+          error.code === "NATIVE_INPUT_REJECTED")
+      ) {
+        active.inputs.delete(commandId);
+        if (!previous && active.inputs.size === 0) this.settle(active);
+      } else {
+        // The host may already own this command. Never retry uncertain delivery.
+        this.runtimeFailed(error instanceof AdapterError ? error : undefined);
+      }
       throw error;
+    } finally {
+      active.inFlight--;
+      this.stateChanged();
+      await this.maybeComplete(active);
+    }
+  }
+
+  private async controlCommand(type: string, payload: unknown): Promise<void> {
+    let revision = this.conversation.state?.revision;
+    if (revision === undefined)
+      throw new AdapterError(
+        "NATIVE_PROTOCOL_ERROR",
+        "ZCode conversation state is unavailable",
+      );
+    // CAS stale acknowledgements prove no mutation occurred; use the returned revision.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const ack = await conversationCommand(
+        this.bridge,
+        this.workspace,
+        this.id,
+        type,
+        payload,
+        { revision },
+      );
+      if (ack.status === "accepted" || ack.status === "noop") return;
+      if (ack.status !== "stale")
+        throw new AdapterError(
+          "NATIVE_PROTOCOL_ERROR",
+          `ZCode ${type} was rejected`,
+        );
+      revision = ack.revisionAtDecision;
+    }
+    throw new AdapterError(
+      "NATIVE_PROTOCOL_ERROR",
+      `ZCode ${type} remained stale`,
+    );
+  }
+
+  private async maybeComplete(active: ActiveTurn): Promise<void> {
+    if (
+      this.active !== active ||
+      active.settled ||
+      active.finishing ||
+      active.inFlight ||
+      this.pendingAdmissions ||
+      active.stopping ||
+      !active.lastTerminal ||
+      !this.conversation.idle
+    )
+      return;
+    if (
+      !active.cancelled &&
+      [...active.inputs.values()].some(
+        (input) => !input.accepted || !input.consumed,
+      )
+    )
+      return;
+    active.finishing = true;
+    const revision = ++active.completionRevision;
+    try {
+      await this.completeActive(active.lastTerminal, revision);
+    } catch (error) {
+      this.runtimeFailed(
+        diagnosticError(error, {
+          ...this.bridge.diagnostic,
+          stage: "session",
+          operation: "complete",
+        }),
+      );
     }
   }
 
   private async handleDynamicEvent(dynamic: DynamicEvent): Promise<void> {
     try {
+      if (dynamic.type === "conversation.frame") {
+        if (this.conversation.accept(dynamic.frame) && this.active) {
+          for (const item of this.conversation.state!.queue.items) {
+            const input = this.active.inputs.get(item.sourceCommandId);
+            if (!input)
+              throw new AdapterError(
+                "NATIVE_PROTOCOL_ERROR",
+                "ZCode queued an unrequested input",
+              );
+            input.queueItemId = item.queueItemId;
+          }
+          await this.maybeComplete(this.active);
+        }
+        if (!this.active && this.conversation.state && !this.conversation.idle)
+          throw new AdapterError(
+            "NATIVE_PROTOCOL_ERROR",
+            "ZCode has native work outside the active public run",
+          );
+        this.stateChanged();
+        return;
+      }
       if (dynamic.type === "snapshot") {
         this.updateSnapshot(dynamic.snapshot);
         this.publishTodos(dynamic.snapshot);
@@ -762,11 +1048,90 @@ export class ZCodeSession {
       return;
     }
     if (KNOWN_NOOP_EVENTS.has(event.type)) return;
+    if (event.turnId && this.cancelledNativeTurns.has(event.turnId)) return;
     if (active === undefined) {
       throw new AdapterError(
         "NATIVE_PROTOCOL_ERROR",
         "ZCode emitted a turn event while idle",
       );
+    }
+    if (event.type === "turn.started") {
+      const inputId = z
+        .object({ inputId: z.string().optional() })
+        .parse(event.payload).inputId;
+      const input = inputId ? active.inputs.get(inputId) : undefined;
+      if (
+        !input ||
+        !event.turnId ||
+        active.completedNativeTurns.has(event.turnId)
+      )
+        throw new AdapterError(
+          "NATIVE_PROTOCOL_ERROR",
+          "ZCode started an unrequested turn",
+        );
+      if (
+        active.nativeTurnId &&
+        active.nativeTurnId !== event.turnId &&
+        !active.completedNativeTurns.has(active.nativeTurnId)
+      )
+        throw new AdapterError(
+          "NATIVE_PROTOCOL_ERROR",
+          "ZCode started overlapping native turns",
+        );
+      active.nativeTurnId = event.turnId;
+      active.lastTerminal = undefined;
+      input.consumed = true;
+      input.nativeTurnId = event.turnId;
+      // Delimit text across native turns even when the public turn is unchanged.
+      this.emit({ type: "timeline_boundary" });
+      return;
+    }
+    if (event.type === "turn.steerQueued") {
+      const queued = z
+        .object({
+          pendingInputId: z.string().min(1),
+          inputId: z.string().min(1).optional(),
+          queryId: z.string().min(1).optional(),
+          targetTurnId: z.string().min(1),
+        })
+        .parse(event.payload);
+      const input = active.inputs.get(queued.inputId ?? queued.queryId ?? "");
+      if (!input)
+        throw new AdapterError(
+          "NATIVE_PROTOCOL_ERROR",
+          "ZCode queued an unknown input",
+        );
+      // Native deferred admission anchors this event to the previous assistant
+      // turn, or "deferred" before the first turn. Only drain/start identifies
+      // which executing turn consumes the input.
+      input.queueItemId = queued.pendingInputId;
+      return;
+    }
+    if (event.type === "turn.steerDrained") {
+      const drained = z
+        .object({
+          pendingInputIds: z.array(z.string()),
+          targetTurnId: z.string(),
+        })
+        .parse(event.payload);
+      if (active.nativeTurnId !== drained.targetTurnId)
+        throw new AdapterError(
+          "NATIVE_PROTOCOL_ERROR",
+          "ZCode steered another native turn",
+        );
+      for (const id of drained.pendingInputIds) {
+        const input = [...active.inputs.values()].find(
+          (candidate) => candidate.queueItemId === id,
+        );
+        if (!input)
+          throw new AdapterError(
+            "NATIVE_PROTOCOL_ERROR",
+            "ZCode consumed an unknown input",
+          );
+        input.consumed = true;
+        input.nativeTurnId = drained.targetTurnId;
+      }
+      return;
     }
     if (event.turnId !== undefined) {
       active.nativeTurnId ??= event.turnId;
@@ -786,16 +1151,32 @@ export class ZCodeSession {
       return;
     }
     if (event.type === "turn.completed") {
-      await this.completeActive(event.payload);
+      if (active.nativeTurnId)
+        active.completedNativeTurns.add(active.nativeTurnId);
+      active.lastTerminal = event.payload;
+      await this.maybeComplete(active);
       return;
     }
     if (event.type === "turn.failed") {
       if (active.cancelled) {
-        this.finishCancelled(active);
+        active.lastTerminal = { resultType: "cancelled" };
+        await this.maybeComplete(active);
       } else {
-        this.failActive(
-          new AdapterError("NATIVE_PROTOCOL_ERROR", "ZCode turn failed"),
-        );
+        active.cancelled = true;
+        // State confirmations arrive on this subscription; do not block its
+        // event consumer while stopping native automatic queue execution.
+        active.stopping = this.stopAndClear(active);
+        void active.stopping
+          .then(() => {
+            this.failActive(
+              new AdapterError("NATIVE_PROTOCOL_ERROR", "ZCode turn failed"),
+            );
+          })
+          .catch((error) =>
+            this.runtimeFailed(
+              error instanceof AdapterError ? error : undefined,
+            ),
+          );
       }
       return;
     }
@@ -957,6 +1338,7 @@ export class ZCodeSession {
 
   private async completeActive(
     payload: Record<string, unknown>,
+    revision: number,
   ): Promise<void> {
     const active = this.active;
     if (active === undefined) {
@@ -965,6 +1347,7 @@ export class ZCodeSession {
         "ZCode completed an absent turn",
       );
     }
+    if (active.settled || active.stopping) return;
     const resultType = payload.resultType;
     const accepted = new Set([
       "success",
@@ -996,6 +1379,12 @@ export class ZCodeSession {
       outputTokens: nativeUsage.outputTokens,
       ...this.contextUsage,
     };
+    if (
+      active.settled ||
+      active.stopping ||
+      active.completionRevision !== revision
+    )
+      return;
     const cancelled =
       active.cancelled ||
       resultType === "cancelled" ||
@@ -1019,6 +1408,10 @@ export class ZCodeSession {
   }
 
   private finishCancelled(active: ActiveTurn): void {
+    if (active.settled) return;
+    if (active.nativeTurnId) this.cancelledNativeTurns.add(active.nativeTurnId);
+    for (const id of active.completedNativeTurns)
+      this.cancelledNativeTurns.add(id);
     this.emit({
       type: "turn_canceled",
       reason: "cancelled",
@@ -1421,6 +1814,17 @@ export class ZCodeSession {
   }
 
   private emit(event: NativeSessionEvent): void {
+    if (
+      this.active &&
+      !this.active.announced &&
+      (event.type === "timeline" ||
+        event.type === "timeline_boundary" ||
+        event.type === "permission_requested" ||
+        event.type === "usage_updated")
+    ) {
+      this.active.buffered.push(event);
+      return;
+    }
     for (const listener of this.listeners) listener(event);
   }
 
