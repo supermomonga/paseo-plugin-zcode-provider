@@ -48,6 +48,7 @@ try {
       "packages/server/src/server/agent/plugin-provider.ts",
     ),
     provider: join(root, "server/provider.ts"),
+    persistence: join(root, "server/persistence.ts"),
     fake: join(root, "test/fake-host.ts"),
   };
   for (const [name, entry] of Object.entries(sources))
@@ -84,18 +85,42 @@ try {
 
   const { PluginAgentClientRegistry } = await load("adapter");
   const { createZCodeProvider } = await load("provider");
+  const { SessionPersistenceStore } = await load("persistence");
   const { FakeBridge, snapshot, completeTurn } = await load("fake");
   const hosts = [];
-  const registry = new PluginAgentClientRegistry({ warn() {} });
-  registry.replace([
-    createZCodeProvider(async () => {
-      const initial = snapshot(directory);
-      initial.runtime.contextUsage = { used: 20, size: 100 };
-      const host = new FakeBridge(initial);
-      hosts.push(host);
-      return host;
-    }),
-  ]);
+  const warnings = [];
+  const registry = new PluginAgentClientRegistry({
+    warn(...args) {
+      warnings.push(args);
+    },
+  });
+  function createRegistration(initial) {
+    return createZCodeProvider(
+      async () => {
+        const host = new FakeBridge(structuredClone(initial));
+        hosts.push(host);
+        return host;
+      },
+      new SessionPersistenceStore(join(directory, "provider-state")),
+    );
+  }
+  const initial = snapshot(directory);
+  initial.runtime.contextUsage = { used: 20, size: 100 };
+  const registration = createRegistration(initial);
+  const closed = Promise.withResolvers();
+  let connectionCloseCount = 0;
+  const connect = registration.connect;
+  registration.connect = async (request) => {
+    const connection = await connect(request);
+    const close = connection.close.bind(connection);
+    connection.close = async () => {
+      connectionCloseCount += 1;
+      await close();
+      closed.resolve();
+    };
+    return connection;
+  };
+  registry.replace([registration]);
   try {
     const client = registry.clients().zcode;
     const catalog = await client.fetchCatalog({
@@ -173,13 +198,107 @@ try {
       ).length,
       1,
     );
-    assert.ok(session.describePersistence());
-    await session.close();
+    const persistence = session.describePersistence();
+    assert.ok(persistence);
+
+    // Simulate the native transcript retained after the completed turn.
+    const saved = structuredClone(host.current);
+    saved.messages = [
+      {
+        info: { messageId: "native-user-1", role: "user" },
+        parts: [{ type: "text", text: "Hello" }],
+      },
+      {
+        info: { messageId: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "hello" }],
+      },
+    ];
+    registry.replace([createRegistration(saved)]);
+    await closed.promise;
+    assert.equal(connectionCloseCount, 1);
     assert.equal(host.closed, true);
-    console.log(JSON.stringify({ initialUsageReplayed, liveUsage: "passed" }));
+    await assert.rejects(
+      session.startTurn("Stale session", { clientMessageId: "stale-message" }),
+      { name: "StaleProviderSessionError" },
+    );
+    await session.close();
+    assert.equal(connectionCloseCount, 1);
+    assert.equal(
+      host.calls.filter(({ method }) => method === "sendPrompt").length,
+      1,
+    );
+
+    const replacement = registry.clients().zcode;
+    assert.notEqual(replacement, client);
+    const resumed = await replacement.resumeSession(persistence, {
+      cwd: directory,
+      modeId: "edit",
+    });
+    const resumedHost = hosts.at(-1);
+    assert.notEqual(resumedHost, host);
+    assert.deepEqual(
+      resumedHost.calls
+        .filter(({ method }) => method === "resumeSession")
+        .map(({ params }) => params),
+      [{ workspacePath: directory, sessionId: "session-1", mcpServers: [] }],
+    );
+    assert.equal(
+      resumedHost.calls.some(({ method }) => method === "createSession"),
+      false,
+    );
+    assert.deepEqual(resumed.describePersistence(), persistence);
+    assert.deepEqual(
+      resumed
+        .timelineHistory()
+        .filter(
+          ({ item }) =>
+            item.type === "user_message" || item.type === "assistant_message",
+        )
+        .map(({ item }) => ({ type: item.type, text: item.text })),
+      [
+        { type: "user_message", text: "Hello" },
+        { type: "assistant_message", text: "hello" },
+      ],
+    );
+    const resumedEvents = [];
+    resumed.subscribe((event) => resumedEvents.push(event));
+    const resumedInitialUsageReplayed = resumedEvents.some(
+      (event) => event.type === "usage_updated",
+    );
+    const resumedTurn = await resumed.startTurn("After reload", {
+      clientMessageId: "after-reload",
+    });
+    await completeTurn(resumedHost);
+    assert.equal(
+      resumedEvents.find((event) => event.type === "turn_completed").turnId,
+      resumedTurn.turnId,
+    );
+    assert.deepEqual(
+      resumedEvents
+        .filter(
+          (event) =>
+            event.type === "timeline" && event.item.type === "user_message",
+        )
+        .map((event) => event.item.text),
+      ["After reload"],
+    );
+    assert.equal(
+      resumedHost.calls.filter(({ method }) => method === "sendPrompt").length,
+      1,
+    );
+    await resumed.close();
+    assert.equal(resumedHost.closed, true);
+    console.log(
+      JSON.stringify({
+        initialUsageReplayed,
+        resumedInitialUsageReplayed,
+        liveUsage: "passed",
+      }),
+    );
   } finally {
     await registry.shutdown();
   }
+  assert.deepEqual(warnings, []);
   console.log(
     JSON.stringify(
       {
@@ -189,6 +308,10 @@ try {
         compiledBytes: Buffer.byteLength(serverBundle),
         registration: "passed",
         coreAdapter: "passed",
+        providerReplacement: "passed",
+        persistenceResume: "passed",
+        historyReplay: "passed",
+        resumedTurn: "passed",
       },
       null,
       2,

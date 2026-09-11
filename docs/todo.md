@@ -1,6 +1,6 @@
 # 未実装項目
 
-調査基準は Paseo main `c424f82922fcd36aa9cc9e473644bca04417b420`、patcher `572100368774df7632728a72568466ac3632d458`（2026-09-07）です。以下は残作業であり、完了扱いにはしていません。
+当初の調査基準は Paseo main `c424f82922fcd36aa9cc9e473644bca04417b420`、patcher `572100368774df7632728a72568466ac3632d458`（2026-09-07）です。Paseo 0.8.0 で再確認した項目は個別に記載しています。
 
 ## Paseo 本体の公開 API に不足がある項目
 
@@ -15,6 +15,7 @@
   - プラグインは native snapshot の使用量を `session.ready` より前に `session.usage` として送信します。
   - main のアダプターは初期イベントを内部履歴に取り込みますが、その後の `subscribe` で使用量を再通知しません。AgentManager の履歴復元も timeline 以外を使用量として反映しません。以降に到着する使用量更新は通知できます。
   - 現在は実際の初期値を通常どおり送信します。購読時点に合わせるタイマーや架空の変化通知は使いません。
+  - Paseo `v0.8.0` の実アダプターでも初期使用量の再通知がないことと、その後の更新が届くことを確認しました。詳細は [検証記録](verification.md) を参照してください。
   - 完了条件: 本体が最新の使用量を保持し、新規購読・復元時に反映すること。会話を送信しなくても初期表示できることを UI で確認すること。
   - 根拠: [PluginAgentSession](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/plugin-provider.ts#L1020)、[AgentManager](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/agent-manager.ts)。
 
@@ -38,9 +39,11 @@
   - 未パッチの対応 main でプラグインをインストールし、実モデルへの送信、ツール、質問、計画承認・却下、割り込み、Paseo 再起動後の復元を確認すること。
   - 現時点の検証結果と未実施範囲は [verification.md](verification.md) を参照してください。
 
-- [ ] **Provider API を含む SDK リリースへの開発依存の切替**
-  - 現在の npm `@getpaseo/plugin@0.7.2` は `/provider` を含みません。型検査・ローカルテストには main の公開ソースを固定保存し、実行時は main の SDK を使用します。
-  - 対応するリリースの公開後に、実際のパッケージの export と main との互換性を検証し、保存済みソースを削除して公開パッケージに切り替えること。
+## 完了済み
+
+- [x] **Provider API を含む SDK リリースへの開発依存の切替**
+  - 2026-09-08 に公開 SDK `0.8.0-beta.1` へ切り替え、Provider API の保存済みソースと alias を削除しました。
+  - 2026-09-11 に SDK 3パッケージを正式版 `0.8.0` に固定し、同版の実コンパイラ・アダプターとの互換性を確認しました。実行時は引き続き Paseo が提供する `@getpaseo/plugin/server/provider` を使用します。
 
 ## 自動対応しない事項
 

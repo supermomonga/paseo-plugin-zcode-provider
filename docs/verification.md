@@ -1,5 +1,20 @@
 # 検証記録
 
+## 2026-09-11: Paseo 0.8.0 正式版への対応
+
+対象は [Issue #7](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/7)。Paseo のリリースタグ `v0.8.0`、commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f` と、npm 公開済みの `@getpaseo/plugin`・`@getpaseo/client`・`@getpaseo/protocol` の `0.8.0` を使用しました。
+
+- SDK 3パッケージとロックファイルを正式版に更新し、manifest の要求を `>=0.8.0` に変更。`index.server.ts` と実行時別の import は移行済みで、利用する Provider API の型・スキーマにベータ版からの変更はありません。Provider 実装・保存形式の変更は行っていません。
+- `npm ci` が成功し、`npm ls` でも SDK 3パッケージがすべて `0.8.0` であることを確認。`npm run typecheck`、`npm test`（11ファイル・129テスト）、`npm run build` が成功しました。SDK と Zod が外部モジュールのままであることも検査しています。
+- `npm run test:upstream -- /absolute/path/to/paseo-v0.8.0` が成功。正式版の実コンパイラによるサーバーエントリーのコンパイル・登録と、実アダプター経由のモデル取得、送信、ストリーミング、使用量更新、終了を確認しました。
+- 上流検証にプロバイダー差し替えのケースを追加。旧接続の終了が1回であること、旧セッションへの送信が `StaleProviderSessionError` になること、旧セッションを終了できることを確認しました。別の Provider と保存ストアのインスタンスで同じ保存情報を読み直し、新規会話を作らず native ID `session-1` を再開。ユーザー・アシスタントの履歴を復元し、次の送信とターン完了、host 終了まで成功しました。ZCode host と native 履歴はテスト用実装です。対応情報は検証用一時ディレクトリに保存し、終了時に削除します。
+- 初期使用量は作成時 `initialUsageReplayed: false`、再開時 `resumedInitialUsageReplayed: false`。その後の更新は `liveUsage: passed` です。初期値が再通知されない既存の制約は未解消として残し、回避処理は追加していません。
+- macOS arm64 の実 ZCode 3.11.2 / CLI 0.16.5 に対する `npm run test:runtime` が成功。公開 Provider 経由で初期化し、3モデル・3編集モード・既定モデルあり、host の正常終了を確認しました。会話作成・プロンプト送信は行っていません。
+- `npm run check:paseo-releases -- --dry-run` は `No Paseo release newer than 0.8.0`。対応基準が正式版になり、同版が候補に出ないことを確認しました。GitHub Issue の作成は行っていません。
+- `npm run format:check` と `git diff --check` が成功しました。
+
+今回の検証範囲は自動テストと実ホストの一覧取得までです。上流テストはアダプターを通じて明示的に再開しており、daemon が自動で復旧する一連の動作、実モデルへの送信、実画面からの操作・復元、アプリや daemon の再起動は検証していません。Linux / Windows / macOS x64 の実機検証も未実施です。ベータ版で行った実モデル・画面検証は、下記の過去記録と区別しています。
+
 ## 2026-09-09: Windowsの既定インストール先の修正
 
 - Windowsの既定値を `%LOCALAPPDATA%\Programs\ZCode` に変更。検出処理と同じ環境を参照し、明示指定がある場合は `LOCALAPPDATA` を要求しません。既定値を使う場合の未設定・空・相対パスは `INVALID_CONFIGURATION` になります。

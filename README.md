@@ -5,7 +5,9 @@ Use ZCode models, tools, and conversation history in [Paseo](https://github.com/
 ![ZCode conversation in Paseo](images/zcode-conversation.png)
 
 > [!NOTE]
-> This plugin is under development. It requires Paseo **0.8.0-beta.1 or later**. On macOS arm64, actual-host initialization, model listing, prompt responses, plan approval, and session restoration across separate processes have been verified. UI checks used an isolated daemon with the provider registered as `codex`; the screenshot above was supplied by the author and shows a ZCode conversation in Paseo. Actual tool execution and conversation restoration after restarting the Paseo app remain unverified. See the [verification notes](docs/verification.md) for details.
+> This plugin is under development and requires Paseo **0.8.0 or later**. Verification on 0.8.0 covers automated SDK/compiler/adapter tests, including provider replacement and session restoration, plus actual ZCode host initialization and model listing on macOS arm64. Real-model submission and UI restoration have not been reverified on 0.8.0.
+>
+> Earlier 0.8.0-beta.1 checks covered actual prompt responses, plan approval, and restoration across separate processes; UI checks used an isolated daemon with the provider registered as `codex`. Actual tool execution and restoration after restarting the Paseo app remain unverified. The screenshot above was supplied by the author. See the [verification notes](docs/verification.md) for details.
 
 > [!IMPORTANT]
 > This project is an unofficial tool and is not officially released, endorsed, or maintained by ZCode or Z.ai.
@@ -33,7 +35,7 @@ These requirements apply to the **machine running the Paseo daemon**.
 | ZCode              | **3.11.2**, with bundled CLI **0.16.5**       |
 | ZCode installation | Official installation; default paths below    |
 | Node.js            | **22.12.0 or later**                          |
-| Paseo              | **0.8.0-beta.1 or later**.                    |
+| Paseo              | **0.8.0 or later**                            |
 
 Default installation paths are `/Applications/ZCode.app` on macOS, `/opt/ZCode` on Linux, and `%LOCALAPPDATA%\Programs\ZCode` on Windows. For a nonstandard location, set `PASEO_ZCODE_INSTALL` to its absolute path in the Paseo daemon environment. Specify the installation directory, not `zcode.cjs`. On Windows, the default requires `LOCALAPPDATA` to be a nonempty absolute path in that same environment; otherwise set `PASEO_ZCODE_INSTALL` explicitly. Installations under Program Files also require explicit configuration. An invalid explicit path fails instead of reverting to the default. The installed bundle's OS and CPU must match the daemon process; emulation does not bypass this check.
 
@@ -93,7 +95,7 @@ The installation command above tracks this repository's default branch. Check th
 - Browser control is unsupported. MCP `alwaysLoad` is unsupported, and stdio server commands must use absolute paths.
 - **Custom system prompts and `persist: false` are unsupported.** Both produce `INVALID_CONFIGURATION`. This also applies to additional instructions configured in the Paseo daemon or Agent Profiles.
 - Integration with the standard account quota, reset time, and provider diagnostics panels is not implemented.
-- In the verified Paseo version, initial context usage is not reflected in the standard UI immediately after creating or resuming a session. Subsequent usage updates are delivered.
+- In Paseo 0.8.0, initial context usage is not replayed to subscribers immediately after creating or resuming a session, so the standard UI cannot display that initial value. Subsequent usage updates are delivered.
 - Steering during generation, conversation rewind, structured output, independent child session management, and automatic conversion of persistence handles from the old patcher are unsupported.
 
 See [remaining work](docs/todo.md) for the evidence and conditions for resolving each limitation.

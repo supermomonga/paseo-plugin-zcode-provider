@@ -10,7 +10,7 @@
 
 ZCode のプログラム、認証情報、モデル設定は同梱していません。利用者がインストール済みの公式 host を実行時に使用します。
 
-開発とテストには公開済みの `@getpaseo/plugin@0.8.0-beta.1` を使用します。Provider API のソースコピーは削除しました。ビルドは `@getpaseo/plugin/server/provider` と `zod` を外部モジュールとして維持し、実行環境の Paseo に解決させます。`index.server.ts` は公開の `PluginServerContext` を使用します。
+開発とテストには公開済みの `@getpaseo/plugin@0.8.0` を使用します。Provider API のソースコピーは削除しました。ビルドは `@getpaseo/plugin/server/provider` と `zod` を外部モジュールとして維持し、実行環境の Paseo に解決させます。`index.server.ts` は公開の `PluginServerContext` を使用します。
 
 `icon.svg` は [Paseo main c424f829 の glm-acp-agent.svg](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/app/src/assets/acp-provider-icons/glm-acp-agent.svg) のコピーです。この SVG は [ACP Registry の glm-acp-agent/icon.svg](https://github.com/agentclientprotocol/registry/blob/f3826ddd6e35951ea9b7fd0cf43c35a30c3c64cd/glm-acp-agent/icon.svg) とバイト単位で一致します。ACP Registry は Apache-2.0 で配布されており、その [LICENSE](vendor/acp-registry/LICENSE) を保持しています。アイコンは変更していません。商標への権利や公式の承認を示すものではありません。
 

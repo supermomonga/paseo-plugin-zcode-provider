@@ -19,9 +19,9 @@
     "check:paseo-releases": "node scripts/check-paseo-releases.mjs"
   },
   "devDependencies": {
-    "@getpaseo/client": "0.8.0-beta.1",
-    "@getpaseo/plugin": "0.8.0-beta.1",
-    "@getpaseo/protocol": "0.8.0-beta.1",
+    "@getpaseo/client": "0.8.0",
+    "@getpaseo/plugin": "0.8.0",
+    "@getpaseo/protocol": "0.8.0",
     "@types/node": "22.18.3",
     "cheerio": "1.2.0",
     "esbuild": "0.25.12",

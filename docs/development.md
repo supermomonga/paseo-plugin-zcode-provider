@@ -2,7 +2,7 @@
 
 For installation and usage, see the [README](../README.md#installation).
 
-From a local checkout, run `npm ci` to install development dependencies before running the commands below. Development SDKs are pinned to **0.8.0-beta.1**.
+From a local checkout, run `npm ci` to install development dependencies before running the commands below. Development SDKs are pinned to **0.8.0**.
 
 | Command                                                        | Purpose                                                                                          |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -13,7 +13,9 @@ From a local checkout, run `npm ci` to install development dependencies before r
 | `npm run test:upstream -- /absolute/path/to/upstream-checkout` | Run integration checks using a compatible Paseo checkout's actual compiler and provider adapter. |
 | `npm run test:runtime -- /absolute/path/to/workspace`          | Initialize the installed ZCode host and retrieve its model catalog.                              |
 
-`test:upstream` requires a Paseo checkout at `v0.8.0-beta.1`. It checks that the checkout matches the installed SDK version and uses the released SDK with the actual upstream compiler and provider adapter. Dependencies resolve from this plugin's `node_modules`. It uses a test implementation of the ZCode host.
+`test:upstream` requires a Paseo checkout at `v0.8.0` (commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f`). It checks that the checkout matches the installed SDK version and uses the released SDK with the actual upstream compiler and provider adapter. Dependencies resolve from this plugin's `node_modules`. It uses a test implementation of the ZCode host.
+
+The check covers registration, model discovery, streaming, usage updates, and provider replacement. After replacement it waits for the old connection to close, verifies that the old session rejects prompts, and resumes through a new provider instance using the saved persistence handle. It checks native-session reuse, transcript replay, and a subsequent turn. Persistence records stay in a temporary directory removed when the check finishes. This does not exercise the daemon's automatic recovery or the app UI.
 
 `test:runtime` accesses ZCode's existing user data but does not create conversations or send prompts. Successful model listing or CLI diagnostics alone do not verify that prompts can be sent to a real model.
 
