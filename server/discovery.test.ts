@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { posix, win32 } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { CURRENT_ZCODE_ARTIFACT as artifact } from "./discovery/manifest.js";
+import { VERIFIED_ZCODE_ARTIFACT as artifact } from "./discovery/manifest.js";
 
 const targets = [
   "darwin-arm64",
@@ -45,7 +45,11 @@ async function fixture(target: string) {
   const inspection = {
     hostIndexSha256: artifact.hostIndexSha256,
     hostRpcModuleSha256: artifact.hostRpcModuleSha256,
-    exports: ["g", "i", "j"],
+    rpcExports: {
+      protocol: "protocolAlias",
+      client: "clientAlias",
+      service: "serviceAlias",
+    },
   };
   const children: Array<
     EventEmitter & {
@@ -59,7 +63,11 @@ async function fixture(target: string) {
   let stall = false;
   let onSpawn = () => {};
   const spawn = vi.fn(
-    (command: string, args: string[], options: { signal?: AbortSignal }) => {
+    (
+      command: string,
+      args: string[],
+      options: { signal?: AbortSignal; cwd: string },
+    ) => {
       const child = Object.assign(new EventEmitter(), {
         stdout: new PassThrough(),
         stderr: new PassThrough(),
@@ -84,12 +92,24 @@ async function fixture(target: string) {
           return;
         }
         const output = command.includes("PlistBuddy")
-          ? "3.11.2"
+          ? packageVersion
           : args.includes("version")
             ? "0.16.5"
             : args[1]?.includes("const value=require")
               ? packageVersion
-              : JSON.stringify(inspection);
+              : args[1]?.includes("process.stdout.write(fs.readFileSync")
+                ? 'import { value } from "./rpc.js";'
+                : JSON.stringify({
+                    result: {
+                      ...inspection,
+                      hostRpcModule: path.join(
+                        options.cwd,
+                        platform === "darwin"
+                          ? "Contents/Resources/app.asar/out/host/rpc.js"
+                          : "resources/app.asar/out/host/rpc.js",
+                      ),
+                    },
+                  });
         child.stdout.end(output);
         child.emit("exit", 0, null);
       });
@@ -353,7 +373,7 @@ describe("runtime discovery on each OS", () => {
     expect(f.spawn).not.toHaveBeenCalled();
   });
 
-  test("rejects missing versions and incompatible hosts", async () => {
+  test("rejects missing versions but allows future releases and changed hashes", async () => {
     const f = await fixture("linux-x64");
     const options = { platform: f.platform, architecture: f.architecture };
     f.setVersion("");
@@ -361,19 +381,21 @@ describe("runtime discovery on each OS", () => {
       code: "RUNTIME_DISCOVERY_FAILED",
     });
     f.setVersion("3.11.3");
-    expect((await f.discoverRuntime(options)).compatibility).toBe(
-      "unsupported",
-    );
+    expect((await f.discoverRuntime(options)).compatibility).toBe("supported");
     f.setVersion("3.11.2");
     f.inspection.hostIndexSha256 = "0".repeat(64);
-    expect((await f.discoverRuntime(options)).compatibility).toBe(
-      "unsupported",
-    );
-    f.inspection.hostIndexSha256 = artifact.hostIndexSha256;
-    f.inspection.exports = [];
-    expect((await f.discoverRuntime(options)).compatibility).toBe(
-      "unsupported",
-    );
+    const runtime = await f.discoverRuntime(options);
+    expect(runtime.compatibility).toBe("supported");
+    expect(runtime.resolvedHost?.artifactMatch).toBe(false);
+    f.setVersion("3.10.0");
+    const older = await f.discoverRuntime(options);
+    expect(older.compatibility).toBe("unsupported");
+    expect(() => f.assertRuntimeSupported(older)).toThrow();
+    f.setVersion("3.11.2");
+    f.inspection.rpcExports.protocol = "";
+    await expect(f.discoverRuntime(options)).rejects.toMatchObject({
+      code: "RUNTIME_DISCOVERY_FAILED",
+    });
   });
 
   test("propagates cancellation and rejects timed-out inspection processes", async () => {

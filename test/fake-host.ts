@@ -1,3 +1,4 @@
+import { AdapterError } from "../server/errors.js";
 import type { z } from "zod";
 import type { HostBridge, HostSubscription } from "../server/host/bridge.js";
 import type {
@@ -42,6 +43,11 @@ export function snapshot(workspace: string): SessionSnapshot {
 }
 
 export class FakeBridge implements HostBridge {
+  readonly diagnostic = {
+    appVersion: "3.11.2",
+    cliVersion: "0.16.5",
+    platform: "darwin-arm64",
+  };
   readonly calls: Array<{ method: string; params: unknown }> = [];
   private handler: ((event: DynamicEvent) => Promise<void> | void) | undefined;
 
@@ -141,15 +147,15 @@ export class FakeBridge implements HostBridge {
   }
 
   closed = false;
-  failures = new Set<() => void>();
-  onFailure(listener: () => void) {
+  failures = new Set<(error: AdapterError) => void>();
+  onFailure(listener: (error: AdapterError) => void) {
     this.failures.add(listener);
     return () => {
       this.failures.delete(listener);
     };
   }
-  fail() {
-    for (const listener of this.failures) listener();
+  fail(error = new AdapterError("NATIVE_EXITED", "ZCode host disconnected")) {
+    for (const listener of this.failures) listener(error);
   }
   async close(): Promise<void> {
     this.closed = true;

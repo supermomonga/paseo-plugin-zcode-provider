@@ -1,3 +1,4 @@
+import { diagnosticError } from "../server/diagnostics.js";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1005,4 +1006,52 @@ it("enters planning before sending the /plan task alone", async () => {
     mode: "yolo",
     settings: [{ value: true }],
   });
+});
+
+it("publishes reportable diagnostics when the native process fails", async () => {
+  const f = await fixture();
+  const host = await f.open();
+  host.fail(
+    diagnosticError(new AdapterError("NATIVE_EXITED", "secret-stderr"), {
+      stage: "transport",
+      check: "native-exit",
+      exitCode: 1,
+    }),
+  );
+  const event = await f.wait("session.runtime_failed");
+  expect(JSON.parse(event.error.diagnostic!)).toMatchObject({
+    appVersion: "3.11.2",
+    cliVersion: "0.16.5",
+    platform: "darwin-arm64",
+    stage: "transport",
+    check: "native-exit",
+    exitCode: 1,
+  });
+  expect(JSON.stringify(event)).not.toContain("secret-stderr");
+});
+
+it("publishes diagnostics for incompatible events after successful startup", async () => {
+  const f = await fixture();
+  const host = await f.open();
+  await f.prompt();
+  await host.emit({
+    type: "session.event",
+    event: {
+      eventId: "event-1",
+      sessionId: "session-1",
+      seq: 1,
+      timestamp: 1,
+      deliveryKind: "desktop-continuous",
+      type: "secret-unknown",
+      payload: {},
+    },
+  });
+  const event = await f.wait("session.runtime_failed");
+  expect(JSON.parse(event.error.diagnostic!)).toMatchObject({
+    stage: "notification",
+    check: "native-event",
+    operation: "event",
+    appVersion: "3.11.2",
+  });
+  expect(JSON.stringify(event)).not.toContain("secret-unknown");
 });

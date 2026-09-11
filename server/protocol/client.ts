@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { AdapterError } from "../errors.js";
+import { diagnosticError, type RuntimeDiagnostic } from "../diagnostics.js";
 import type { Logger } from "../logger.js";
 import {
   NativeEnvelopeSchema,
@@ -52,7 +53,8 @@ export class ZCodeProtocolClient {
     private readonly logger: Logger,
     private readonly reverseRequestHandler?: ReverseRequestHandler,
     private readonly notificationHandler?: NotificationHandler,
-    private readonly failureHandler?: () => void,
+    private readonly failureHandler?: (error: AdapterError) => void,
+    private readonly diagnostic: RuntimeDiagnostic = {},
   ) {}
 
   start(): void {
@@ -70,42 +72,55 @@ export class ZCodeProtocolClient {
     timeoutMs = 30_000,
     diagnosticContext?: NativeRequestDiagnosticContext,
   ): Promise<z.output<Schema>> {
+    const context = {
+      ...this.diagnostic,
+      operation: diagnosticContext?.operation ?? method,
+    };
     if (this.closed) {
-      throw new AdapterError(
-        "NATIVE_EXITED",
-        "Native protocol transport is closed",
+      throw diagnosticError(
+        new AdapterError(
+          "NATIVE_EXITED",
+          "Native protocol transport is closed",
+        ),
+        { ...context, stage: "transport", check: "native-exit" },
       );
     }
     if (this.pending.size >= MAX_PENDING_NATIVE_REQUESTS) {
-      throw new AdapterError(
-        "NATIVE_PROTOCOL_ERROR",
-        `Native pending request limit exceeded: ${MAX_PENDING_NATIVE_REQUESTS}`,
+      throw diagnosticError(
+        new AdapterError(
+          "NATIVE_PROTOCOL_ERROR",
+          `Native pending request limit exceeded: ${MAX_PENDING_NATIVE_REQUESTS}`,
+        ),
+        { ...context, stage: "request" },
       );
     }
     this.start();
-
     const id = this.nextRequestId++;
     const key = String(id);
     const response = new Promise<z.output<Schema>>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(key);
         reject(
-          new AdapterError(
-            "NATIVE_TIMEOUT",
-            `Native request timed out: ${method}`,
-            {
-              method,
-              timeoutMs,
-            },
+          diagnosticError(
+            new AdapterError(
+              "NATIVE_TIMEOUT",
+              `Native request timed out: ${method}`,
+              {
+                method,
+                timeoutMs,
+              },
+            ),
+            { ...context, stage: "request", check: "request-timeout" },
           ),
         );
       }, timeoutMs);
 
       this.pending.set(key, {
-        method,
+        method: diagnosticContext?.operation ?? method,
         parse: (value) => resultSchema.parse(value),
         resolve: (value) => resolve(value as z.output<Schema>),
-        reject,
+        reject: (error) =>
+          reject(diagnosticError(error, { ...context, stage: "request" })),
         timer,
       });
     });
@@ -129,7 +144,12 @@ export class ZCodeProtocolClient {
           });
         }
       })
-      .catch((error: unknown) => {
+      .catch((cause: unknown) => {
+        const error = diagnosticError(cause, {
+          ...context,
+          stage: "request",
+          check: "request-write",
+        });
         if (diagnosticContext !== undefined) {
           this.logger.error("zcode.native_request.write.failed", error, {
             ...diagnosticContext,
@@ -168,12 +188,20 @@ export class ZCodeProtocolClient {
         throw new AdapterError(
           "NATIVE_EXITED",
           "Native stdout closed unexpectedly",
+          {},
+          undefined,
+          { stage: "transport", check: "native-exit" },
         );
       }
-    } catch (error) {
+    } catch (cause) {
+      const error = diagnosticError(cause, {
+        ...this.diagnostic,
+        stage: "transport",
+        check: "native-envelope",
+      });
       this.closed = true;
       this.rejectAll(error);
-      this.failureHandler?.();
+      this.failureHandler?.(error);
       this.logger.error("zcode.transport.failed", error);
       await this.transport.close().catch((closeError) => {
         this.logger.error("zcode.transport.close_failed", closeError);
@@ -203,12 +231,18 @@ export class ZCodeProtocolClient {
           () => {
             this.queuedNotificationCount -= 1;
           },
-          (error) => {
+          (cause) => {
+            const error = diagnosticError(cause, {
+              ...this.diagnostic,
+              stage: "notification",
+              operation: "event",
+              check: "native-event",
+            });
             this.queuedNotificationCount -= 1;
             if (this.closed) return;
             this.closed = true;
             this.rejectAll(error);
-            this.failureHandler?.();
+            this.failureHandler?.(error);
             this.logger.error("zcode.notification.failed", error);
             void this.transport.close().catch((closeError) => {
               this.logger.error("zcode.transport.close_failed", closeError);
@@ -231,10 +265,19 @@ export class ZCodeProtocolClient {
 
     if ("error" in envelope) {
       pending.reject(
-        new AdapterError("NATIVE_PROTOCOL_ERROR", envelope.error.message, {
-          method: pending.method,
-          nativeCode: envelope.error.code,
-        }),
+        diagnosticError(
+          new AdapterError(
+            "NATIVE_PROTOCOL_ERROR",
+            "ZCode returned a native error",
+          ),
+          {
+            ...this.diagnostic,
+            stage: "response",
+            operation: pending.method,
+            check: "native-error",
+            nativeCode: envelope.error.code,
+          },
+        ),
       );
       return;
     }
@@ -243,11 +286,19 @@ export class ZCodeProtocolClient {
       pending.resolve(pending.parse(envelope.result));
     } catch (error) {
       pending.reject(
-        new AdapterError(
-          "NATIVE_PROTOCOL_ERROR",
-          `Native result validation failed: ${pending.method}`,
-          { method: pending.method },
-          { cause: error },
+        diagnosticError(
+          new AdapterError(
+            "NATIVE_PROTOCOL_ERROR",
+            `Native result validation failed: ${pending.method}`,
+            { method: pending.method },
+            { cause: error },
+          ),
+          {
+            ...this.diagnostic,
+            stage: "response",
+            operation: pending.method,
+            check: "native-result",
+          },
         ),
       );
     }

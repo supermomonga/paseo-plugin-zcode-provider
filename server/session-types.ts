@@ -27,6 +27,7 @@ export type NativeSessionEvent =
       turnId?: string;
       error: string;
       code?: string;
+      diagnostic?: string;
     }
   | {
       type: "permission_requested";

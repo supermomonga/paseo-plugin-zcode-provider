@@ -76,12 +76,12 @@ import { createInterface } from "node:readline";
 
 const hostIndex = process.env.PASEO_ZCODE_HOST_INDEX;
 const hostRpcModule = process.env.PASEO_ZCODE_HOST_RPC_MODULE;
-const hostArtifactJson = process.env.PASEO_ZCODE_HOST_ARTIFACT;
+const rpcExportsJson = process.env.PASEO_ZCODE_RPC_EXPORTS;
 const hostProtocolJson = process.env.PASEO_ZCODE_HOST_PROTOCOL;
-if (!hostIndex || !hostRpcModule || !hostArtifactJson || !hostProtocolJson) {
+if (!hostIndex || !hostRpcModule || !rpcExportsJson || !hostProtocolJson) {
   throw new Error("Missing ZCode host artifact or protocol");
 }
-const hostArtifact = JSON.parse(hostArtifactJson);
+const rpcExports = JSON.parse(rpcExportsJson);
 const hostProtocol = JSON.parse(hostProtocolJson);
 
 const workerSource = ${JSON.stringify(ZCODE_HOST_WORKER_SOURCE)};
@@ -97,9 +97,9 @@ ${HEADLESS_BROWSER_MESSAGE_HANDLER_SOURCE}
 
 const rpc = await import(pathToFileURL(hostRpcModule).href);
 const ports = new MessageChannel();
-const protocol = new rpc[hostArtifact.rpcExports.protocol](ports.port1);
-const client = new rpc[hostArtifact.rpcExports.client](protocol);
-const serviceFactory = rpc[hostArtifact.rpcExports.service];
+const protocol = new rpc[rpcExports.protocol](ports.port1);
+const client = new rpc[rpcExports.client](protocol);
+const serviceFactory = rpc[rpcExports.service];
 const services = new Map(Object.entries(hostProtocol.serviceChannels).map(([name, channel]) => [
   name,
   serviceFactory.toService(client.getChannel(channel))

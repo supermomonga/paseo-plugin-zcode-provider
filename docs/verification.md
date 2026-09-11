@@ -1,5 +1,17 @@
 # 検証記録
 
+## 2026-09-11: 最低バージョン方式への変更
+
+- ZCode本体3.11.2以上・同梱CLI 0.16.5以上の正式版を許可し、major更新にも上限を設けません。プレリリース、不正・不明なバージョン、最低バージョン未満は拒否します。動作確認済み情報と最低バージョンを分離し、リリース監視は `VERIFIED_ZCODE_ARTIFACT.appVersion` を参照します。
+- RPCモジュールをホストの静的importとクラス名・必要メソッドから検出します。ファイル名・短縮export名の異なるJavaScriptファイルを一時ディレクトリに作り、実際の子プロセスで検出に成功することを確認しました。構造欠落、複数候補、読み込み失敗、インストール先外への参照・シンボリックリンクは拒否します。ハッシュ差分による起動拒否を廃止しました。
+- 初期化RPCのエラー、応答形式不一致、通知の検証失敗、タイムアウト、プロセス終了で診断情報が保持されることをテストしました。公開Providerイベントの `diagnostic` への伝達、ネイティブの生エラー・認証情報・会話・動的なレコードキーをログや診断に含めないことも確認しました。
+- `npm ci`、`npm run typecheck`、`npm test`（13ファイル・171テスト）、`npm run build`、`npm run format:check`、`git diff --check` が成功しました。`prepare` / `prebuild` が `package.json` から `server/build-info.ts` を生成し、バージョンの一致もテストで確認します。
+- Paseo `v0.8.0`、commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f` の一時チェックアウトで `npm run test:upstream` が成功しました。実コンパイラによる登録、実アダプター、provider差し替え、保存情報からの再開、履歴復元、再開後のターンを確認しています。ZCode側はテスト用実装です。最初の検証で判明したrootの `package.json` 直接importに対する配置制約は、server内へのビルド情報生成で解消しました。
+- macOS arm64の実 ZCode 3.11.2 / CLI 0.16.5で `npm run test:runtime` が成功しました。新しいRPC検出処理を通して初期化し、3モデル・3編集モード・既定モデルあり、正常終了を確認しました。会話作成・プロンプト送信は行っていません。
+- ADR 7「最低バージョンと実行時検証でZCodeの更新を許可する」をAcceptedにし、ADR 2・3・4へのAmends / Amended byと管理対象の目次を更新しました。`adrs doctor` はエラー0。ADR 1の既存warning 1 / info 1は増えていません。
+
+将来のpatch・minor・major更新は模擬テストです。実機で確認したZCodeは3.11.2のみであり、新しい正式版の動作保証ではありません。Linux / Windows / macOS x64の実機、実モデルへの送信、アプリUIは今回検証していません。データ形式を保った意味の変更は検出できるとは限りません。
+
 ## 2026-09-11: Paseo 0.8.0 正式版への対応
 
 対象は [Issue #7](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/7)。Paseo のリリースタグ `v0.8.0`、commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f` と、npm 公開済みの `@getpaseo/plugin`・`@getpaseo/client`・`@getpaseo/protocol` の `0.8.0` を使用しました。

@@ -70,7 +70,7 @@ export async function currentZCodeVersion() {
   const manifest = await import(
     `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`
   );
-  return validateVersion(manifest.CURRENT_ZCODE_ARTIFACT.appVersion);
+  return validateVersion(manifest.VERIFIED_ZCODE_ARTIFACT.appVersion);
 }
 
 export const zcode = {

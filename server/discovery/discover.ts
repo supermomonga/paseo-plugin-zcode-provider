@@ -6,15 +6,23 @@ import { z } from "zod";
 
 import { AdapterError } from "../errors.js";
 import {
-  resolvedHostMismatch,
-  resolveHostContractPaths,
+  resolveHostIndex,
+  resolveHostImports,
+  RPC_INSPECTION_SOURCE,
 } from "./host-contract.js";
-import { assessCompatibility } from "./manifest.js";
+import {
+  assessCompatibility,
+  CURRENT_HOST_PROTOCOL,
+  VERIFIED_ZCODE_ARTIFACT,
+} from "./manifest.js";
+import {
+  diagnosticError,
+  runtimeDiagnostic,
+  type RuntimeDiagnostic,
+} from "../diagnostics.js";
 import type {
   BundleMetadata,
   DiscoveredRuntime,
-  HostArtifactDescriptor,
-  HostProtocolDescriptor,
   RuntimePaths,
   RuntimeSmokeResult,
 } from "./types.js";
@@ -32,7 +40,14 @@ const HostInspectionSchema = z
   .object({
     hostIndexSha256: z.string().regex(/^[0-9a-f]{64}$/u),
     hostRpcModuleSha256: z.string().regex(/^[0-9a-f]{64}$/u),
-    exports: z.array(z.string()),
+    hostRpcModule: z.string().min(1),
+    rpcExports: z
+      .object({
+        protocol: z.string().min(1),
+        client: z.string().min(1),
+        service: z.string().min(1),
+      })
+      .strict(),
   })
   .strict();
 
@@ -58,6 +73,7 @@ async function run(
     cwd: string;
     environment: NodeJS.ProcessEnv;
     signal?: AbortSignal;
+    maxOutputBytes?: number;
   },
 ): Promise<CommandResult> {
   return await new Promise((resolve, reject) => {
@@ -70,10 +86,11 @@ async function run(
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
-    let stderrBytes = 0;
+    let stdoutBytes = 0;
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
-      if (stdout.length + chunk.length > 1024 * 1024) {
+      stdoutBytes += Buffer.byteLength(chunk);
+      if (stdoutBytes > (options.maxOutputBytes ?? 1024 * 1024)) {
         child.kill("SIGTERM");
         reject(
           new AdapterError(
@@ -85,9 +102,7 @@ async function run(
       }
       stdout += chunk;
     });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderrBytes += chunk.byteLength;
-    });
+    child.stderr.resume();
     child.once("error", reject);
     child.once("exit", (code, signal) => {
       if (signal !== null) {
@@ -106,6 +121,22 @@ async function run(
 
 export async function discoverRuntime(
   options: DiscoveryOptions = {},
+): Promise<DiscoveredRuntime> {
+  const diagnostic: RuntimeDiagnostic = {
+    stage: "discovery",
+    platform: `${options.platform ?? process.platform}-${options.architecture ?? process.arch}`,
+  };
+  try {
+    return await discoverRuntimeInternal(options, diagnostic);
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    throw diagnosticError(error, diagnostic, "RUNTIME_DISCOVERY_FAILED");
+  }
+}
+
+async function discoverRuntimeInternal(
+  options: DiscoveryOptions,
+  diagnostic: RuntimeDiagnostic,
 ): Promise<DiscoveredRuntime> {
   const platform = options.platform ?? process.platform;
   const architecture = options.architecture ?? process.arch;
@@ -155,7 +186,9 @@ export async function discoverRuntime(
   const metadataValue: unknown = JSON.parse(
     await readFile(paths.metadata, "utf8"),
   );
+  Object.assign(diagnostic, { check: "bundle-metadata" });
   const bundle = validateBundleMetadata(metadataValue, detectedPlatform);
+  Object.assign(diagnostic, { stage: "version", check: "minimum-version" });
   const [appVersion, cliSha256, metadataSha256, cliResult] = await Promise.all([
     readAppVersion(paths, environment, options.signal),
     sha256(paths.cliEntry),
@@ -167,9 +200,7 @@ export async function discoverRuntime(
     }),
   ]);
   const cliVersion =
-    cliResult.exitCode === 0
-      ? cliResult.stdout.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/u)?.[0]
-      : undefined;
+    cliResult.exitCode === 0 ? cliResult.stdout.trim() : undefined;
   const identity = {
     platform: detectedPlatform,
     appVersion,
@@ -179,38 +210,37 @@ export async function discoverRuntime(
     bundle,
   };
   const assessment = assessCompatibility(identity);
+  Object.assign(diagnostic, { appVersion, cliVersion });
+  if (assessment.status === "supported")
+    Object.assign(diagnostic, {
+      stage: "host-inspection",
+      check: "host-entry",
+    });
   const host =
-    assessment.hostArtifact === undefined ||
-    assessment.hostProtocol === undefined
-      ? undefined
-      : await resolveHost(
-          paths,
-          assessment.hostArtifact,
-          assessment.hostProtocol,
-          environment,
-          options.signal,
-        );
-  const mismatch =
-    host === undefined
-      ? undefined
-      : resolvedHostMismatch(host.artifact, host.protocol, {
-          hostIndexSha256: host.hostIndexSha256,
-          hostRpcModuleSha256: host.hostRpcModuleSha256,
-          exports: host.rpcExports,
-        });
+    assessment.status === "supported"
+      ? await resolveHost(paths, environment, options.signal)
+      : undefined;
   const rootStat = await stat(installRoot);
   return {
     paths,
     identity,
-    ...(assessment.expectedCliSha256 === undefined
+    ...(host === undefined
       ? {}
-      : { expectedCliSha256: assessment.expectedCliSha256 }),
-    ...(assessment.cliIntegrity === undefined
-      ? {}
-      : { cliIntegrity: assessment.cliIntegrity }),
-    ...(host === undefined ? {} : { resolvedHost: host }),
-    compatibility: mismatch === undefined ? assessment.status : "unsupported",
-    compatibilityReason: mismatch ?? assessment.reason,
+      : {
+          resolvedHost: {
+            ...host,
+            artifactMatch:
+              appVersion === VERIFIED_ZCODE_ARTIFACT.appVersion &&
+              cliVersion === VERIFIED_ZCODE_ARTIFACT.cliVersion &&
+              cliSha256 === VERIFIED_ZCODE_ARTIFACT.cliSha256 &&
+              host.hostIndexSha256 ===
+                VERIFIED_ZCODE_ARTIFACT.hostIndexSha256 &&
+              host.hostRpcModuleSha256 ===
+                VERIFIED_ZCODE_ARTIFACT.hostRpcModuleSha256,
+          },
+        }),
+    compatibility: assessment.status,
+    compatibilityReason: assessment.reason,
     writableInstallRoot: (rootStat.mode & 0o022) !== 0,
   };
 }
@@ -261,13 +291,22 @@ export async function runRuntimeSmoke(
 
 export function assertRuntimeSupported(runtime: DiscoveredRuntime): void {
   if (runtime.compatibility !== "supported") {
-    throw new AdapterError("UNSUPPORTED_ZCODE", runtime.compatibilityReason, {
-      platform: runtime.identity.platform,
-      appVersion: runtime.identity.appVersion,
-      cliVersion: runtime.identity.cliVersion,
-      hostArtifact: runtime.resolvedHost?.artifact.id,
-      hostProtocol: runtime.resolvedHost?.protocol.id,
-    });
+    throw new AdapterError(
+      "UNSUPPORTED_ZCODE",
+      runtime.compatibilityReason,
+      {
+        platform: runtime.identity.platform,
+        appVersion: runtime.identity.appVersion,
+        cliVersion: runtime.identity.cliVersion,
+        hostProtocol: runtime.resolvedHost?.protocol.id,
+      },
+      undefined,
+      {
+        ...runtimeDiagnostic(runtime),
+        stage: "version",
+        check: "minimum-version",
+      },
+    );
   }
 }
 
@@ -454,48 +493,97 @@ async function readPlist(
 
 async function resolveHost(
   paths: RuntimePaths,
-  artifact: HostArtifactDescriptor,
-  protocol: HostProtocolDescriptor,
   environment: NodeJS.ProcessEnv,
   signal?: AbortSignal,
-): Promise<NonNullable<DiscoveredRuntime["resolvedHost"]>> {
-  const { hostIndex, hostRpcModule } = resolveHostContractPaths(
-    paths.installRoot,
-    paths.hostArchive,
-    artifact,
-  );
-  const script = String.raw`
-const fs = require("node:fs");
-const crypto = require("node:crypto");
-const { pathToFileURL } = require("node:url");
-const hash = value => crypto.createHash("sha256").update(fs.readFileSync(value)).digest("hex");
-(async () => {
-  const rpc = await import(pathToFileURL(${JSON.stringify(hostRpcModule)}).href);
-  process.stdout.write(JSON.stringify({
-    hostIndexSha256: hash(${JSON.stringify(hostIndex)}),
-    hostRpcModuleSha256: hash(${JSON.stringify(hostRpcModule)}),
-    exports: Object.keys(rpc),
-  }));
-})().catch(() => process.exit(1));`;
-  const result = await run(paths.executable, ["-e", script], {
+): Promise<
+  Omit<NonNullable<DiscoveredRuntime["resolvedHost"]>, "artifactMatch">
+> {
+  const hostIndex = resolveHostIndex(paths.installRoot, paths.hostArchive);
+  const commandOptions = {
     cwd: paths.installRoot,
     environment,
-    ...(signal === undefined ? {} : { signal }),
-  });
-  if (result.exitCode !== 0) {
-    throw new AdapterError(
+    ...(signal ? { signal } : {}),
+  };
+  // ASAR contents are read by bundled Electron, not the system Node filesystem.
+  const source = await run(
+    paths.executable,
+    [
+      "-e",
+      RPC_INSPECTION_SOURCE +
+        `
+inside(${JSON.stringify(paths.installRoot)}, ${JSON.stringify(hostIndex)});
+process.stdout.write(fs.readFileSync(${JSON.stringify(hostIndex)}, "utf8"));`,
+    ],
+    { ...commandOptions, maxOutputBytes: 16 * 1024 * 1024 },
+  );
+  if (source.exitCode !== 0)
+    throw diagnosticError(
+      new Error(),
+      { stage: "host-inspection", check: "host-entry" },
       "RUNTIME_DISCOVERY_FAILED",
-      "Failed to inspect the manifest-selected ZCode host artifact",
+    );
+  let modules: string[];
+  try {
+    modules = await resolveHostImports(
+      source.stdout,
+      hostIndex,
+      paths.installRoot,
+    );
+  } catch (error) {
+    throw diagnosticError(
+      error,
+      { stage: "host-inspection", check: "host-imports" },
+      "RUNTIME_DISCOVERY_FAILED",
     );
   }
-  const inspection = HostInspectionSchema.parse(JSON.parse(result.stdout));
-  return {
-    artifact,
-    protocol,
-    hostIndex,
-    hostRpcModule,
-    hostIndexSha256: inspection.hostIndexSha256,
-    hostRpcModuleSha256: inspection.hostRpcModuleSha256,
-    rpcExports: inspection.exports,
-  };
+  const script =
+    RPC_INSPECTION_SOURCE +
+    `
+console.log = console.info = console.warn = console.error = () => {};
+inspectRpcModules(${JSON.stringify(paths.installRoot)}, ${JSON.stringify(hostIndex)}, ${JSON.stringify(modules)})
+  .then(result => process.stdout.write(JSON.stringify({ result }), () => process.exit(0)))
+  .catch(error => process.stdout.write(JSON.stringify({ failure: ["host-path", "rpc-module-load", "rpc-missing", "rpc-ambiguous"].includes(error.message) ? error.message : "host-inspection-result" }), () => process.exit(0)));`;
+  const result = await run(paths.executable, ["-e", script], commandOptions);
+  try {
+    if (result.exitCode !== 0) throw new Error();
+    const envelope = z
+      .union([
+        z.object({ result: HostInspectionSchema }).strict(),
+        z
+          .object({
+            failure: z.enum([
+              "host-path",
+              "rpc-module-load",
+              "rpc-missing",
+              "rpc-ambiguous",
+              "host-inspection-result",
+            ]),
+          })
+          .strict(),
+      ])
+      .parse(JSON.parse(result.stdout));
+    if ("failure" in envelope)
+      throw diagnosticError(
+        new Error(),
+        { stage: "host-inspection", check: envelope.failure },
+        "RUNTIME_DISCOVERY_FAILED",
+      );
+    if (!modules.includes(envelope.result.hostRpcModule)) {
+      // realpath can normalize an in-root symlink; validate the returned path independently.
+      const child = relative(paths.installRoot, envelope.result.hostRpcModule);
+      if (child.startsWith("..") || isAbsolute(child))
+        throw diagnosticError(
+          new Error(),
+          { check: "host-path" },
+          "RUNTIME_DISCOVERY_FAILED",
+        );
+    }
+    return { ...envelope.result, hostIndex, protocol: CURRENT_HOST_PROTOCOL };
+  } catch (error) {
+    throw diagnosticError(
+      error,
+      { stage: "host-inspection", check: "host-inspection-result" },
+      "RUNTIME_DISCOVERY_FAILED",
+    );
+  }
 }
