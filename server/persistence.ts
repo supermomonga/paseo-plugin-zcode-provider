@@ -49,14 +49,18 @@ export function persistenceHandle(data: PersistenceData): ProviderPersistence {
 }
 
 // Outside the plugin checkout: reinstalling/building the plugin must not erase handles.
+export function defaultSessionDirectory(
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
+  return join(
+    environment.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+    "paseo-plugin-zcode-provider",
+    "sessions",
+  );
+}
+
 export class SessionPersistenceStore {
-  constructor(
-    readonly directory = join(
-      process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
-      "paseo-plugin-zcode-provider",
-      "sessions",
-    ),
-  ) {}
+  constructor(readonly directory: string = defaultSessionDirectory()) {}
 
   private filename(id: string): string {
     return join(this.directory, `${z.uuid().parse(id)}.json`);

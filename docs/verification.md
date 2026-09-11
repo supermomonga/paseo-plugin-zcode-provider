@@ -1,5 +1,17 @@
 # 検証記録
 
+## 2026-09-11: 設定画面（読み取り専用の診断画面）
+
+対象は [ADR 8](adr/0008-設定画面は読み取り専用の診断に限定しホスト状態を専用rpcで返す.md)。Paseo 0.8.0 の Settings API のうち、設定値の永続化はクライアントの `useSettings` に限定され、daemon 側サブプロセスから保存値を読む API はありません。そのため設定の保存は行わず、`client.addSettingsScreen` と専用 RPC `zcode.diagnostics` で、既存の `discoverRuntime` / `runRuntimeSmoke` の結果を要求時に返す画面を追加しました。
+
+- 表示項目はインストール先とその由来（既定 / `PASEO_ZCODE_INSTALL`）、OS/CPU、ZCode 本体・同梱 CLI のバージョン、プラグインのバージョン、互換性と理由、検証済み artifact との一致、インストール先の書き込み可否、保存マッピング先、任意の host check 結果です。失敗時は `AdapterError` のコード、公開メッセージ、`formatDiagnostic` の sanitize 済み JSON のみを返します。
+- `server/status.test.ts` を追加しました。検出成功、環境変数由来の表示、非対応 ZCode の成功応答、スモーク失敗、想定外エラーの各分岐と、生のエラーメッセージ・認証情報が RPC 応答と診断に含まれないことを確認しています。
+- `npm run typecheck`（サーバー / クライアントの 2 プロジェクト）、`npm test`（14 ファイル・176 テスト）、`npm run build`、`npm run format:check` が成功しました。クライアントとサーバーは React Native のグローバル `AbortSignal` 宣言が Node と衝突するため別プロジェクトに分けています。
+- Paseo `v0.8.0`、commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f` の一時チェックアウトで `npm run test:upstream` が成功しました。`NODE_ENV` 未設定と `production` の両方で、実コンパイラが client / server の両エントリをコンパイルし、server の provider 登録と client の `addSettingsScreen` 登録を実行して確認しています。
+- `npx @getpaseo/cli@0.8.0` で分離した daemon（`--home` を一時ディレクトリ、`--listen 127.0.0.1:6789`、`--web-ui --no-relay`）を起動し、この worktree を `zcode-provider-ui` としてディレクトリインストールしました。同梱 Web UI の Settings → Plugins → zcode-provider-ui → Diagnostics で、実 ZCode 3.11.2 / CLI 0.16.5、darwin-arm64、互換性 Supported、検証済み fingerprint 一致、インストール先 `/Applications/ZCode.app`（Default location）、読み取り専用、保存先を表示できることを確認しました。**Run host check** は Result / Doctor ともに Passed になりました。幅 420px では設定の詳細画面として全項目が縦に表示されました。
+- 分離 daemon は停止・一時ディレクトリごと削除し、検証用インストールは削除しました。実際の daemon で利用中の `zcode-provider` は検証中だけ無効化し、終了後に有効化して `running` に戻したことを確認しています。実会話の送信・ツール実行・セッション復元はこの検証では行っていません。
+- Linux / Windows / macOS x64 の実機と、テーマ切替時の配色、エラー表示の実画面は未確認です。エラー分岐は自動テストのみで確認しています。
+
 ## 2026-09-11: 最低バージョン方式への変更
 
 - ZCode本体3.11.2以上・同梱CLI 0.16.5以上の正式版を許可し、major更新にも上限を設けません。プレリリース、不正・不明なバージョン、最低バージョン未満は拒否します。動作確認済み情報と最低バージョンを分離し、リリース監視は `VERIFIED_ZCODE_ARTIFACT.appVersion` を参照します。

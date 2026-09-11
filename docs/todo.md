@@ -22,6 +22,7 @@
 - [ ] **標準 Provider 診断欄**
   - main の標準診断欄は AgentClient の `getDiagnostic()` を呼びます。公開 Provider API とそのアダプターには対応する診断 hook がありません。
   - 現在は ZCode の最低バージョン・RPC の構造・同梱 CLI の動作を起動前に検証し、実行中の応答・イベントも検証します。host hash は診断情報です。失敗時の ProviderError.diagnostic とプラグインログには報告用の情報を出しますが、標準診断欄との同等性はありません。
+  - Settings にプラグイン独自の読み取り専用診断画面を追加しました（[ADR 8](adr/0008-設定画面は読み取り専用の診断に限定しホスト状態を専用rpcで返す.md)）。検出パス・バージョン・互換性・動作確認済み artifact との一致・保存先を表示し、host check を実行できます。標準診断欄の代替ではなく、本体 API が追加された場合の接続は未実装です。
   - 完了条件: 診断要求と応答の公開 API が追加され、本体の標準診断欄へ接続できること。認証値やプロンプトを表示しないことも検証すること。
   - 根拠: [標準診断の処理](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/provider-snapshot-manager.ts#L790)。
 

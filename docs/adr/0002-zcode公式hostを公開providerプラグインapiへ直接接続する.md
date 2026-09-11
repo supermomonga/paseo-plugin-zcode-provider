@@ -10,6 +10,8 @@ links:
     kind: amendedby
   - target: 7
     kind: amendedby
+  - target: 8
+    kind: amendedby
 ---
 
 # ZCode公式hostを公開ProviderプラグインAPIへ直接接続する
