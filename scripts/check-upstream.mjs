@@ -385,9 +385,9 @@ async function checkGitPreparation({
     );
     const { serverBundle, clientBundle } = await compilePlugin({
       server: join(candidate, "index.server.ts"),
-      client: null,
+      client: join(candidate, "index.client.tsx"),
     });
-    assert.equal(clientBundle, null);
+    assert.ok(clientBundle, "The client entry must compile");
     assert.ok(
       serverBundle.includes('require("@getpaseo/plugin/server/provider")'),
     );
@@ -399,14 +399,50 @@ async function checkGitPreparation({
       registerProvider(provider) {
         registered = provider;
       },
+      handle() {},
     });
     assert.equal(registered.id, "zcode");
     assert.equal(typeof dispose, "function");
     await dispose();
+
+    const clientContribution = runInThisContext(clientBundle)((name) => {
+      if (name === "react")
+        return {
+          useCallback: (callback) => callback,
+          useEffect() {},
+          useState: () => [null, () => {}],
+        };
+      if (name === "react/jsx-runtime")
+        return { jsx: () => null, jsxs: () => null };
+      if (name === "react-native")
+        return { Text: () => null, View: () => null };
+      if (name === "@getpaseo/plugin/client")
+        return { useRpc: () => async () => ({}) };
+      if (name === "@getpaseo/plugin/client/ui")
+        return {
+          SettingsAction: () => null,
+          SettingsCard: () => null,
+          SettingsRow: () => null,
+          SettingsSection: () => null,
+        };
+      return nodeRequire(name);
+    });
+    let screen;
+    const disposeClient = clientContribution.default({
+      addSettingsScreen(screen_) {
+        screen = screen_;
+      },
+    });
+    assert.equal(screen.id, "diagnostics");
+    assert.equal(typeof screen.Component, "function");
+    assert.equal(typeof disposeClient, "function");
+    await disposeClient();
     return {
       nodeEnv: nodeEnv ?? "unset",
       compiledBytes: Buffer.byteLength(serverBundle),
+      clientCompiledBytes: Buffer.byteLength(clientBundle),
       registration: "passed",
+      clientRegistration: "passed",
     };
   } finally {
     await rm(candidate, { recursive: true, force: true });

@@ -22,6 +22,7 @@ Use ZCode models, tools, and conversation history in [Paseo](https://github.com/
 - **Approvals and questions** — Tool permissions, structured questions, plan approval and rejection, and generation interruption.
 - **Persistence and restoration** — Conversation lists per workspace, importing existing ZCode conversations, and history restoration.
 - **Session configuration** — MCP server configuration and notifications for token, cost, and context usage.
+- **Diagnostics screen** — A read-only screen under **Settings → Plugins → zcode-provider** shows the detected installation path, versions, compatibility, verified-release fingerprint, session mapping location, and an on-demand host check.
 
 The ZCode host manages credentials, model settings, and conversation storage. This repository does not bundle ZCode or credentials.
 
@@ -96,7 +97,8 @@ The installation command above tracks this repository's default branch. Check th
 
 - Browser control is unsupported. MCP `alwaysLoad` is unsupported, and stdio server commands must use absolute paths.
 - **Custom system prompts and `persist: false` are unsupported.** Both produce `INVALID_CONFIGURATION`. This also applies to additional instructions configured in the Paseo daemon or Agent Profiles.
-- Integration with the standard account quota, reset time, and provider diagnostics panels is not implemented.
+- Integration with the standard account quota, reset time, and provider diagnostics panels is not implemented. The plugin's own Diagnostics screen is read-only and is not a replacement for the standard provider diagnostics panel.
+- The Diagnostics screen cannot change settings. The install path and other daemon environment settings are still configured on the daemon host.
 - In Paseo 0.8.0, initial context usage is not replayed to subscribers immediately after creating or resuming a session, so the standard UI cannot display that initial value. Subsequent usage updates are delivered.
 - Steering during generation, conversation rewind, structured output, independent child session management, and automatic conversion of persistence handles from the old patcher are unsupported.
 
@@ -110,6 +112,8 @@ Check the plugin's status in Paseo's plugin list and inspect **Settings → Plug
 paseo plugin ls
 paseo plugin logs zcode-provider
 ```
+
+Open **Settings → Plugins → zcode-provider → Diagnostics** for the detected installation path, ZCode and bundled CLI versions, compatibility, verified-release fingerprint, and session mapping location. **Run host check** runs the bundled version and doctor commands. The screen is read-only; change the daemon environment to move or update ZCode.
 
 | Symptom                                          | What to check                                                                                                          |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |

@@ -7,12 +7,16 @@ const result = await build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external: ["@getpaseo/plugin/server/provider", "zod"],
+  external: ["@getpaseo/plugin", "@getpaseo/plugin/server/provider", "zod"],
   sourcemap: true,
   metafile: true,
 });
 const output = result.metafile.outputs["dist/index.server.js"];
-for (const module of ["@getpaseo/plugin/server/provider", "zod"]) {
+for (const module of [
+  "@getpaseo/plugin",
+  "@getpaseo/plugin/server/provider",
+  "zod",
+]) {
   if (
     !output.imports.some((entry) => entry.path === module && entry.external)
   ) {

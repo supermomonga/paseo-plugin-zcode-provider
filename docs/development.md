@@ -13,13 +13,13 @@ node = "22"
 
 Review the local configuration, trust it with `mise trust mise.local.toml`, and run `mise install`. Keep this configuration local: Paseo runs Git preparation commands in a fresh checkout on every installation and update, where a tracked `mise.toml` can cause mise's npm shim to reject the untrusted configuration before npm starts. Published plugin sources therefore do not include a mise configuration.
 
-From a local checkout, run `npm ci` to install development dependencies before running the commands below. Development SDKs are pinned to **0.8.0**. The npm `prepare` hook generates ignored `server/build-info.ts` from `package.json`; `prebuild` regenerates it after version edits. This keeps runtime version metadata inside Paseo's permitted module directories without duplicating the version source.
+From a local checkout, run `npm ci` to install development dependencies before running the commands below. Development SDKs are pinned to **0.8.0**. Client typechecking also installs `react`, `react-native`, and `@types/react` as development dependencies; Paseo supplies their runtime instances. The npm `prepare` hook generates ignored `server/build-info.ts` from `package.json`; `prebuild` regenerates it after version edits. This keeps runtime version metadata inside Paseo's permitted module directories without duplicating the version source.
 
 For Git installation and updates, `paseo-plugin.json` declares `npm ci --include=dev` as its preparation command. Paseo runs this command in the new checkout before compiling the source entry. It installs the locked dependencies, including build-time packages declared in `devDependencies` even under `NODE_ENV=production`, and runs `prepare` to generate the version metadata. No separate `npm run build` is needed for this path: Paseo compiles `index.server.ts` itself.
 
 | Command                                                        | Purpose                                                                                          |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `npm run typecheck`                                            | Check TypeScript types.                                                                          |
+| `npm run typecheck`                                            | Check TypeScript types for the server project and the client project separately.                 |
 | `npm test`                                                     | Run automated tests for the protocol, mappings, and session handling.                            |
 | `npm run build`                                                | Generate `dist/index.server.js` and verify that runtime SDK imports remain external.             |
 | `npm run format:check`                                         | Check formatting with Prettier.                                                                  |
@@ -42,14 +42,20 @@ The workflow has read-only repository permissions and a 20-minute timeout. New r
 
 ## Project structure
 
-- `index.server.ts` — Provider registration.
+- `index.server.ts` — Provider registration and the diagnostics RPC handler.
+- `index.client.tsx` — Settings screen registration for the Paseo app.
+- `client/` — React Native settings screen.
+- `shared/` — Runtime-neutral contracts shared by the daemon and the app.
 - `server/provider.ts` — Connection to the public API.
 - `server/session.ts` — Conversation, approval, and plan handling.
+- `server/status.ts` — Read-only diagnostics handler behind the settings screen.
 - `server/discovery/` — Installed ZCode discovery and compatibility checks.
 - `server/host/`, `server/protocol/` — Official host startup, communication, and schema validation.
 - `test/`, `scripts/` — Test host, build scripts, and upstream API and actual host checks.
 - `vendor/paseo/LICENSE` — Upstream license retained for the copied icon.
 - `docs/` — Architecture decisions, verification notes, and remaining work.
+
+Server code typechecks with `tsconfig.json`; client code uses `tsconfig.client.json`. The projects are separate because React Native's global `AbortSignal` declaration conflicts with Node's in one program. `scripts/check-upstream.mjs` compiles both entries with Paseo's actual compiler and evaluates their registrations.
 
 Development and tests use the published `@getpaseo/plugin/server/provider` module. Paseo supplies this SDK module at runtime; it remains external to the build. See the [ADRs](adr/README.md) for design rationale and [NOTICE.md](../NOTICE.md) for source and icon attribution.
 
