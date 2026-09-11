@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:upstream": "node scripts/check-upstream.mjs",
     "test:runtime": "node scripts/check-runtime.mjs",
+    "test:steering-runtime": "node scripts/check-steering-runtime.mjs",
     "build": "node scripts/build.mjs",
     "format": "prettier --write index.client.tsx index.server.ts client server shared scripts test docs README.md NOTICE.md package.json tsconfig.json tsconfig.client.json vitest.config.ts paseo-plugin.json .github/workflows",
     "format:check": "prettier --check index.client.tsx index.server.ts client server shared scripts test docs README.md NOTICE.md package.json tsconfig.json tsconfig.client.json vitest.config.ts paseo-plugin.json .github/workflows",

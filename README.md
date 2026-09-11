@@ -5,9 +5,9 @@ Use ZCode models, tools, and conversation history in [Paseo](https://github.com/
 ![ZCode conversation in Paseo](images/zcode-conversation.png)
 
 > [!NOTE]
-> This plugin is under development and requires Paseo **0.8.0 or later**. Verification on 0.8.0 covers automated SDK/compiler/adapter tests, including provider replacement and session restoration, plus actual ZCode host initialization and model listing on macOS arm64. Real-model submission and UI restoration have not been reverified on 0.8.0.
+> This plugin is under development and requires Paseo **0.8.0 or later**. Verification on 0.8.0 covers automated SDK/compiler/adapter tests, including steering, native queue aggregation, provider replacement, and session restoration. Real ZCode checks on macOS arm64 cover text guidance, attachment queues, tool execution, stopping, and restoration through isolated Provider connections. Daemon/UI steering and Paseo app restart verification remain outstanding.
 >
-> Earlier 0.8.0-beta.1 checks covered actual prompt responses, plan approval, and restoration across separate processes; UI checks used an isolated daemon with the provider registered as `codex`. Actual tool execution and restoration after restarting the Paseo app remain unverified. The screenshot above was supplied by the author. See the [verification notes](docs/verification.md) for details.
+> Earlier 0.8.0-beta.1 checks covered actual prompt responses, plan approval, and restoration across separate processes; UI checks used an isolated daemon with the provider registered as `codex`. Restoration after restarting the Paseo app remains unverified. The screenshot above was supplied by the author. See the [verification notes](docs/verification.md) for details.
 
 > [!IMPORTANT]
 > This project is an unofficial tool and is not officially released, endorsed, or maintained by ZCode or Z.ai.
@@ -19,6 +19,7 @@ Use ZCode models, tools, and conversation history in [Paseo](https://github.com/
 
 - **Model and mode selection** — Model discovery, thinking settings, and `build` / `edit` / `yolo` editing modes with an independent plan toggle.
 - **Conversations and tools** — Text and image prompts, slash commands, streaming responses, and tool execution status.
+- **Steering and queued attachments** — Add text to active generation; messages with attachments run sequentially in ZCode’s queue. Paseo reports completion after the entire run finishes. Stop cancels both active and pending work.
 - **Approvals and questions** — Tool permissions, structured questions, plan approval and rejection, and generation interruption.
 - **Persistence and restoration** — Conversation lists per workspace, importing existing ZCode conversations, and history restoration.
 - **Session configuration** — MCP server configuration and notifications for token, cost, and context usage.
@@ -74,6 +75,12 @@ Open a workspace on the daemon where you installed the plugin. When creating an 
 
 Authentication and available models are managed in the ZCode app. Configure them there before using the provider in Paseo.
 
+### Messages during generation
+
+Additional text uses ZCode's `guide` delivery. Attachments are uploaded to ZCode's persistent store and queued for a subsequent native turn. The public Paseo turn ID stays the same across those native turns. Acceptance is reported only after ZCode acknowledges the input; errors and unknown delivery outcomes are not automatically retried. Each attachment is limited to the native upload maximum of 20 MiB.
+
+Mode and other slash commands must wait until the run finishes. Additional messages do not resolve pending permissions. Stop disables automatic queue execution, cancels generation, and removes pending input. A new explicit run enables queue execution again. Native recovery discards unconsumed input when reopening an interrupted conversation; the plugin restores consumed messages and does not replay the discarded queue.
+
 ### Session storage
 
 Metadata discovery and unsent drafts use ZCode's deferred persistence and do not leave saved conversations. The first prompt saves the conversation in ZCode. The plugin records its stable Paseo identifier's native conversation ID under `$XDG_STATE_HOME/paseo-plugin-zcode-provider/sessions`, or `~/.local/state/paseo-plugin-zcode-provider/sessions` when `XDG_STATE_HOME` is unset. Keep this directory when reinstalling or backing up the plugin; it contains identifiers and workspace paths, not message contents.
@@ -100,7 +107,7 @@ The installation command above tracks this repository's default branch. Check th
 - Integration with the standard account quota, reset time, and provider diagnostics panels is not implemented. The plugin's own Diagnostics screen is read-only and is not a replacement for the standard provider diagnostics panel.
 - The Diagnostics screen cannot change settings. The install path and other daemon environment settings are still configured on the daemon host.
 - In Paseo 0.8.0, initial context usage is not replayed to subscribers immediately after creating or resuming a session, so the standard UI cannot display that initial value. Subsequent usage updates are delivered.
-- Steering during generation, conversation rewind, structured output, independent child session management, and automatic conversion of persistence handles from the old patcher are unsupported.
+- Conversation rewind, structured output, independent child session management, and automatic conversion of persistence handles from the old patcher are unsupported.
 
 See [remaining work](docs/todo.md) for the evidence and conditions for resolving each limitation.
 

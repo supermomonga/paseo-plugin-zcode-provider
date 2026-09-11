@@ -1,5 +1,25 @@
 # 検証記録
 
+## 2026-09-12: V4ステアリングと添付メッセージの待機送信
+
+[ADR 9](adr/0009-v4入力受付とネイティブ待機キューを一つのpaseo実行へ対応付ける.md)でADR 2を補足しました。Paseo本体・公開SDK・ZCodeのファイルは変更していません。
+
+- 通常送信を公式hostの `sendConversationCommandV4` / `sendText` へ統一し、`prompt.steer` を公開。テキストは `guide`、添付はnative uploadで保存した参照を `queue` に渡します。旧 `sendPrompt` への再送経路はありません。
+- 会話購読には `helloConversationV4` / `initializeConversationV4` が必要です。API名はV4ですが、確認したwire protocolは **3**。V4の `fromSeq` は直前の適用済みseqを指す排他的な下限です。キュー・制御状態と分割フレームを検証し、本文・ツール・承認には既存のイベント購読を使います。
+- `turn.steerQueued.targetTurnId` は、待機受付では直前のassistantターン、初回なら `deferred` を指す場合があります。これを新しい実行先とは扱わず、受付済みコマンドID・キューIDを照合した後、`turn.started` / `turn.steerDrained` で取り込み先を確定します。
+- 公開ターンとnativeターンを分離。受付前に追跡情報を登録し、ACKより先のイベント、待機入力の昇格、nativeターン終了直前・最終使用量取得中の追加に対応します。受付は一度だけ返し、すべての待機分が終わるまで完了を通知しません。本文はnativeターン間で分け、累積使用量は重複加算しません。
+- 停止は、Provider内の未送信分を無効化してnative autoDrainを止め、受付中の送信を照合し、生成と承認をキャンセルして残ったキュー項目を削除します。nativeの停止状態を確認してから一度だけキャンセルを通知。遅れて届く同じnativeターンの終了イベントにも対応します。
+- ホスト切断や受付結果不明では成功扱い・再送をしません。native `resume` が未消費の保存済み入力を破棄することを `zcode.cjs` の `discardPersistedPendingSteerInputs` 呼び出しで確認。復元状態がidleであることを検証し、消費済みの履歴だけを表示します。本文と添付パートはnativeユーザーメッセージ一件にまとめます。
+- ACK前イベント、連続追加、添付の複数ターン実行、空入力・コマンド・重複ID・拒否、未確定ACK、停止の各段階、RPC障害、native失敗、承認の維持、CASのstale応答、分割フレームの順序・サイズ・CRC不整合、添付の分割保存と中止を自動テストしています。
+- Paseo **0.8.0**、commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f` の実コンパイラ・実 `PluginAgentClientRegistry` / アダプターで結合検証。`steerActiveTurn` がテキスト・添付とも `{ status: "accepted" }` を返し、追加の送信・置き換えを起こさず、公開ターンが一回だけ完了することを確認しました。ZCode側はテスト用実装です。Git準備の検証は未追跡の追加ソースも含む作業ツリーをコピーし、`NODE_ENV` 未設定 / `production` の両方を使用します。
+- macOS arm64の実 **ZCode 3.11.2 / CLI 0.16.5** と既存の認証を使い、`npm run test:steering-runtime` を実行。一時workspace・一時マッピングストア・分離したProvider接続で、Bashのsleep実行、追加指示への `STEERING_OK` 応答、添付内容の `QUEUE_ATTACHMENT_OK` 応答、公開ターンの開始一回・完了一回を確認しました。
+- 同じ実機検証で、実行中と添付待機分の停止、接続を作り直した復元、消費済み4入力が各一回だけ表示されること、キャンセルした入力が履歴・次の実行に混入しないこと、復元後の `RESUMED_OK` 応答、正常終了を確認しました。ZCodeのテスト会話は保存されますが、検証用のローカルworkspaceとマッピングファイルは終了時に削除します。
+- 実機確認で見つかった終了時の競合も修正。購読解除と進行中の状態取得が終わってからnativeセッションを破棄します。
+
+- 最終チェックは `npm run typecheck`、`npm test`（16ファイル・214テスト）、`npm run build`、`npm run format:check`、`npm run test:upstream`、`npm run test:steering-runtime`、`git diff --check` が成功。実機試験はBashの実行開始イベントを待ってからテキスト追加・添付送信・停止を行っています。`adrs doctor` はエラー0で、ADR 1の既存warning 1 / info 1は増えていません。
+
+**未実施範囲:** 分離したPaseo daemonと画面からのステアリング操作は未検証です。このCodexセッションのPreToolUseフックがPaseo CLIを禁止し、Paseo MCPにも分離daemonの起動機能がないため実施できませんでした。CLIの呼び替えで制約を回避せず、実ホストと実アダプターを別々に検証しています。利用中daemonへの反映・コミット・公開は行っていません。Linux / Windows / macOS x64実機、アプリ再起動、電源断・ディスク障害も未検証です。
+
 ## 2026-09-11: 設定画面（読み取り専用の診断画面）
 
 対象は [ADR 8](adr/0008-設定画面は読み取り専用の診断に限定しホスト状態を専用rpcで返す.md)。Paseo 0.8.0 の Settings API のうち、設定値の永続化はクライアントの `useSettings` に限定され、daemon 側サブプロセスから保存値を読む API はありません。そのため設定の保存は行わず、`client.addSettingsScreen` と専用 RPC `zcode.diagnostics` で、既存の `discoverRuntime` / `runRuntimeSmoke` の結果を要求時に返す画面を追加しました。

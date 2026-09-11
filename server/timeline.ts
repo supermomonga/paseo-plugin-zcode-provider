@@ -2,6 +2,9 @@ import type { ProviderTimelineItem } from "@getpaseo/plugin/server/provider";
 import type { NativeTimelineItem } from "./session-types.js";
 
 export class TimelineSnapshots {
+  boundary(): void {
+    this.lastTextKey = undefined;
+  }
   private sequence = 0;
   private readonly text = new Map<string, string>();
   private lastTextKey?: string;

@@ -14,6 +14,13 @@ export type NativeTimelineItem = WithoutIdentity<ProviderTimelineItem>;
 
 // Native text fragments are assembled into complete ProviderTimelineItem snapshots at the connection boundary.
 export type NativeSessionEvent =
+  | { type: "timeline_boundary" }
+  | {
+      type: "prompt_accepted";
+      clientMessageId: string;
+      turnId: string;
+      delivery: "turn" | "steer";
+    }
   | { type: "timeline"; item: NativeTimelineItem; turnId?: string }
   | { type: "usage_updated"; usage: ProviderUsage; turnId?: string }
   | {
