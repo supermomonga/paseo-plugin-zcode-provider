@@ -2,6 +2,17 @@
 
 For installation and usage, see the [README](../README.md#installation).
 
+Node.js **22.12.0 or later** and npm must be available on the development machine and on the Paseo daemon host. CI uses Node.js 22. Git installation uses the Node.js and npm available to the daemon.
+
+If you use mise for development, add the following to the Git-ignored `mise.local.toml`, merging it into an existing `[tools]` section if needed:
+
+```toml
+[tools]
+node = "22"
+```
+
+Review the local configuration, trust it with `mise trust mise.local.toml`, and run `mise install`. Keep this configuration local: Paseo runs Git preparation commands in a fresh checkout on every installation and update, where a tracked `mise.toml` can cause mise's npm shim to reject the untrusted configuration before npm starts. Published plugin sources therefore do not include a mise configuration.
+
 From a local checkout, run `npm ci` to install development dependencies before running the commands below. Development SDKs are pinned to **0.8.0**. The npm `prepare` hook generates ignored `server/build-info.ts` from `package.json`; `prebuild` regenerates it after version edits. This keeps runtime version metadata inside Paseo's permitted module directories without duplicating the version source.
 
 For Git installation and updates, `paseo-plugin.json` declares `npm ci --include=dev` as its preparation command. Paseo runs this command in the new checkout before compiling the source entry. It installs the locked dependencies, including build-time packages declared in `devDependencies` even under `NODE_ENV=production`, and runs `prepare` to generate the version metadata. No separate `npm run build` is needed for this path: Paseo compiles `index.server.ts` itself.
