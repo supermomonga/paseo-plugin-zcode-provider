@@ -15,8 +15,6 @@ export interface RuntimePaths {
   readonly hostArchive: string;
 }
 
-export type HostArtifactId = "zcode-host-3.11.2";
-
 export type HostProtocolId = "zcode-task-v1";
 
 export interface HostOperationDescriptor {
@@ -25,21 +23,18 @@ export interface HostOperationDescriptor {
   readonly sessionParameter: "taskId";
 }
 
-export interface HostArtifactDescriptor {
-  readonly id: HostArtifactId;
+export interface VerifiedHostArtifact {
   readonly appVersion: string;
   readonly cliVersion: string;
   readonly cliSha256: string;
-  readonly protocolId: HostProtocolId;
-  readonly hostIndexRelativePath: string;
-  readonly hostRpcModuleRelativePath: string;
   readonly hostIndexSha256: string;
   readonly hostRpcModuleSha256: string;
-  readonly rpcExports: {
-    readonly protocol: string;
-    readonly client: string;
-    readonly service: string;
-  };
+}
+
+export interface RpcExports {
+  readonly protocol: string;
+  readonly client: string;
+  readonly service: string;
 }
 
 export interface HostProtocolDescriptor {
@@ -57,13 +52,13 @@ export interface HostProtocolDescriptor {
 }
 
 export interface ResolvedHost {
-  readonly artifact: HostArtifactDescriptor;
   readonly protocol: HostProtocolDescriptor;
   readonly hostIndex: string;
   readonly hostRpcModule: string;
   readonly hostIndexSha256: string;
   readonly hostRpcModuleSha256: string;
-  readonly rpcExports: readonly string[];
+  readonly rpcExports: RpcExports;
+  readonly artifactMatch: boolean;
 }
 
 export type CompatibilityStatus = "supported" | "unsupported";
@@ -81,8 +76,6 @@ export interface RuntimeIdentity {
 export interface DiscoveredRuntime {
   readonly paths: RuntimePaths;
   readonly identity: RuntimeIdentity;
-  readonly expectedCliSha256?: string;
-  readonly cliIntegrity?: "verified" | "modified";
   readonly resolvedHost?: ResolvedHost;
   readonly compatibility: CompatibilityStatus;
   readonly compatibilityReason: string;

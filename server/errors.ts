@@ -25,7 +25,9 @@ export class AdapterError extends Error {
     message: string,
     readonly details: Record<string, unknown> = {},
     options?: ErrorOptions,
+    readonly diagnostic?: RuntimeDiagnostic,
   ) {
     super(message, options);
   }
 }
+import type { RuntimeDiagnostic } from "./diagnostics.js";

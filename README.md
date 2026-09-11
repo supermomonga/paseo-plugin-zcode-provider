@@ -29,19 +29,21 @@ The ZCode host manages credentials, model settings, and conversation storage. Th
 
 These requirements apply to the **machine running the Paseo daemon**.
 
-| Component          | Supported configuration                       |
-| ------------------ | --------------------------------------------- |
-| OS / CPU           | macOS arm64/x64, Linux arm64/x64, Windows x64 |
-| ZCode              | **3.11.2**, with bundled CLI **0.16.5**       |
-| ZCode installation | Official installation; default paths below    |
-| Node.js            | **22.12.0 or later**                          |
-| Paseo              | **0.8.0 or later**                            |
+| Component          | Supported configuration                                   |
+| ------------------ | --------------------------------------------------------- |
+| OS / CPU           | macOS arm64/x64, Linux arm64/x64, Windows x64             |
+| ZCode              | **3.11.2 or later**, with bundled CLI **0.16.5 or later** |
+| ZCode installation | Official installation; default paths below                |
+| Node.js            | **22.12.0 or later**                                      |
+| Paseo              | **0.8.0 or later**                                        |
 
 Default installation paths are `/Applications/ZCode.app` on macOS, `/opt/ZCode` on Linux, and `%LOCALAPPDATA%\Programs\ZCode` on Windows. For a nonstandard location, set `PASEO_ZCODE_INSTALL` to its absolute path in the Paseo daemon environment. Specify the installation directory, not `zcode.cjs`. On Windows, the default requires `LOCALAPPDATA` to be a nonempty absolute path in that same environment; otherwise set `PASEO_ZCODE_INSTALL` explicitly. Installations under Program Files also require explicit configuration. An invalid explicit path fails instead of reverting to the default. The installed bundle's OS and CPU must match the daemon process; emulation does not bypass this check.
 
 All three OS layouts are implemented and covered by automated tests. Actual ZCode host initialization and model listing have been verified on macOS arm64 only; Linux, Windows, and macOS x64 runtime checks remain unperformed.
 
-Set up authentication and your models in ZCode first. The plugin checks your ZCode installation at startup and rejects unsupported versions or modified host files. A CLI-only hash difference is diagnostic and does not reject an otherwise matching host.
+Set up authentication and your models in ZCode first. The minimum versions apply to stable releases only. Newer stable releases, including major updates, are allowed; prereleases, missing or invalid versions, and versions below the minimum are rejected. The last verified installation is **ZCode 3.11.2 / CLI 0.16.5 on macOS arm64**. Allowing a newer version does not mean it has been verified.
+
+The plugin discovers the installed host's RPC module through its static imports and required class/method structure. Changed file hashes, chunk names, or shortened export names alone do not reject startup. The official installation, OS/CPU, required files, and RPC structure must still be valid. Responses and events are checked during use: an incompatible update may fail at startup or only when a particular operation runs. Changes in meaning that preserve the data format may not be detected.
 
 ## Installation
 
@@ -109,15 +111,21 @@ paseo plugin ls
 paseo plugin logs zcode-provider
 ```
 
-| Symptom                                          | What to check                                                                                                         |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Plugin fails to load                             | Plugins are enabled on the target daemon, the public Provider API is supported, and the installation path is correct. |
-| `UNSUPPORTED_PLATFORM`                           | The daemon uses a supported OS / CPU and the installed ZCode bundle matches that OS / CPU.                            |
-| `RUNTIME_DISCOVERY_FAILED` / `UNSUPPORTED_ZCODE` | ZCode's installation path (including `PASEO_ZCODE_INSTALL`), supported versions, and host file integrity.             |
-| `RUNTIME_SMOKE_FAILED`                           | The bundled CLI works and can access ZCode's user data.                                                               |
-| `INVALID_CONFIGURATION`                          | No custom system prompt or nonpersistent session has been requested.                                                  |
+| Symptom                                          | What to check                                                                                                          |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Plugin fails to load                             | Plugins are enabled on the target daemon, the public Provider API is supported, and the installation path is correct.  |
+| `UNSUPPORTED_PLATFORM`                           | The daemon uses a supported OS / CPU and the installed ZCode bundle matches that OS / CPU.                             |
+| `RUNTIME_DISCOVERY_FAILED` / `UNSUPPORTED_ZCODE` | ZCode's installation path (including `PASEO_ZCODE_INSTALL`), minimum stable versions, and required host/RPC structure. |
+| `RUNTIME_SMOKE_FAILED`                           | The bundled CLI works and can access ZCode's user data.                                                                |
+| `INVALID_CONFIGURATION`                          | No custom system prompt or nonpersistent session has been requested.                                                   |
 
-Verify the installed versions and files instead of disabling compatibility checks to use an unsupported host.
+If a ZCode update causes a failure, [open a GitHub Issue](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/new) with:
+
+- The action that failed and reproducible steps.
+- The error code and the structured `diagnostic` text, or the corresponding plugin log entry.
+- Whether it occurs during startup or after the conversation starts.
+
+Diagnostics include the provider, ZCode and CLI versions when available, OS/CPU, failure stage, operation, validation location, and relevant artifact hashes. A differing artifact fingerprint is evidence for investigation, not a startup restriction. Raw native errors, stderr, credentials, conversation text, and user-controlled record keys are excluded. Review any additional text or screenshots you attach. The plugin does not automatically submit reports.
 
 ## Contributing
 

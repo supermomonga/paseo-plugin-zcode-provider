@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
   assessCompatibility,
-  CURRENT_HOST_PROTOCOL,
-  CURRENT_ZCODE_ARTIFACT,
+  MINIMUM_ZCODE_VERSION,
+  VERIFIED_ZCODE_ARTIFACT,
 } from "./discovery/manifest.js";
 import type { RuntimeIdentity } from "./discovery/types.js";
 
@@ -30,57 +30,75 @@ function identity(
   };
 }
 
-describe("ZCode compatibility manifest", () => {
-  test("maps macOS, Linux, and Windows to the same artifact and protocol", () => {
-    for (const platform of ["darwin-arm64", "linux-x64", "win32-x64"]) {
-      expect(assessCompatibility(identity(platform))).toMatchObject({
-        status: "supported",
-        cliIntegrity: "verified",
-        expectedCliSha256: OFFICIAL_CLI_SHA256,
-        hostArtifact: { id: "zcode-host-3.11.2" },
-        hostProtocol: { id: "zcode-task-v1" },
-      });
-    }
-  });
+describe("ZCode minimum versions", () => {
+  test.each(["darwin-arm64", "linux-x64", "win32-x64"])(
+    "accepts minimum versions on %s independently of artifact hashes",
+    (platform) => {
+      expect(
+        assessCompatibility(
+          identity(platform, {
+            cliSha256: "different",
+            metadataSha256: "different",
+          }),
+        ).status,
+      ).toBe("supported");
+    },
+  );
 
-  test("treats app build and raw metadata hashes as diagnostics", () => {
+  test.each([
+    "3.11.2",
+    "3.11.3",
+    "3.12.0",
+    "4.0.0",
+    "10.0.0",
+    "3.11.2+build.2",
+  ])("allows stable app %s", (appVersion) => {
+    expect(
+      assessCompatibility(identity("darwin-arm64", { appVersion })).status,
+    ).toBe("supported");
+  });
+  test.each(["0.16.5", "0.16.6", "0.17.0", "1.0.0", "10.0.0"])(
+    "allows stable CLI %s",
+    (cliVersion) => {
+      expect(
+        assessCompatibility(identity("linux-x64", { cliVersion })).status,
+      ).toBe("supported");
+    },
+  );
+  test.each([
+    "3.11.1",
+    "3.9.0",
+    "3.12.0-beta.1",
+    "4.0.0-rc.1",
+    "3.11",
+    "bad",
+    "",
+    undefined,
+  ])("rejects app %s", (appVersion) => {
+    expect(
+      assessCompatibility(identity("darwin-arm64", { appVersion })).status,
+    ).toBe("unsupported");
+  });
+  test.each([
+    "0.16.4",
+    "0.9.0",
+    "1.0.0-beta.1",
+    "0.16.6-rc.1",
+    "0.16.5broken",
+    "",
+    undefined,
+  ])("rejects CLI %s", (cliVersion) => {
+    expect(
+      assessCompatibility(identity("linux-x64", { cliVersion })).status,
+    ).toBe("unsupported");
+  });
+  test("keeps verification evidence independent from the support floor", () => {
+    expect(MINIMUM_ZCODE_VERSION).toEqual({ app: "3.11.2", cli: "0.16.5" });
+    expect(VERIFIED_ZCODE_ARTIFACT.appVersion).toBe("3.11.2");
     expect(
       assessCompatibility(
-        identity("darwin-arm64", {
-          appBuild: "different-build",
-          metadataSha256: "different-metadata-hash",
-        }),
+        identity("darwin-arm64", { appVersion: "4.0.0", cliVersion: "1.0.0" }),
       ),
-    ).toMatchObject({
-      status: "supported",
-      hostArtifact: { id: CURRENT_ZCODE_ARTIFACT.id },
-      hostProtocol: { id: CURRENT_HOST_PROTOCOL.id },
-    });
-  });
-
-  test("reports a modified CLI without rejecting a matching host candidate", () => {
-    expect(
-      assessCompatibility(identity("linux-arm64", { cliSha256: "modified" })),
-    ).toMatchObject({
-      status: "supported",
-      cliIntegrity: "modified",
-      expectedCliSha256: OFFICIAL_CLI_SHA256,
-      hostArtifact: { id: "zcode-host-3.11.2" },
-    });
-  });
-
-  test("rejects old, future, or unknown CLI versions", () => {
-    expect(
-      assessCompatibility(identity("darwin-arm64", { appVersion: "3.10.2" }))
-        .status,
-    ).toBe("unsupported");
-    expect(
-      assessCompatibility(identity("darwin-arm64", { appVersion: "3.11.3" }))
-        .status,
-    ).toBe("unsupported");
-    expect(
-      assessCompatibility(identity("darwin-arm64", { cliVersion: "0.16.6" }))
-        .status,
-    ).toBe("unsupported");
+    ).toEqual({ status: "supported", reason: expect.any(String) });
   });
 });

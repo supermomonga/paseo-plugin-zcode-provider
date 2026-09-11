@@ -8,6 +8,8 @@ links:
     kind: amends
   - target: 6
     kind: amendedby
+  - target: 7
+    kind: amendedby
 ---
 
 # OS別の配置解決で共通ZCodeホストを起動する

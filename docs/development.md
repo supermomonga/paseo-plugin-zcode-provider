@@ -2,7 +2,7 @@
 
 For installation and usage, see the [README](../README.md#installation).
 
-From a local checkout, run `npm ci` to install development dependencies before running the commands below. Development SDKs are pinned to **0.8.0**.
+From a local checkout, run `npm ci` to install development dependencies before running the commands below. Development SDKs are pinned to **0.8.0**. The npm `prepare` hook generates ignored `server/build-info.ts` from `package.json`; `prebuild` regenerates it after version edits. This keeps runtime version metadata inside Paseo's permitted module directories without duplicating the version source.
 
 | Command                                                        | Purpose                                                                                          |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -36,7 +36,7 @@ Development and tests use the published `@getpaseo/plugin/server/provider` modul
 
 GitHub Actions checks the official [ZCode changelog](https://zcode.z.ai/en/changelog) daily at 09:17 JST and the [Paseo changelog](https://paseo.sh/changelog) at 09:27 JST. Both workflows also support `workflow_dispatch`. Scheduled execution starts after the workflow is on `main`; GitHub may delay scheduled runs.
 
-The ZCode baseline comes from `CURRENT_ZCODE_ARTIFACT.appVersion` in the compatibility manifest. The Paseo baseline comes from the exact `@getpaseo/plugin` development dependency. Update these through normal compatibility work; the checks do not change supported versions automatically.
+The ZCode verification baseline comes from `VERIFIED_ZCODE_ARTIFACT.appVersion` in the compatibility manifest. The Paseo baseline comes from the exact `@getpaseo/plugin` development dependency. Update verification evidence through normal compatibility work. `MINIMUM_ZCODE_VERSION` separately controls which stable releases may start; verifying a newer release does not automatically raise the minimum. The checks do not change either value automatically.
 
 All newer versions are candidates, including Paseo betas and release candidates. SemVer ordering treats `0.8.0-beta.1 < 0.8.0-beta.2 < 0.8.0-rc.1 < 0.8.0`: a stable release gets its own issue even if a beta issue already exists. Versions older than or equal to the baseline are not reported.
 

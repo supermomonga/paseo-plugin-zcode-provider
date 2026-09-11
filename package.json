@@ -16,14 +16,18 @@
     "format": "prettier --write index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json .github/workflows",
     "format:check": "prettier --check index.server.ts server scripts test docs README.md NOTICE.md package.json tsconfig.json vitest.config.ts paseo-plugin.json .github/workflows",
     "check:zcode-releases": "node scripts/check-zcode-releases.mjs",
-    "check:paseo-releases": "node scripts/check-paseo-releases.mjs"
+    "check:paseo-releases": "node scripts/check-paseo-releases.mjs",
+    "prepare": "node scripts/generate-build-info.mjs",
+    "prebuild": "node scripts/generate-build-info.mjs"
   },
   "devDependencies": {
     "@getpaseo/client": "0.8.0",
     "@getpaseo/plugin": "0.8.0",
     "@getpaseo/protocol": "0.8.0",
     "@types/node": "22.18.3",
+    "@types/semver": "7.8.0",
     "cheerio": "1.2.0",
+    "es-module-lexer": "1.7.0",
     "esbuild": "0.25.12",
     "prettier": "3.6.2",
     "semver": "7.8.5",

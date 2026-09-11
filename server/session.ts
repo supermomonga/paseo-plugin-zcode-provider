@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
 import { jsonValue, jsonObject } from "./mapping.js";
 import { isAbsolute } from "node:path";
 import { realpath, stat } from "node:fs/promises";
@@ -231,16 +232,21 @@ export class ZCodeSession {
     return this.history;
   }
 
-  runtimeFailed(
-    error = new AdapterError("NATIVE_EXITED", "ZCode host disconnected"),
-  ): void {
+  runtimeFailed(error?: AdapterError): void {
     if (this.failed) return;
+    const failure = diagnosticError(
+      error ?? new AdapterError("NATIVE_EXITED", "ZCode host disconnected"),
+      { ...this.bridge.diagnostic, stage: "session" },
+    );
+    if (error !== undefined) this.logger.error("zcode.session.failed", failure);
+    error = failure;
     this.failed = true;
-    this.failActive(error);
+    this.failActive(error, false);
     this.emit({
       type: "runtime_failed",
       error: error.message,
       code: error.code,
+      diagnostic: formatDiagnostic(error),
     });
   }
 
@@ -711,9 +717,12 @@ export class ZCodeSession {
           });
       }
       this.runtimeFailed(
-        error instanceof AdapterError
-          ? error
-          : new AdapterError("NATIVE_PROTOCOL_ERROR", "Invalid ZCode event"),
+        diagnosticError(error, {
+          ...this.bridge.diagnostic,
+          stage: "notification",
+          operation: "event",
+          check: "native-event",
+        }),
       );
     }
   }
@@ -1018,13 +1027,19 @@ export class ZCodeSession {
     this.settle(active);
   }
 
-  private failActive(error: unknown): void {
+  private failActive(error: unknown, report = true): void {
     const active = this.active;
     if (active === undefined || active.settled) return;
+    error = diagnosticError(error, {
+      ...this.bridge.diagnostic,
+      stage: "session",
+    });
+    if (report) this.logger.error("zcode.turn.failed", error);
     const message = safeError(error);
     this.emit({
       type: "turn_failed",
       error: message,
+      diagnostic: formatDiagnostic(error),
       code:
         error instanceof AdapterError ? error.code : "NATIVE_PROTOCOL_ERROR",
       turnId: active.id,

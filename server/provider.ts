@@ -27,6 +27,12 @@ import {
 } from "./discovery/discover.js";
 import { ZCodeHostBridge, type HostBridge } from "./host/bridge.js";
 import { logger } from "./logger.js";
+import { MINIMUM_ZCODE_VERSION } from "./discovery/manifest.js";
+import {
+  diagnosticError,
+  formatDiagnostic,
+  runtimeDiagnostic,
+} from "./diagnostics.js";
 import { AdapterError } from "./errors.js";
 import { catalogModels, mapMcpServers, ZCODE_MODES } from "./mapping.js";
 import {
@@ -63,14 +69,23 @@ async function createHost(
   const env = { ...process.env, ...environment };
   const runtime = await discoverRuntime({ environment: env, signal });
   assertRuntimeSupported(runtime);
-  const smoke = await runRuntimeSmoke(runtime, env, signal);
-  if (!smoke.passed)
-    throw new AdapterError(
-      "RUNTIME_SMOKE_FAILED",
-      "ZCode runtime smoke failed",
+  try {
+    const smoke = await runRuntimeSmoke(runtime, env, signal);
+    if (!smoke.passed)
+      throw diagnosticError(
+        new AdapterError("RUNTIME_SMOKE_FAILED", "ZCode runtime smoke failed"),
+        { stage: "smoke", check: "cli-smoke" },
+      );
+    signal.throwIfAborted();
+    return ZCodeHostBridge.start(runtime, logger, env);
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw diagnosticError(
+      error,
+      { ...runtimeDiagnostic(runtime), stage: "host-start" },
+      "RUNTIME_DISCOVERY_FAILED",
     );
-  signal.throwIfAborted();
-  return ZCodeHostBridge.start(runtime, logger, env);
+  }
 }
 
 const optionsSchema = z.object({}).strict();
@@ -161,7 +176,17 @@ export class ZCodeConnection implements ProviderConnection {
       : this.dispatch(input);
     if (entry) entry.queue = operation.catch(() => undefined);
     const job = operation
-      .catch((error: unknown) => {
+      .catch((cause: unknown) => {
+        const error = diagnosticError(
+          cause,
+          {
+            ...entry?.bridge.diagnostic,
+            stage: "request",
+            operation: input.type,
+          },
+          "INVALID_CONFIGURATION",
+        );
+        logger.error("zcode.provider.request_failed", error);
         if (input.type === "session.prompt") {
           const entry = this.sessions.get(input.sessionId);
           if (
@@ -522,7 +547,9 @@ export class ZCodeConnection implements ProviderConnection {
       entry.unsubscribe = native.subscribe((event) =>
         this.accept(input.sessionId, entry, event),
       );
-      entry.unsubscribeFailure = host.onFailure(() => native!.runtimeFailed());
+      entry.unsubscribeFailure = host.onFailure((error) =>
+        native!.runtimeFailed(error),
+      );
       if (!this.sessions.has(input.sessionId))
         throw new AdapterError(
           "NATIVE_EXITED",
@@ -617,14 +644,22 @@ export class ZCodeConnection implements ProviderConnection {
             sessionId: id,
             turnId: event.turnId,
             state: "failed",
-            error: { code: event.code, message: "ZCode turn failed" },
+            error: {
+              code: event.code,
+              message: "ZCode turn failed",
+              diagnostic: event.diagnostic,
+            },
           });
         break;
       case "runtime_failed": {
         this.emit({
           type: "session.runtime_failed",
           sessionId: id,
-          error: { code: event.code, message: "ZCode session failed" },
+          error: {
+            code: event.code,
+            message: "ZCode session failed",
+            diagnostic: event.diagnostic,
+          },
         });
         if (this.sessions.get(id) !== entry) break;
         const cleanup = this.closeSession(id)
@@ -681,7 +716,10 @@ export class ZCodeConnection implements ProviderConnection {
 }
 
 function publicError(error: unknown): ProviderError {
-  const persistenceMessages: Record<string, string> = {
+  const messages: Record<string, string> = {
+    UNSUPPORTED_ZCODE: `ZCode requires stable app >=${MINIMUM_ZCODE_VERSION.app} and bundled CLI >=${MINIMUM_ZCODE_VERSION.cli}.`,
+    RUNTIME_DISCOVERY_FAILED:
+      "ZCode installation or required host structure could not be inspected. See the diagnostic for the failure stage.",
     PERSISTENCE_VERSION_UNSUPPORTED:
       "ZCode persistence version is unsupported. Import the saved conversation from the session list.",
     PERSISTENCE_INVALID:
@@ -690,11 +728,11 @@ function publicError(error: unknown): ProviderError {
       "ZCode resume information could not be saved. The prompt was not sent.",
   };
   return {
+    diagnostic: formatDiagnostic(error),
     code: error instanceof AdapterError ? error.code : "INVALID_CONFIGURATION",
     message:
       error instanceof AdapterError
-        ? (persistenceMessages[error.code] ??
-          `ZCode operation failed (${error.code})`)
+        ? (messages[error.code] ?? `ZCode operation failed (${error.code})`)
         : "Invalid ZCode provider request",
   };
 }

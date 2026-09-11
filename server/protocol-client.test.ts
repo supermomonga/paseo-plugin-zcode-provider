@@ -1,4 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { formatDiagnostic } from "./diagnostics.js";
+import { AdapterError } from "./errors.js";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { Logger } from "./logger.js";
 import {
@@ -200,6 +202,93 @@ describe("ZCode private protocol client", () => {
       error: { code: "NATIVE_PROTOCOL_ERROR" },
     });
     releaseHandler.resolve();
+  });
+});
+
+describe("runtime failure diagnostics", () => {
+  const runtime = {
+    appVersion: "4.0.0",
+    cliVersion: "1.0.0",
+    platform: "linux-x64",
+  };
+  test.each(["native-error", "invalid-result", "timeout", "exit"])(
+    "preserves initialization context after %s",
+    async (failure) => {
+      const h = transportHarness();
+      const failed = vi.fn();
+      const client = new ZCodeProtocolClient(
+        h.transport,
+        new CaptureLogger(),
+        undefined,
+        undefined,
+        failed,
+        runtime,
+      );
+      const request = client.request(
+        "__call",
+        { secret: "secret-prompt" },
+        z.object({ status: z.boolean() }).strict(),
+        failure === "timeout" ? 5 : 1000,
+        { operation: "initialize" },
+      );
+      const caught = request.catch((error) => error as AdapterError);
+      if (failure === "native-error")
+        await h.send({
+          id: 1,
+          error: { code: -32000, message: "secret-native-error" },
+        });
+      if (failure === "invalid-result")
+        await h.send({ id: 1, result: { status: "secret-value" } });
+      if (failure === "exit") await h.transport.close();
+      const error = await caught;
+      const diagnostic = JSON.parse(formatDiagnostic(error));
+      expect(diagnostic).toMatchObject({
+        ...runtime,
+        operation: "initialize",
+        check: {
+          "native-error": "native-error",
+          "invalid-result": "native-result",
+          timeout: "request-timeout",
+          exit: "native-exit",
+        }[failure],
+      });
+      if (failure === "invalid-result")
+        expect(diagnostic.validation).toEqual([
+          { path: "status", code: "invalid_type" },
+        ]);
+      expect(formatDiagnostic(error)).not.toContain("secret");
+      if (failure === "exit")
+        expect(failed).toHaveBeenCalledWith(
+          expect.objectContaining({ code: "NATIVE_EXITED" }),
+        );
+      await client.close();
+    },
+  );
+  test("retains notification validation context in the failure callback", async () => {
+    const h = transportHarness();
+    const failure = Promise.withResolvers<AdapterError>();
+    const client = new ZCodeProtocolClient(
+      h.transport,
+      new CaptureLogger(),
+      undefined,
+      (notification) => {
+        z.object({ type: z.literal("known") }).parse(notification.params);
+      },
+      failure.resolve,
+      runtime,
+    );
+    client.start();
+    await h.send({ method: "event", params: { type: "secret-unknown-event" } });
+    const error = await failure.promise;
+    expect(JSON.parse(formatDiagnostic(error))).toMatchObject({
+      ...runtime,
+      stage: "notification",
+      check: "native-event",
+      operation: "event",
+      validation: [{ path: "type", code: "invalid_value" }],
+    });
+    expect(formatDiagnostic(error)).not.toContain("secret");
+    await client.close();
   });
 });
 

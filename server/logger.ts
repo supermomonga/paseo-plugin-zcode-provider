@@ -12,7 +12,8 @@ export const logger: Logger = {
   log(level, event) {
     if (level !== "debug") console.error(`[zcode:${level}] ${event}`);
   },
-  error(event) {
-    console.error(`[zcode:error] ${event}`);
+  error(event, error) {
+    console.error(`[zcode:error] ${event}\n${formatDiagnostic(error)}`);
   },
 };
+import { formatDiagnostic } from "./diagnostics.js";

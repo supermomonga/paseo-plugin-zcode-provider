@@ -7,6 +7,11 @@ import { z } from "zod";
 import { assertRuntimeSupported } from "../discovery/discover.js";
 import type { DiscoveredRuntime } from "../discovery/types.js";
 import { AdapterError } from "../errors.js";
+import {
+  diagnosticError,
+  runtimeDiagnostic,
+  type RuntimeDiagnostic,
+} from "../diagnostics.js";
 import type { Logger } from "../logger.js";
 import {
   ZCodeProtocolClient,
@@ -35,7 +40,8 @@ export interface HostSubscription {
 }
 
 export interface HostBridge {
-  onFailure(listener: () => void): () => void;
+  readonly diagnostic: RuntimeDiagnostic;
+  onFailure(listener: (error: AdapterError) => void): () => void;
   request<Schema extends z.ZodType>(
     method: string,
     params: unknown,
@@ -59,8 +65,8 @@ export interface HostBridge {
 }
 
 export class ZCodeHostBridge implements HostBridge {
-  private readonly failures = new Set<() => void>();
-  private failed = false;
+  private readonly failures = new Set<(error: AdapterError) => void>();
+  private failure: AdapterError | undefined;
   private readonly handlers = new Map<
     string,
     (event: DynamicEvent) => Promise<void> | void
@@ -80,7 +86,8 @@ export class ZCodeHostBridge implements HostBridge {
       logger,
       undefined,
       (notification) => this.handleNotification(notification),
-      () => this.fail(),
+      (error) => this.fail(error),
+      this.diagnostic,
     );
     this.client.start();
     this.exited = new Promise((resolve, reject) => {
@@ -94,7 +101,7 @@ export class ZCodeHostBridge implements HostBridge {
       (byteCount) => {
         logger.log("debug", "zcode.host.stderr.closed", { byteCount });
       },
-      () => this.fail(),
+      (error) => this.fail(error),
     );
   }
 
@@ -121,7 +128,7 @@ export class ZCodeHostBridge implements HostBridge {
           ELECTRON_RUN_AS_NODE: "1",
           PASEO_ZCODE_HOST_INDEX: host.hostIndex,
           PASEO_ZCODE_HOST_RPC_MODULE: host.hostRpcModule,
-          PASEO_ZCODE_HOST_ARTIFACT: JSON.stringify(host.artifact),
+          PASEO_ZCODE_RPC_EXPORTS: JSON.stringify(host.rpcExports),
           PASEO_ZCODE_HOST_PROTOCOL: JSON.stringify(host.protocol),
         },
         stdio: ["pipe", "pipe", "pipe"],
@@ -136,27 +143,42 @@ export class ZCodeHostBridge implements HostBridge {
     logger.log("info", "zcode.host.started", { hostPid: child.pid });
     void bridge.exited.then(
       (exitCode) => {
-        if (!bridge.closePromise) bridge.fail();
+        if (!bridge.closePromise)
+          bridge.fail(
+            diagnosticError(
+              new AdapterError("NATIVE_EXITED", "ZCode host exited"),
+              { stage: "host-start", check: "native-exit", exitCode },
+            ),
+          );
         logger.log(exitCode === 0 ? "info" : "error", "zcode.host.exited", {
           hostPid: child.pid,
           exitCode,
         });
       },
-      () => bridge.fail(),
+      (error) => bridge.fail(error),
     );
     return bridge;
   }
 
-  onFailure(listener: () => void): () => void {
+  get diagnostic(): RuntimeDiagnostic {
+    return runtimeDiagnostic(this.runtime);
+  }
+
+  onFailure(listener: (error: AdapterError) => void): () => void {
     this.failures.add(listener);
-    if (this.failed) listener();
+    if (this.failure) listener(this.failure);
     return () => this.failures.delete(listener);
   }
 
-  private fail(): void {
-    if (this.failed || this.closePromise) return;
-    this.failed = true;
-    for (const listener of this.failures) listener();
+  private fail(error: unknown): void {
+    if (this.failure || this.closePromise) return;
+    this.failure = diagnosticError(
+      error,
+      { ...this.diagnostic, stage: "transport", check: "native-exit" },
+      "NATIVE_EXITED",
+    );
+    this.logger.error("zcode.host.failed", this.failure);
+    for (const listener of this.failures) listener(this.failure);
   }
 
   request<Schema extends z.ZodType>(
@@ -169,6 +191,7 @@ export class ZCodeHostBridge implements HostBridge {
       readonly inputId: string;
     },
   ): Promise<z.output<Schema>> {
+    if (this.failure) return Promise.reject(this.failure);
     const contract = this.runtime.resolvedHost;
     if (contract === undefined) {
       throw new AdapterError(
@@ -186,9 +209,7 @@ export class ZCodeHostBridge implements HostBridge {
       },
       resultSchema,
       timeoutMs,
-      diagnosticContext === undefined
-        ? undefined
-        : { operation: method, ...diagnosticContext },
+      { operation: method, ...diagnosticContext },
     );
   }
 

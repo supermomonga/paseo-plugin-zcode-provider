@@ -21,7 +21,7 @@
 
 - [ ] **標準 Provider 診断欄**
   - main の標準診断欄は AgentClient の `getDiagnostic()` を呼びます。公開 Provider API とそのアダプターには対応する診断 hook がありません。
-  - 現在は ZCode バージョン・host hash・RPC export・同梱 CLI の動作を起動前に検証し、失敗時は処理を停止します。標準欄の詳細診断との同等性はありません。
+  - 現在は ZCode の最低バージョン・RPC の構造・同梱 CLI の動作を起動前に検証し、実行中の応答・イベントも検証します。host hash は診断情報です。失敗時の ProviderError.diagnostic とプラグインログには報告用の情報を出しますが、標準診断欄との同等性はありません。
   - 完了条件: 診断要求と応答の公開 API が追加され、本体の標準診断欄へ接続できること。認証値やプロンプトを表示しないことも検証すること。
   - 根拠: [標準診断の処理](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/provider-snapshot-manager.ts#L790)。
 
@@ -31,7 +31,7 @@
   - 3.11.2 の host `createSession` から渡される作成パラメーターには `systemPrompt` がありません。`persistence: "deferred"` は保存を遅延する指定であり、非永続セッションではありません。
   - 元の patcher もこれらを native 作成時に適用していません。本プラグインは無視せず、非空の `systemPrompt` と `persist: false` を `INVALID_CONFIGURATION` として拒否します。daemon の追加指示や該当する Agent Profile を設定した場合も対象です。
   - 完了条件: 対応 ZCode host に実際の適用経路があることを確認し、通常のユーザーメッセージへの挿入や保存後の削除に頼らず実装できること。
-  - 根拠: 対応 artifact の `out/host/index.js` 内 `M8` / `createSession`。確認した hash は [manifest](../server/discovery/manifest.ts) に固定しています。
+  - 根拠: 対応 artifact の `out/host/index.js` 内 `M8` / `createSession`。確認した hash は [manifest](../server/discovery/manifest.ts) の動作確認済み情報に記録しています。
 
 ## リリース前の確認
 
