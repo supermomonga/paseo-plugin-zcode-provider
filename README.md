@@ -5,7 +5,7 @@ Use ZCode models, tools, and conversation history in [Paseo](https://github.com/
 ![ZCode conversation in Paseo](images/zcode-conversation.png)
 
 > [!NOTE]
-> This plugin is under development and requires Paseo **0.8.0 or later**. Verification on 0.8.0 covers automated SDK/compiler/adapter tests, including steering, native queue aggregation, provider replacement, and session restoration. Real ZCode checks on macOS arm64 cover text guidance, attachment queues, tool execution, stopping, and restoration through isolated Provider connections. Daemon/UI steering and Paseo app restart verification remain outstanding.
+> This plugin is under development and requires Paseo **0.8.0 or later**. SDK/compiler/adapter tests pass on **0.9.0-beta.1** and the retained minimum **0.8.0**, covering steering, native queue aggregation, provider replacement, and session restoration. Earlier real ZCode checks on macOS arm64 cover text guidance, attachment queues, tool execution, stopping, and restoration through isolated Provider connections. Real daemon/UI operation and real-model requests on 0.9.0-beta.1, daemon/UI steering, and Paseo app restart verification remain outstanding.
 >
 > Earlier 0.8.0-beta.1 checks covered actual prompt responses, plan approval, and restoration across separate processes; UI checks used an isolated daemon with the provider registered as `codex`. Restoration after restarting the Paseo app remains unverified. The screenshot above was supplied by the author. See the [verification notes](docs/verification.md) for details.
 
@@ -64,7 +64,7 @@ Run these commands on the **machine running the Paseo daemon**.
    paseo plugin ls
    ```
 
-Paseo downloads and compiles the plugin automatically; no manual clone, dependency installation, or build is needed. See the [official installation guide](https://github.com/getpaseo/paseo/blob/main/public-docs/plugins/v0.8/index.md#install-a-published-plugin) for more options.
+Paseo downloads and compiles the plugin automatically; no manual clone, dependency installation, or build is needed. See the [official installation guide](https://paseo.sh/docs/plugins) for more options.
 
 > [!NOTE]
 > Plugins run with the daemon user's permissions. Make sure you trust the code and its dependencies before installing.
@@ -106,7 +106,7 @@ The installation command above tracks this repository's default branch. Check th
 - **Custom system prompts and `persist: false` are unsupported.** Both produce `INVALID_CONFIGURATION`. This also applies to additional instructions configured in the Paseo daemon or Agent Profiles.
 - Integration with the standard account quota, reset time, and provider diagnostics panels is not implemented. The plugin's own Diagnostics screen is read-only and is not a replacement for the standard provider diagnostics panel.
 - The Diagnostics screen cannot change settings. The install path and other daemon environment settings are still configured on the daemon host.
-- In Paseo 0.8.0, initial context usage is not replayed to subscribers immediately after creating or resuming a session, so the standard UI cannot display that initial value. Subsequent usage updates are delivered.
+- In Paseo 0.8.0 and 0.9.0-beta.1, initial context usage is not replayed to subscribers immediately after creating or resuming a session, so the standard UI cannot display that initial value. Subsequent usage updates are delivered.
 - Conversation rewind, structured output, independent child session management, and automatic conversion of persistence handles from the old patcher are unsupported.
 
 See [remaining work](docs/todo.md) for the evidence and conditions for resolving each limitation.

@@ -1,5 +1,19 @@
 # 検証記録
 
+## 2026-09-18: Issue #15 の Paseo 0.9.0-beta.1 対応
+
+対象は [Issue #15](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/15)。開発用 SDK の `@getpaseo/plugin`・`@getpaseo/client`・`@getpaseo/protocol` を `0.9.0-beta.1` に固定し、CI の上流 checkout を同リリースの commit `7c1958f5b0a4ae9f2cb12f77b0a754a644cd0081` に更新しました。Provider 実装・保存形式・manifest の最低要件 `>=0.8.0` は変更していません。上限も追加していませんが、未検証の将来版の動作を保証するものではありません。
+
+- macOS arm64 / Node.js 22.23.0 で `npm ci --include=dev`、`npm ls`（SDK 3パッケージすべて `0.9.0-beta.1`）、`npm run typecheck`、`npm test`（17ファイル・235テスト）、`npm run build` が成功しました。SDK と Zod の実行時参照を bundle に含めない検査も成功しています。
+- `npm run test:upstream -- <0.9.0-beta.1 checkout>` が成功しました。`NODE_ENV` 未設定 / `production` の両方で、新規ディレクトリへの依存導入、実コンパイラによる server/client コンパイル、Provider 登録と診断画面の登録を確認しました。実アダプターではモデル一覧・非デフォルト選択・モデル変更、送信・ストリーミング、後続使用量更新、テキストのステアリング、添付キュー、最後の一回だけの完了通知、Provider 差し替え、永続化情報からの再開、履歴再生、復元後の送信が成功しました。
+- 最低要件の **0.8.0**（commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f`）でも同じ結合検証が成功しました。更新後の作業ツリーを一時 Git リポジトリへコピーし、`npm ci --include=dev` 後、`npm install --no-save --package-lock=false` で実行用 SDK 3パッケージだけを `0.8.0` に差し替えました。`package.json` / `package-lock.json` が更新後の原本と一致し、インストール済み SDK は3つとも `0.8.0` であることを別途確認しました。Git 準備の候補ディレクトリはそのままの lockfile から **0.9.0-beta.1** の開発依存を入れ、コンパイルされた server は **0.8.0** の Provider SDK で評価しています。検証スクリプトの SDK と上流版の一致検査は変更していません。再現手順は [開発ガイド](development.md#minimum-runtime-compatibility) を参照してください。
+- 各版の公開 `assertPluginCompatibility` に現行 manifest と当該バージョンを渡し、daemon / app の両方で受理することを確認しました。
+- 両版とも初期使用量は `initialUsageReplayed: false` / `resumedInitialUsageReplayed: false`、後続更新は `liveUsage: "passed"` でした。既存の初期使用量の制約は未解消です。
+- 0.9.0-beta.1 の `server.registerSettings()` が返す `read()` / `subscribe()` をリリースの型定義と公式ドキュメントで確認しました。[ADR 10](adr/0010-サーバー設定apiの追加後も診断専用画面を維持する.md) を Accepted とし、ADR 8 を Amends / Amended by で補足、管理対象の目次を再生成しました。サーバー側で設定を読めない制約は解消していますが、今回の要求範囲に設定編集を含めないため診断専用画面を維持します。README の公式ガイドへのリンクは現行 URL に修正しました。
+- `npm run format:check` と `git diff --check` が成功しました。`adrs doctor` はエラー0、ADR 1 の既存 warning 1 / info 1 のみです。
+
+**検証の範囲:** ZCode 側はテスト用 host で、Paseo 側は各版の実コンパイラ・Provider アダプター・Provider SDK を使用しました。クライアント登録は UI モジュールを模擬しています。今回、実 daemon/UI 操作、実モデル送信、Paseo アプリや daemon の再起動後の復元、Linux / Windows / macOS x64 実機は検証していません。利用中の daemon とインストール済みプラグインは変更していません。ローカルで CI 相当の検証を実施した結果であり、リモート CI の実行結果ではありません。0.8.0 の過去の実機確認は以下の各日付の記録と区別します。
+
 ## 2026-09-18: Issue #13 のモデル選択修正
 
 [Issue #13](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/13) の原因は、現在モデルだけを含むセッション snapshot の `settings.model.available` を完全な候補一覧として使っていたことです。調査では PR #12 前のセッション実装と同じ遅延 snapshot 条件で比較し、main `a186a1d` だけが非デフォルトモデルを拒否することを確認しました。インストール済み ZCode 3.11.2 / CLI 0.16.5 のソースでも、購読・`readSession`・設定変更後の応答が `modelAvailability: "current"` を指定することを確認しています。
