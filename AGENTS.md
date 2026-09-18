@@ -45,3 +45,6 @@ PRs should describe the problem, the resulting behavior, related issues, verific
 ## Design and Configuration Guidelines
 
 Identify the root cause and do not add ad hoc workarounds. Add backward compatibility logic only when explicitly instructed. Consult the existing `docs/adr/` for design decisions. Do not commit credentials, conversation content, generated artifacts, or the local `mise.local.toml`. Use `gh` for GitHub operations and investigations.
+
+- If `ghq` is installed on the local machine and the Paseo source repository has been cloned at `$(ghq root)/getpaseo/paseo`, it is recommended to consult that checkout when investigating Paseo's implementation.
+- Limit feature implementations to what is possible within a Paseo plugin. Do not propose implementation plans that require changes to Paseo itself.
