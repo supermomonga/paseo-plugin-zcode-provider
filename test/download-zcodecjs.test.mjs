@@ -28,14 +28,23 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 // Small USTAR archives compressed with xz, containing one regular file each.
 const CLI_XZ = Buffer.from(
-  "/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj4Cf/AJtdABcLymeKE1FC+mouASt5Q7OzOdflQmLD9FjkNkfS2PB6QzuMM+Bi/8EoOeIdRMXh4LYMQ+Pu9Sh8G5M8zXnYDmpoyjcik7YSr4qxJw4GrstahdH4ZrvvsYfN3g0CAfwSLfMVANRO15jJHuAeYervD6dVMffOhJvMUIDDfzNfhDP2GPlhPj6CIjJFfvzo4XIbk23/ILmeZtJtHOcAAACSwWj6JvejKAABtwGAUAAAK0YfeLHEZ/sCAAAAAARZWg==",
+  "/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj4Cf/AMhdABcLymeKE1FC+mouASt5Q7OzOdflQmLD9FjkNkfS2PB6QzuMM+Bi/8EoOeIdRMWnLb7sVT1VPcf+a+yCuS1lPZFvPEY59zKHuOq2Z2ypZvFcG9RjTIatu8+uGSk1J+RUldQQnFpGsPTjbbDAkAkpaXOYlZlJWfUkvEw75Qf7s1BcRpJHS1h4WBizNEDSeMJ6XdIVAM5gSYr8cMO+f0GWJMS+tY7fRCk8+QuBuPosJgXLHc/yj9GKUFxe21JNuXWYeht9UnRD0SoAAFDdMfV3/Z0xAAHkAYBQAAByPAXyscRn+wIAAAAABFla",
   "base64",
 );
 const OTHER_XZ = Buffer.from(
   "/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj4Cf/AKBdABcLymeKE1FC+mouASt5Q7OzOdflQmLD9FjkVL8Zh15jRThv4qR3Aqjk+cuQDbry2QsXnTXrzB3ZIos3wV1+89sXZERxQpMDwwVz38LGjEOEaaGJGxqabRUhIG7kizEXXGp4/nH4q8synhwzJ0eHC9tx4sQJ5zWTCf0cAan0Yk2e4vQHHE0NskegNK57pO5BXJpv4YIB2xAD52fBQj+UQAAAgYl1GOzm5SQAAbwBgFAAAOi22BKxxGf7AgAAAAAEWVo=",
   "base64",
 );
-const CLI_CONTENT = '// fixture zcode.cjs\nmodule.exports = "fixture";\n';
+const INVALID_JS_XZ = Buffer.from(
+  "/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj4Cf/AIhdABcLymeKE1FC+mouASt5Q7OzOdflQmLD9FjkNkfS2PB6QzuMM+Bi/8EoOeIdRMWnPzuYsp04Z9TLGThbc5Latv1/KeUDNn/cN9bqMJsTbub6dKqoNIEYwyS0qG9gqn6wDXq3PA+WKQfA+8Jz+qkFWO+9NwVV4GCQYEb2cOJn8DHYN7EdCGDuzQAA3eXVvlkLLcoAAaQBgFAAAB42Xf2xxGf7AgAAAAAEWVo=",
+  "base64",
+);
+const CLI_CONTENT = `#!/usr/bin/env node
+function fixture() {
+  return { value: "fixture", items: [1, 2] };
+}
+module.exports = fixture;
+`;
 
 function member(name, content) {
   const body = Buffer.from(content);
@@ -128,7 +137,7 @@ describe("download CLI and release selection", () => {
 });
 
 describe("download and extraction", () => {
-  test("resolves latest, writes exact contents, and overwrites an existing version", async () => {
+  test("resolves latest, formats minified code, preserves the shebang, and overwrites an existing version", async () => {
     const fetchImpl = vi.fn(
       async (url) =>
         new Response(url === "https://zcode.z.ai/en" ? link("3.12.3") : deb()),
@@ -152,6 +161,19 @@ describe("download and extraction", () => {
     ]);
   });
 
+  test("formats using the destination's Prettier configuration", async () => {
+    await writeFile(join(root, ".prettierrc.json"), '{"singleQuote":true}');
+    const path = await downloadZCodeCjs(
+      options({
+        version: "3.12.3",
+        fetchImpl: async () => new Response(deb()),
+      }),
+    );
+    expect(await readFile(path, "utf8")).toBe(
+      CLI_CONTENT.replace('"fixture"', "'fixture'"),
+    );
+  });
+
   test.each([
     [
       "HTTP failure",
@@ -159,6 +181,11 @@ describe("download and extraction", () => {
       "HTTP 404",
     ],
     ["invalid deb", () => new Response("not a deb"), "Invalid deb"],
+    [
+      "Prettier syntax error",
+      () => new Response(deb(INVALID_JS_XZ)),
+      "Unexpected token",
+    ],
     [
       "invalid xz",
       () => new Response(deb(Buffer.from("not xz"))),

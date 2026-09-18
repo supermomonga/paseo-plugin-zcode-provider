@@ -1,12 +1,22 @@
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, open, rename, rm, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { load } from "cheerio";
+import { format, resolveConfig } from "prettier";
 import { fetchHtml, runMain, validateVersion } from "./releases/common.mjs";
 
 const DOWNLOAD_PAGE = "https://zcode.z.ai/en";
@@ -182,6 +192,12 @@ export async function downloadZCodeCjs({
     const stagedPath = join(staging, "zcode.cjs");
     await extractZCodeCjs(dataPath, stagedPath);
     const outputPath = join(directory, "zcode.cjs");
+    log(`Formatting ZCode ${download.version} with Prettier`);
+    const formatted = await format(await readFile(stagedPath, "utf8"), {
+      ...(await resolveConfig(outputPath)),
+      filepath: outputPath,
+    });
+    await writeFile(stagedPath, formatted, "utf8");
     await rename(stagedPath, outputPath);
     log(`Saved ZCode ${download.version}: ${outputPath}`);
     return outputPath;
