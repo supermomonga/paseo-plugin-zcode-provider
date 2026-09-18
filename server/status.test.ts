@@ -17,10 +17,12 @@ function runtime(
       metadata: "/opt/ZCode/resources/glm/.node-bundle-meta.json",
       appPackage: "/opt/ZCode/resources/app.asar/package.json",
       hostArchive: "/opt/ZCode/resources/app.asar",
+      builtinProviderConfig:
+        "/opt/ZCode/resources/config/provider/zcode-builtin.json",
     },
     identity: {
       platform: "linux-x64",
-      appVersion: "3.12.0",
+      appVersion: "3.12.3",
       cliVersion: "0.17.0",
       cliSha256: "a".repeat(64),
       metadataSha256: "b".repeat(64),
@@ -32,7 +34,7 @@ function runtime(
       },
     },
     compatibility: "supported",
-    compatibilityReason: "ZCode 3.12.0 is supported",
+    compatibilityReason: "ZCode 3.12.3 is supported",
     writableInstallRoot: false,
     ...overrides,
   };
@@ -82,10 +84,10 @@ describe("ZCode diagnostics handler", () => {
       installRoot: "/opt/ZCode",
       installRootSource: "default",
       platform: "linux-x64",
-      appVersion: "3.12.0",
+      appVersion: "3.12.3",
       cliVersion: "0.17.0",
       compatibility: "supported",
-      compatibilityReason: "ZCode 3.12.0 is supported",
+      compatibilityReason: "ZCode 3.12.3 is supported",
       artifactMatch: false,
       writableInstallRoot: false,
       sessionsDirectory: "/state/zcode/sessions",
@@ -127,7 +129,7 @@ describe("ZCode diagnostics handler", () => {
         discover: async () =>
           runtime({
             compatibility: "unsupported",
-            compatibilityReason: "ZCode 3.10.0 is older than 3.11.2",
+            compatibilityReason: "ZCode 3.10.0 is older than 3.12.3",
           }),
       }),
     );
@@ -137,7 +139,7 @@ describe("ZCode diagnostics handler", () => {
     expect(result).toMatchObject({
       status: "ready",
       compatibility: "unsupported",
-      compatibilityReason: "ZCode 3.10.0 is older than 3.11.2",
+      compatibilityReason: "ZCode 3.10.0 is older than 3.12.3",
     });
   });
 

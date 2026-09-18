@@ -1,5 +1,58 @@
 # 検証記録
 
+## 2026-09-18: 実モデル E2E と PR CI
+
+- `npm run test:e2e` を追加。既存のモデル・Plan と追加指示・添付・停止・復元のスクリプトを順番に実行します。通常の `npm test` には含めません。実ホストと **Paseo 0.9.0-beta.1** の公開 Provider SDK を使い、daemon / UI は起動しません。
+- ユーザー指定の **Z.ai Coding Plan** (`https://api.z.ai/api/coding/paas/v4`) と既存の `GLM_API_KEY` を使用。既定モデルは `GLM-5.3-Flash`、モデル変更の相手は `GLM-5.3`。API キーをモード `0600` の一時 personal provider 設定へ書き、公式の `ZCODE_DATA_BASE_DIR` / `ZCODE_STORAGE_DIR` でデータを分離します。子プロセス環境にはキーを渡さず、Computer Use helper は無効にしています。
+- 最初の隔離実行は macOS の長い既定一時パスによりネイティブ CLI の `listen EINVAL` が発生しました。公式 CLI が `TMPDIR/znr-<UUID>.sock` を作ることとホストの終了診断から原因を確認し、短い `/tmp` 配下に変更しました。実際の Unix ソケットを作る回帰テストも追加しました。
+- 自動テストで認証未設定時の失敗、環境変数の制限、設定ファイルの権限、成功・失敗時の削除を確認。全体の **19ファイル・284テスト**、型検査、ビルド、Prettier が成功しました。ソケット回帰テストは sandbox 内では `EPERM` となったため、通常環境で再実行して成功しています。
+- macOS arm64 / ZCode **3.12.3** / CLI **0.16.5** で隔離 E2E が成功。2モデルの変更と推論レベル、独立 Plan、build / edit / yolo の承認、edit の却下、別接続での Plan とモデルの復元、追加指示、添付キュー、単一の完了通知、停止、キャンセル入力を除いた履歴4件の復元、再開後の応答、正常終了を確認しました。通常の ZCode 認証や会話は使用していません。
+- 公式ホスト起動中に E2E ランナーへ `SIGTERM` を送り、非ゼロ終了・Provider 接続終了・その実行の一時認証ディレクトリ削除を確認しました。
+- CI に独立した **Real ZCode E2E** ジョブを追加。同一リポジトリの PR、`main` push、手動起動で実行し、secret が渡らない fork / Dependabot PR は除外します。`pull_request_target` は使いません。公式 Ubuntu 向け deb **3.12.3-7463** を SHA-256 `631fbd69fcefe5d57c607bbfd047bb7a474af6017464681b99ccb7b15749c60e` で検証し、パッケージが宣言する依存関係とともにインストールします。`actionlint 1.7.12` で workflow の検証が成功しました。
+- `gh secret set GLM_API_KEY --app actions --repo supermomonga/paseo-plugin-zcode-provider` の標準入力から承認済みの環境変数値を登録し、名前と更新日時だけを読み戻しました（2026-09-18 05:24:35 UTC）。値はログやリポジトリに出力していません。
+- [ADR 12: 実モデルE2Eを隔離した認証設定でPRのCIに組み込む](adr/0012-実モデルe2eを隔離した認証設定でprのciに組み込む.md) は Accepted。既存 ADR の意味は変更せず、新しい運用判断として記録し、CLI 生成の目次を更新しました。doctor はエラー0、ADR 1 の既存 warning 1 / info 1 のみです。
+
+**未検証範囲:** workflow はまだ push していないため、GitHub-hosted Ubuntu 上の実行結果は未確認です。公式 deb の取得・依存宣言・チェックサムと workflow の静的検証までを確認しました。Linux 実行、Paseo daemon / UI、アプリ再起動、認証期限切れはローカル E2E の成功に含めません。
+
+## 2026-09-18: Issue #16 の ZCode 3.12.3 対応
+
+[Issue #16](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/16) に対応。主対象は **Paseo 0.9.0-beta.1**、実機は **ZCode 3.12.3（build 3.12.3.7463）/ CLI 0.16.5、macOS arm64、Node.js 22.23.0** です。最低 ZCode 本体を 3.12.3 へ上げ、CLI は 0.16.5、開発 SDK は 0.9.0-beta.1、Paseo の最低要件は 0.8.0 を維持しました。
+
+### 契約変更と調査根拠
+
+- `libs/zcode/3.12.3/zcode.cjs` と、インストール済みアプリの `out/host/index.js`・同梱モジュールを確認しました。旧 `readWorkspaceState` を `model-selection.getView` と `readWorkspacePresentation` に置き換えています。モデル選択・未選択 snapshot・認証更新通知について、変更前の実装が新契約を扱えない回帰テスト3件を先に再現しました。
+- 生のモデル選択応答はプロバイダーの API キーやヘッダーを含みます。Electron 内で候補の識別子・表示名・推論レベル・選択結果へ絞ってからブリッジへ出力し、秘密値が含まれないことをテストしました。
+- native の `projectAppModelOption` と同じく、モデルごとに提示された推論レベルの最後を既定値とします。`getView({selection})` の解決結果・エラーを確認し、別モデル・別レベルへの暗黙置換を拒否します。旧 variant ID の変換は追加していません。
+- 実機の初期化タイムアウトは、3.12.3 の `init-local` に必須の `zcodeBuiltinProviderConfigFilePath` が欠けていたことが原因でした。公式 main の `resolveZCodeBuiltinProviderConfigFilePath` と同じ同梱パスを渡し、OS別のパス解決・読取確認を追加しました。
+- 新規作成時、native `session/create` は `setModel` に provider/model 文字列を渡し、モデル内の推論レベルを落とします。公式の作成呼び出しと同様、解決したレベルを別の `thoughtLevel` 引数にも渡し、初期値を照合しています。模擬ホストもこの契約を再現するよう変更しました。
+- Plan の状態は V4 `config.planEnabled`、編集モードは `config.mode` を使用します。最終状態の到着を待ち、旧 snapshot の到着で Plan を上書きしません。V4 `sendText` にモデル選択・編集モード・Plan を付けます。認証更新通知の `modelSelection` と任意の `accountAccess` も検証します。対話的な認証復旧を行わず、非対応として停止する既存方針は維持しています。
+
+### 自動・結合検証
+
+- `npm run typecheck`、`npm test`（18ファイル・281テスト）、`npm run build`、`npm run format:check`、`git diff --check` が成功。モデル別の推論候補、未選択、適用不一致、不正な解決結果、候補再取得、独立 Plan 状態、承認、キュー・停止・復元を含みます。
+- **Paseo 0.9.0-beta.1**、commit `7c1958f5b0a4ae9f2cb12f77b0a754a644cd0081` の実コンパイラ・Provider アダプターで `test:upstream` が成功。server/client のコンパイルと登録、モデル変更、Plan 設定と復元、追加指示・添付キュー、Provider 差し替え、履歴再生と再送信を確認しました。Git 準備は `NODE_ENV` 未設定 / `production` の両方で成功しました。
+- 最低要件維持の追加確認として **Paseo 0.8.0**、commit `b8e24677e12b226c7c38c1c3a40649daa9f1152f` でも同じ結合検証が成功しました。作業ツリーを一時 Git リポジトリへコピーし、実行用 SDK のみ `--no-save --package-lock=false` で 0.8.0 に差し替えました。原本の SDK・lockfile・CI 基準は変更していません。最初の sandbox 内の npm 取得は HTTP 403 となり、通常の実行環境で成功しました。
+- 両版の初期使用量の再通知は引き続き `false`、後続使用量更新は成功。既存の制約として [TODO](todo.md) に残しています。
+- [ADR 11](adr/0011-zcode-3-12-3のモデル選択と独立plan状態を採用する.md) を Accepted とし、ADR 5・7・9 を Amends / Amended by で補足、生成目次を更新しました。`adrs doctor` はエラー0、既存 ADR 1 の warning 1 / info 1 のみです。
+
+### 実 ZCode 検証
+
+- `test:runtime`: 初期化、3モデル・3編集モード・既定モデルあり、正常終了が成功。
+- `test:model-plan-runtime`: 非デフォルトモデルでの作成、モデルの往復変更、対象2モデルの全推論レベル変更、Plan 中の編集モード変更と解除、build / edit / yolo それぞれの Plan 承認、edit での却下、別 Provider 接続でのモデル・推論レベル・Plan の復元と正常終了が成功。
+- **復元条件:** ZCode 3.12.3 の native `resumeSession` 単独では Plan が OFF になります。CLI の `resumeSession` は最後の assistant の編集モードから実行状態を作り、Plan を別途復元しないことをソースと実機で確認しました。Paseo は保存済み `featureValues` を Provider の `settings` に渡すため、この契約に合わせて保存済み `mode` と `settings.plan_mode` を指定して復元を検証しました。プラグイン独自の設定保存や Plan の推測は追加していません。
+- `test:steering-runtime`: 実モデルによる追加指示の反映、添付内容の処理、開始・完了の単一通知、待機入力付き停止、消費済みユーザー入力4件の復元、キャンセルした入力の不在、復元後の応答と正常終了が成功。
+- 検証用 workspace とマッピングストアは一時領域に作成し、終了時に削除しました。承認済みの実モデル送信によるテスト会話は ZCode の保存領域に残ります。通常の会話は変更していません。
+
+検証済み artifact を以下へ更新しました。ハッシュは許可リストではなく、検証環境を識別する情報です。
+
+| ファイル        | SHA-256                                                            |
+| --------------- | ------------------------------------------------------------------ |
+| CLI             | `da61b0663336a65f7cce3dec223678794ccaa58158e304fc0d97b695434a8f01` |
+| host index      | `c8f7b2e50f2c8f7eeb030a377cfc4779b2a0e2037af2239e065157dc2e3e422e` |
+| host RPC module | `718fdf848fb173372264fd40c0d155d3953cb737a4439c64ff1ef7c2a33f9c82` |
+
+**未検証範囲:** Paseo daemon/UI からの一連の操作、アプリ・daemon 再起動後の復元、Linux / Windows / macOS x64 実機、認証期限切れを起こした復旧は未検証です。実アダプター検証の ZCode 部分は模擬で、実 ZCode 検証は分離した公開 Provider 接続から行っています。利用中の daemon・プラグインのインストール先は変更していません。リモート CI・コミット・公開は実施していません。
+
 ## 2026-09-18: Issue #15 の Paseo 0.9.0-beta.1 対応
 
 対象は [Issue #15](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/15)。開発用 SDK の `@getpaseo/plugin`・`@getpaseo/client`・`@getpaseo/protocol` を `0.9.0-beta.1` に固定し、CI の上流 checkout を同リリースの commit `7c1958f5b0a4ae9f2cb12f77b0a754a644cd0081` に更新しました。Provider 実装・保存形式・manifest の最低要件 `>=0.8.0` は変更していません。上限も追加していませんが、未検証の将来版の動作を保証するものではありません。

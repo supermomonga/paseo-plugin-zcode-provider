@@ -11,6 +11,7 @@ export const CURRENT_HOST_PROTOCOL: HostProtocolDescriptor = {
     agent: "zcode-agent",
     task: "zcode-task",
     usage: "usage-stats",
+    modelSelection: "model-selection",
   },
   operations: {
     cancelGeneration: {
@@ -31,18 +32,18 @@ export const CURRENT_HOST_PROTOCOL: HostProtocolDescriptor = {
   },
 };
 
-export const MINIMUM_ZCODE_VERSION = { app: "3.11.2", cli: "0.16.5" } as const;
+export const MINIMUM_ZCODE_VERSION = { app: "3.12.3", cli: "0.16.5" } as const;
 export const HOST_INDEX_RELATIVE_PATH = "out/host/index.js";
 
 // Evidence of an inspected release, not an allowlist for runtime discovery.
 export const VERIFIED_ZCODE_ARTIFACT: VerifiedHostArtifact = {
-  appVersion: "3.11.2",
+  appVersion: "3.12.3",
   cliVersion: "0.16.5",
-  cliSha256: "e9f1868c0fdb863537ed910ee3828b9be96b8c2fd805473f63b439e1113266b8",
+  cliSha256: "da61b0663336a65f7cce3dec223678794ccaa58158e304fc0d97b695434a8f01",
   hostIndexSha256:
-    "30911a90dadc5c384959d00d95ccc70c8cf38c74a9cb99c3168b0897d046d215",
+    "c8f7b2e50f2c8f7eeb030a377cfc4779b2a0e2037af2239e065157dc2e3e422e",
   hostRpcModuleSha256:
-    "e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31",
+    "718fdf848fb173372264fd40c0d155d3953cb737a4439c64ff1ef7c2a33f9c82",
 };
 
 export function assessCompatibility(identity: RuntimeIdentity): {

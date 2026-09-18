@@ -4,4 +4,4 @@ coverage/
 *.tsbuildinfo
 server/build-info.ts
 /mise.local.toml
-/libs/zcode/
+/libs/zcode

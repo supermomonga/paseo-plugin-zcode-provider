@@ -25,6 +25,7 @@ function snapshot() {
           revision: 0,
           control: { phase: "draft", canStop: false },
           queue: { autoDrain: true, items: [] },
+          config: { mode: "build", planEnabled: false },
         },
       },
     },
@@ -148,3 +149,17 @@ describe("fragment corruption", () => {
     },
   );
 });
+
+it.each(["missing", "legacy-mode"])(
+  "rejects a snapshot without the independent plan contract: %s",
+  (what) => {
+    const frame = snapshot();
+    if (what === "missing")
+      Reflect.deleteProperty(
+        frame.frame.payload.snapshot.config,
+        "planEnabled",
+      );
+    else frame.frame.payload.snapshot.config.mode = "plan";
+    expect(() => new Conversation("s").accept(frame)).toThrow();
+  },
+);

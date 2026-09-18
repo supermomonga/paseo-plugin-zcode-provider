@@ -94,12 +94,17 @@ try {
   const { SessionPersistenceStore } = await load("persistence");
   const { FakeBridge, snapshot, completeTurn } = await load("fake");
   const modelA = '["provider","model",null]';
-  const modelB = '["provider","other","fast"]';
+  const modelB = '["provider","other",null]';
   const modelOptions = [
-    { ref: { providerId: "provider", modelId: "model" }, label: "Model" },
     {
-      ref: { providerId: "provider", modelId: "other", variant: "fast" },
+      ref: { providerId: "provider", modelId: "model" },
+      label: "Model",
+      reasoningLevels: ["high"],
+    },
+    {
+      ref: { providerId: "provider", modelId: "other" },
       label: "Other",
+      reasoningLevels: ["high"],
     },
   ];
   const hosts = [];
@@ -113,8 +118,7 @@ try {
     return createZCodeProvider(
       async () => {
         const host = new FakeBridge(structuredClone(initial));
-        host.workspaceState.modelCatalog.available =
-          structuredClone(modelOptions);
+        host.selectionView.models = structuredClone(modelOptions);
         hosts.push(host);
         return host;
       },
@@ -168,7 +172,7 @@ try {
     assert.equal((await session.getRuntimeInfo()).model, modelB);
     assert.equal(
       host.calls.filter(({ method }) => method === "setModel").length,
-      3,
+      2,
     );
     host.current.runtime.contextUsage = { used: 30, size: 100 };
     await host.emit({
@@ -231,6 +235,8 @@ try {
       ).length,
       1,
     );
+    await session.setFeature("plan_mode", true);
+    assert.equal(host.planEnabled, true);
     const persistence = session.describePersistence();
     assert.ok(persistence);
 
@@ -268,11 +274,16 @@ try {
       cwd: directory,
       modeId: "edit",
       model: modelA,
+      featureValues: { plan_mode: true },
     });
     assert.equal((await resumed.getRuntimeInfo()).model, modelA);
     await resumed.setModel(modelB);
     assert.equal((await resumed.getRuntimeInfo()).model, modelB);
     const resumedHost = hosts.at(-1);
+    assert.equal(resumedHost.planEnabled, true);
+    assert.equal((await resumed.getRuntimeInfo()).modeId, "edit");
+    await resumed.setFeature("plan_mode", false);
+    assert.equal(resumedHost.planEnabled, false);
     assert.notEqual(resumedHost, host);
     assert.deepEqual(
       resumedHost.calls
@@ -437,6 +448,7 @@ try {
         singleCompletion: "passed",
         providerReplacement: "passed",
         persistenceResume: "passed",
+        planSettingsResume: "passed",
         historyReplay: "passed",
         resumedTurn: "passed",
       },

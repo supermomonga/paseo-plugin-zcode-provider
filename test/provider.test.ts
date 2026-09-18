@@ -260,11 +260,19 @@ it("opens with environment and MCP, sets model before modes, and returns persist
       )
       .map((c) => [c.method, (c.params as { mode?: string }).mode]),
   ).toEqual([
-    ["setModel", undefined],
-    ["setThoughtLevel", undefined],
     ["setMode", "edit"],
     ["setMode", "plan"],
   ]);
+  expect(
+    host.calls.find((c) => c.method === "createSession")?.params,
+  ).toMatchObject({
+    model: {
+      providerId: "provider",
+      modelId: "model",
+      options: { reasoningLevel: "high" },
+    },
+    thoughtLevel: "high",
+  });
   expect((await f.wait("session.opened")).persistence).toEqual({
     version: 2,
     data: { kind: "logical", id: expect.any(String), cwd: f.cwd },
@@ -1087,7 +1095,7 @@ it("publishes reportable diagnostics when the native process fails", async () =>
   );
   const event = await f.wait("session.runtime_failed");
   expect(JSON.parse(event.error.diagnostic!)).toMatchObject({
-    appVersion: "3.11.2",
+    appVersion: "3.12.3",
     cliVersion: "0.16.5",
     platform: "darwin-arm64",
     stage: "transport",
@@ -1118,7 +1126,7 @@ it("publishes diagnostics for incompatible events after successful startup", asy
     stage: "notification",
     check: "native-event",
     operation: "event",
-    appVersion: "3.11.2",
+    appVersion: "3.12.3",
   });
   expect(JSON.stringify(event)).not.toContain("secret-unknown");
 });
@@ -1763,4 +1771,39 @@ it("accepts steering while final usage is being read without completing the old 
   expect(
     f.events.filter((e) => e.type === "session.turn").map((e) => e.state),
   ).toEqual(["started", "completed"]);
+});
+
+it("uses V4 plan state even when legacy snapshots arrive afterward", async () => {
+  const f = await fixture();
+  const host = await f.open({ mode: "edit" });
+  host.planEnabled = true;
+  await host.emitConversation();
+  await host.emit({ type: "snapshot", snapshot: host.sessionSnapshot() });
+  expect((await f.wait("session.config")).config).toMatchObject({
+    mode: "edit",
+    settings: [{ value: true }],
+  });
+  await f.prompt();
+  expect(
+    host.calls.find((c) => c.method === "sendConversationCommandV4")?.params,
+  ).toMatchObject({
+    envelope: {
+      payload: {
+        mode: "edit",
+        planEnabled: true,
+        modelSelection: {
+          providerId: "provider",
+          modelId: "model",
+          options: { reasoningLevel: "high" },
+        },
+      },
+    },
+  });
+  host.planEnabled = false;
+  await host.emitConversation();
+  expect((await f.wait("session.config")).config).toMatchObject({
+    mode: "edit",
+    settings: [{ value: false }],
+  });
+  await completeTurn(host, 2);
 });

@@ -1,3 +1,4 @@
+import { readModelSelection, resolveModelSelection } from "./models.js";
 import { uploadAttachments } from "./attachments.js";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -49,12 +50,12 @@ import {
   StateUpdatedNotificationSchema,
   TokenUsageSchema,
   UnknownResultSchema,
-  WorkspaceStateResultSchema,
+  WorkspacePresentationSchema,
   type DynamicEvent,
   type PermissionRequest,
   type SessionEvent,
   type ModelOption,
-  type WorkspaceState,
+  type ModelSelectionView,
   type SessionSnapshot,
   type UserInputRequest,
 } from "./protocol/v1/host-schemas.js";
@@ -167,10 +168,7 @@ export class ZCodeSession {
     assertSnapshotWorkspace(snapshot, workspace);
     requireMode(snapshot.settings.mode.current);
     this.snapshot = snapshot;
-    this.editingMode =
-      snapshot.settings.mode.current === "plan"
-        ? "build"
-        : snapshot.settings.mode.current;
+    this.editingMode = snapshot.settings.mode.current;
     this.contextUsage = this.readContextUsage(snapshot);
     this.id = snapshot.session.sessionId;
     this.conversation = new Conversation(this.id);
@@ -264,8 +262,9 @@ export class ZCodeSession {
   }
 
   getConfig(): ProviderConfigState {
-    const models = catalogModels(this.modelCatalog, this.snapshot.settings);
-    const model = encodeModel(this.snapshot.settings.model.current);
+    const selection = this.snapshot.settings.model.current;
+    const models = catalogModels(this.modelCatalog, selection);
+    const model = selection && encodeModel(selection);
     const thinking = catalogThinkingOptions(this.snapshot.settings);
     return {
       model,
@@ -281,7 +280,7 @@ export class ZCodeSession {
           type: "toggle",
           id: "plan_mode",
           label: "Toggle plan mode",
-          value: this.snapshot.settings.mode.current === "plan",
+          value: this.conversation.state!.config.planEnabled,
         },
       ],
     };
@@ -321,16 +320,26 @@ export class ZCodeSession {
         "ZCode editing mode must be build, edit, or yolo",
       );
     const nextMode = mode ?? this.editingMode;
-    const nextPlan = plan ?? this.snapshot.settings.mode.current === "plan";
+    const currentPlan = this.conversation.state!.config.planEnabled;
+    const nextPlan = plan ?? currentPlan;
+    if (nextMode === this.editingMode && nextPlan === currentPlan) return;
     this.configuringMode = true;
     try {
       // Enter from the selected editing mode so native ExitPlanMode returns to it.
       if (nextPlan) {
         await this.setMode(nextMode);
         await this.setMode("plan");
-      } else if (this.snapshot.settings.mode.current !== nextMode) {
+      } else if (
+        this.editingMode !== nextMode ||
+        this.conversation.state!.config.planEnabled
+      ) {
         await this.setMode(nextMode);
       }
+      await this.waitForState(
+        () =>
+          this.conversation.state?.config.mode === nextMode &&
+          this.conversation.state.config.planEnabled === nextPlan,
+      );
       this.editingMode = nextMode;
     } catch (error) {
       // A partial native transition must not leave a usable, misleading UI state.
@@ -356,7 +365,7 @@ export class ZCodeSession {
       60_000,
     );
     this.updateSnapshot(snapshot);
-    if (snapshot.settings.mode.current !== modeId) {
+    if (modeId !== "plan" && snapshot.settings.mode.current !== modeId) {
       throw new AdapterError(
         "NATIVE_PROTOCOL_ERROR",
         "ZCode did not apply the requested mode",
@@ -588,10 +597,10 @@ export class ZCodeSession {
       );
     }
     const model = decodeModel(modelId);
-    const state = await readWorkspaceState(this.bridge, this.workspace);
+    const state = await readModelSelection(this.bridge);
     this.assertIdle();
-    if (!isDeepStrictEqual(this.modelCatalog, state.modelCatalog.available)) {
-      this.modelCatalog = state.modelCatalog.available;
+    if (!isDeepStrictEqual(this.modelCatalog, state.models)) {
+      this.modelCatalog = state.models;
       this.emit({ type: "config_changed" });
     }
     const available = new Set(
@@ -603,20 +612,26 @@ export class ZCodeSession {
         `Unknown ZCode model: ${modelId}`,
       );
     }
+    const resolved = await resolveModelSelection(this.bridge, state, model);
     this.assertIdle();
     const snapshot = await this.bridge.request(
       "setModel",
       {
         workspacePath: this.workspace,
         sessionId: this.id,
-        model,
+        model: resolved,
         persistAsWorkspaceLastUsed: true,
       },
       SessionSnapshotSchema,
       60_000,
     );
     this.updateSnapshot(snapshot);
-    if (encodeModel(snapshot.settings.model.current) !== modelId) {
+    if (
+      !snapshot.settings.model.current ||
+      encodeModel(snapshot.settings.model.current) !== modelId ||
+      snapshot.settings.model.current.options?.reasoningLevel !==
+        resolved.options?.reasoningLevel
+    ) {
       throw new AdapterError(
         "NATIVE_PROTOCOL_ERROR",
         "ZCode did not apply the requested model",
@@ -651,7 +666,11 @@ export class ZCodeSession {
       60_000,
     );
     this.updateSnapshot(snapshot);
-    if (snapshot.settings.thoughtLevel.current !== thinkingOptionId) {
+    if (
+      snapshot.settings.thoughtLevel.current !== thinkingOptionId ||
+      snapshot.settings.model.current?.options?.reasoningLevel !==
+        thinkingOptionId
+    ) {
       throw new AdapterError(
         "NATIVE_PROTOCOL_ERROR",
         "ZCode did not apply the requested thinking option",
@@ -698,6 +717,13 @@ export class ZCodeSession {
     },
   ): Promise<ActiveTurn> {
     this.assertOpen();
+    const modelSelection = this.snapshot.settings.model.current;
+    if (!modelSelection?.options?.reasoningLevel)
+      throw new AdapterError(
+        "INVALID_CONFIGURATION",
+        "Select a ZCode model and reasoning level before sending",
+      );
+    const { mode, planEnabled } = this.conversation.state!.config;
     const previous = this.active;
     if (options?.delivery === "steer" && !previous)
       throw new AdapterError(
@@ -767,6 +793,9 @@ export class ZCodeSession {
         "sendText",
         {
           text: nativePrompt.content,
+          modelSelection,
+          mode,
+          planEnabled,
           requestedDelivery: attachments.length ? "queue" : "guide",
           ...(attachments.length ? { attachments } : {}),
         },
@@ -909,7 +938,18 @@ export class ZCodeSession {
   private async handleDynamicEvent(dynamic: DynamicEvent): Promise<void> {
     try {
       if (dynamic.type === "conversation.frame") {
-        if (this.conversation.accept(dynamic.frame) && this.active) {
+        const previousConfig = this.conversation.state?.config;
+        const accepted = this.conversation.accept(dynamic.frame);
+        if (accepted) {
+          const config = this.conversation.state!.config;
+          this.editingMode = config.mode;
+          if (
+            !isDeepStrictEqual(previousConfig, config) &&
+            !this.configuringMode
+          )
+            this.emit({ type: "config_changed" });
+        }
+        if (accepted && this.active) {
           for (const item of this.conversation.state!.queue.items) {
             const input = this.active.inputs.get(item.sourceCommandId);
             if (!input)
@@ -1810,7 +1850,7 @@ export class ZCodeSession {
       this.contextUsage = usage;
       this.emit({ type: "usage_updated", usage });
     }
-    if (modeId !== "plan") this.editingMode = modeId;
+    if (!this.conversation.state) this.editingMode = modeId;
     if (modeId !== previousModeId && !this.configuringMode) {
       this.emit({ type: "config_changed" });
     }
@@ -1898,7 +1938,7 @@ export function assertSnapshotWorkspace(
 export async function initializeWorkspace(
   bridge: HostBridge,
   workspace: string,
-): Promise<WorkspaceState> {
+): Promise<{ presentation: { mode: string }; selection: ModelSelectionView }> {
   const initialized = await bridge.request(
     "initialize",
     { workspacePath: workspace },
@@ -1913,33 +1953,20 @@ export async function initializeWorkspace(
       initialized.reason ?? "ZCode host is unavailable",
     );
   }
-  return readWorkspaceState(bridge, workspace);
-}
-
-async function readWorkspaceState(
-  bridge: HostBridge,
-  workspace: string,
-): Promise<WorkspaceState> {
-  const state = await bridge.request(
-    "readWorkspaceState",
+  const presentation = await bridge.request(
+    "readWorkspacePresentation",
     { workspacePath: workspace },
-    WorkspaceStateResultSchema,
+    WorkspacePresentationSchema,
     60_000,
   );
-  if (state.workspace.workspacePath !== workspace) {
+  if (presentation.workspace.workspacePath !== workspace)
     throw new AdapterError(
       "INVALID_WORKSPACE",
       "ZCode returned a different workspace",
     );
-  }
-  if (state.modelCatalog.providers.length === 0) {
-    throw new AdapterError(
-      "AUTH_REQUIRED",
-      "No usable ZCode model provider is configured",
-    );
-  }
-  catalogModels(state.modelCatalog.available, state.settings);
-  return state;
+  requireMode(presentation.mode);
+  const selection = await readModelSelection(bridge);
+  return { presentation, selection };
 }
 
 function safeError(error: unknown): string {
@@ -1953,6 +1980,6 @@ function contextMayHaveChanged(payload: Record<string, unknown>): boolean {
     "postCompactTokenCount",
     "truePostCompactTokenCount",
     "compactBoundary",
-    "modelRef",
+    "modelSelection",
   ].some((key) => key in payload);
 }

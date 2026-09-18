@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -13,12 +13,13 @@ import { encodeModel } from "../server/mapping.js";
 import type { DynamicEvent } from "../server/protocol/v1/host-schemas.js";
 import { FakeBridge, snapshot, stateUpdate } from "./fake-host.js";
 
-const model = (modelId: string, variant?: string) => ({
-  ref: { providerId: "provider", modelId, ...(variant ? { variant } : {}) },
+const model = (modelId: string) => ({
+  ref: { providerId: "provider", modelId },
   label: modelId,
+  reasoningLevels: ["high"],
 });
 const a = model("model");
-const b = model("other", "fast");
+const b = model("other");
 const c = model("third");
 const idA = encodeModel(a.ref);
 const idB = encodeModel(b.ref);
@@ -34,8 +35,8 @@ async function fixture() {
   const initial = snapshot(cwd);
   initial.settings.mode.current = "build";
   const host = new FakeBridge(initial);
-  // Deliberately leave both session and workspace settings with only model A.
-  host.workspaceState.modelCatalog.available = [a, b];
+  // The session snapshot deliberately contains only model A.
+  host.selectionView.models = [a, b];
   const connection = await createZCodeProvider(
     async () => host,
     new SessionPersistenceStore(join(cwd, "state")),
@@ -114,7 +115,7 @@ async function fixture() {
   };
 }
 
-it("lists the authoritative workspace catalog instead of workspace settings", async () => {
+it("lists the model selection catalog independently of session settings", async () => {
   const f = await fixture();
   const event = await f.request({
     type: "catalog",
@@ -134,7 +135,7 @@ it.each([false, true])(
     expect((await f.open(idB, resume)).type).toBe("session.ready");
     expect(f.current().model).toBe(idB);
     expect(f.current().models.map((m) => m.id)).toEqual([idA, idB]);
-    expect(f.setCalls()).toHaveLength(1);
+    expect(f.setCalls()).toHaveLength(resume ? 1 : 0);
     expect(
       f.host.calls.some(
         (call) => call.method === (resume ? "resumeSession" : "createSession"),
@@ -188,7 +189,7 @@ it.each([undefined, idA])(
     expect((await f.open(selected)).type).toBe("session.ready");
     expect(f.current().model).toBe(idA);
     expect(f.current().models.map((m) => m.id)).toEqual([idA, idB]);
-    expect(f.setCalls()).toHaveLength(selected ? 1 : 0);
+    expect(f.setCalls()).toHaveLength(0);
   },
 );
 
@@ -221,17 +222,17 @@ it("retains candidates across A/B/A changes, reads, subscriptions, mode and thin
 it("replaces catalog additions, equal-sized replacements and removals, including the current model", async () => {
   const f = await fixture();
   await f.open();
-  f.host.workspaceState.modelCatalog.available = [a, b, c];
+  f.host.selectionView.models = [a, b, c];
   expect((await f.configure({ model: idC })).type).toBe("request.completed");
   expect(f.current().models.map((m) => m.id)).toEqual([idA, idB, idC]);
-  f.host.workspaceState.modelCatalog.available = [a, c];
+  f.host.selectionView.models = [a, c];
   expect(await f.configure({ model: idB })).toMatchObject({
     type: "request.failed",
     error: { code: "INVALID_CONFIGURATION" },
   });
   expect(f.current().models.map((m) => m.id)).toEqual([idA, idC]);
   // Replace C with B without changing the count, while C is still selected.
-  f.host.workspaceState.modelCatalog.available = [a, b];
+  f.host.selectionView.models = [a, b];
   expect(await f.configure({ model: idC })).toMatchObject({
     type: "request.failed",
     error: { code: "INVALID_CONFIGURATION" },
@@ -245,26 +246,17 @@ it("replaces catalog additions, equal-sized replacements and removals, including
   expect(f.setCalls()).toHaveLength(2);
 });
 
-it.each([
-  "duplicate",
-  "malformed",
-  "missing",
-  "workspace",
-  "providers",
-  "transport",
-])(
+it.each(["duplicate", "malformed", "missing", "providers", "transport"])(
   "rejects an unusable catalog without using cached candidates: %s",
   async (failure) => {
     const f = await fixture();
     await f.open();
-    const catalog = f.host.workspaceState.modelCatalog;
-    if (failure === "duplicate") catalog.available = [a, a];
-    if (failure === "malformed") Object.assign(catalog, { available: [{}] });
+    const catalog = f.host.selectionView;
+    if (failure === "duplicate") catalog.models = [a, a];
+    if (failure === "malformed") Object.assign(catalog, { models: [{}] });
     if (failure === "missing")
-      Object.assign(f.host.workspaceState, { modelCatalog: undefined });
-    if (failure === "workspace")
-      f.host.workspaceState.workspace.workspacePath = "/different";
-    if (failure === "providers") catalog.providers = [];
+      Object.assign(f.host, { selectionView: undefined });
+    if (failure === "providers") catalog.models = [];
     if (failure === "transport")
       vi.spyOn(f.host, "request").mockRejectedValueOnce(
         new AdapterError("NATIVE_TIMEOUT", "catalog timed out"),
@@ -332,7 +324,7 @@ it("does not configure a session that closed during a catalog refresh", async ()
   let reading = false;
   vi.spyOn(f.host, "request").mockImplementation(
     async (method, params, schema) => {
-      if (method === "readWorkspaceState") {
+      if (method === "readModelSelection") {
         reading = true;
         await read.promise;
       }
@@ -353,4 +345,158 @@ it("does not configure a session that closed during a catalog refresh", async ()
   }
   expect((await configuring).type).toBe("request.failed");
   expect(f.setCalls()).toHaveLength(0);
+});
+
+it("uses each model's own reasoning options and native default", async () => {
+  const f = await fixture();
+  f.host.selectionView.models = [
+    { ...a, reasoningLevels: ["low", "high"] },
+    { ...b, reasoningLevels: ["disabled"] },
+  ];
+  const event = await f.request({
+    type: "catalog",
+    requestId: "catalog-levels",
+    cwd: f.cwd,
+  });
+  if (event.type !== "catalog") throw new Error("Expected catalog");
+  expect(
+    event.catalog.models.map((m) => m.thinkingOptions?.map((o) => o.id)),
+  ).toEqual([["low", "high"], ["disabled"]]);
+  await f.open(idB);
+  expect(f.current()).toMatchObject({ model: idB, thinkingOption: "disabled" });
+  expect(
+    f.host.calls.find((c) => c.method === "createSession")?.params,
+  ).toMatchObject({
+    model: { ...b.ref, options: { reasoningLevel: "disabled" } },
+  });
+  await f.configure({ model: idA });
+  expect(f.current().thinkingOption).toBe("high");
+  await f.configure({ thinkingOption: "low" });
+  expect(f.current().thinkingOption).toBe("low");
+});
+
+it("allows no preferred model until explicit selection and rejects sending without it", async () => {
+  const f = await fixture();
+  delete f.host.selectionView.preferredSelection;
+  expect((await f.open()).type).toBe("session.ready");
+  expect(f.current().model).toBeUndefined();
+  expect(f.current().thinkingOptions).toEqual([]);
+  await f.connection.send({
+    type: "session.prompt",
+    sessionId: "public",
+    prompt: {
+      clientMessageId: "unselected",
+      delivery: "auto",
+      input: { type: "message", content: [{ type: "text", text: "test" }] },
+    },
+  });
+  await vi.waitFor(() =>
+    expect(f.events).toContainEqual(
+      expect.objectContaining({
+        type: "session.prompt_result",
+        result: expect.objectContaining({ type: "failed" }),
+      }),
+    ),
+  );
+  expect(
+    f.host.calls.some((c) => c.method === "sendConversationCommandV4"),
+  ).toBe(false);
+  await expect(access(join(f.cwd, "state"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  expect((await f.configure({ model: idB })).type).toBe("request.completed");
+  expect(f.current().model).toBe(idB);
+});
+
+it("preserves restored model and independent plan state without explicit overrides", async () => {
+  const f = await fixture();
+  f.host.current.settings.model.current = {
+    ...b.ref,
+    options: { reasoningLevel: "high" },
+  };
+  f.host.current.settings.mode.current = "edit";
+  f.host.planEnabled = true;
+  expect((await f.open(undefined, true)).type).toBe("session.ready");
+  expect(f.current()).toMatchObject({
+    model: idB,
+    mode: "edit",
+    settings: [{ id: "plan_mode", value: true }],
+  });
+  expect(
+    f.host.calls.some((c) => ["setModel", "setMode"].includes(c.method)),
+  ).toBe(false);
+});
+
+it.each(["issue", "missing", "model", "reasoning"])(
+  "rejects native effective selection %s without applying it",
+  async (failure) => {
+    const f = await fixture();
+    await f.open();
+    const original = f.host.request.bind(f.host);
+    vi.spyOn(f.host, "request").mockImplementation(
+      async (method, params, schema) => {
+        if (
+          method === "readModelSelection" &&
+          (params as { selection?: unknown }).selection
+        ) {
+          const effectiveSelection =
+            failure === "missing"
+              ? null
+              : {
+                  ...(failure === "model" ? c.ref : b.ref),
+                  options: {
+                    reasoningLevel: failure === "reasoning" ? "low" : "high",
+                  },
+                };
+          return schema.parse({
+            ...f.host.selectionView,
+            effectiveSelection,
+            ...(failure === "issue"
+              ? { selectionIssue: "provider-unavailable" }
+              : {}),
+          });
+        }
+        return original(method, params, schema);
+      },
+    );
+    expect(await f.configure({ model: idB })).toMatchObject({
+      type: "request.failed",
+      error: { code: "INVALID_CONFIGURATION" },
+    });
+    expect(f.setCalls()).toHaveLength(0);
+  },
+);
+
+it("rejects a different initial selection returned by createSession", async () => {
+  const f = await fixture();
+  const original = f.host.request.bind(f.host);
+  vi.spyOn(f.host, "request").mockImplementation(
+    async (method, params, schema) => {
+      if (method === "createSession")
+        return original(
+          method,
+          {
+            ...(params as object),
+            model: { ...a.ref, options: { reasoningLevel: "high" } },
+          },
+          schema,
+        );
+      return original(method, params, schema);
+    },
+  );
+  expect(await f.open(idB)).toMatchObject({
+    type: "request.failed",
+    error: { code: "NATIVE_PROTOCOL_ERROR" },
+  });
+  expect(f.host.closed).toBe(true);
+});
+
+it("rejects workspace presentation for another directory", async () => {
+  const f = await fixture();
+  f.host.current.session.workspace.workspacePath = "/different";
+  expect(await f.open()).toMatchObject({
+    type: "request.failed",
+    error: { code: "INVALID_WORKSPACE" },
+  });
+  expect(f.host.calls.some((c) => c.method === "createSession")).toBe(false);
 });

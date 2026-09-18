@@ -69,6 +69,12 @@ const Control = z
 const Queue = z
   .object({ autoDrain: z.boolean(), items: z.array(QueueItem) })
   .passthrough();
+const Config = z
+  .object({
+    mode: z.enum(["build", "edit", "yolo"]),
+    planEnabled: z.boolean(),
+  })
+  .passthrough();
 const State = z
   .object({
     sessionId: id,
@@ -77,6 +83,7 @@ const State = z
     revision: count,
     control: Control,
     queue: Queue,
+    config: Config,
   })
   .passthrough();
 const Patch = z
@@ -84,6 +91,7 @@ const Patch = z
     revision: count.optional(),
     control: Control.optional(),
     queue: Queue.optional(),
+    config: Config.optional(),
   })
   .passthrough();
 const Delta = z.discriminatedUnion("op", [

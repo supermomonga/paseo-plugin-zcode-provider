@@ -7,7 +7,7 @@ import {
 import type { RuntimeIdentity } from "./discovery/types.js";
 
 const OFFICIAL_CLI_SHA256 =
-  "e9f1868c0fdb863537ed910ee3828b9be96b8c2fd805473f63b439e1113266b8";
+  "da61b0663336a65f7cce3dec223678794ccaa58158e304fc0d97b695434a8f01";
 
 function identity(
   platform: string,
@@ -15,8 +15,8 @@ function identity(
 ): RuntimeIdentity {
   return {
     platform,
-    appVersion: "3.11.2",
-    appBuild: "3.11.2.6792",
+    appVersion: "3.12.3",
+    appBuild: "3.12.3.7463",
     cliVersion: "0.16.5",
     cliSha256: OFFICIAL_CLI_SHA256,
     metadataSha256: `metadata-${platform}`,
@@ -46,12 +46,12 @@ describe("ZCode minimum versions", () => {
   );
 
   test.each([
-    "3.11.2",
-    "3.11.3",
-    "3.12.0",
+    "3.12.3",
+    "3.12.4",
+    "3.13.0",
     "4.0.0",
     "10.0.0",
-    "3.11.2+build.2",
+    "3.12.3+build.2",
   ])("allows stable app %s", (appVersion) => {
     expect(
       assessCompatibility(identity("darwin-arm64", { appVersion })).status,
@@ -66,6 +66,8 @@ describe("ZCode minimum versions", () => {
     },
   );
   test.each([
+    "3.12.2",
+    "3.11.2",
     "3.11.1",
     "3.9.0",
     "3.12.0-beta.1",
@@ -93,8 +95,8 @@ describe("ZCode minimum versions", () => {
     ).toBe("unsupported");
   });
   test("keeps verification evidence independent from the support floor", () => {
-    expect(MINIMUM_ZCODE_VERSION).toEqual({ app: "3.11.2", cli: "0.16.5" });
-    expect(VERIFIED_ZCODE_ARTIFACT.appVersion).toBe("3.11.2");
+    expect(MINIMUM_ZCODE_VERSION).toEqual({ app: "3.12.3", cli: "0.16.5" });
+    expect(VERIFIED_ZCODE_ARTIFACT.appVersion).toBe("3.12.3");
     expect(
       assessCompatibility(
         identity("darwin-arm64", { appVersion: "4.0.0", cliVersion: "1.0.0" }),

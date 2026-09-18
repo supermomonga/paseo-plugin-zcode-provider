@@ -1,5 +1,64 @@
 import { describe, expect, test } from "vitest";
-import { HEADLESS_BROWSER_MESSAGE_HANDLER_SOURCE } from "./host/runtime-source.js";
+import {
+  HEADLESS_BROWSER_MESSAGE_HANDLER_SOURCE,
+  MODEL_SELECTION_PROJECTION_SOURCE,
+} from "./host/runtime-source.js";
+import { ModelSelectionViewSchema } from "./protocol/v1/host-schemas.js";
+
+test("projects model choices without provider credentials before writing bridge output", () => {
+  const project = Function(
+    `${MODEL_SELECTION_PROJECTION_SOURCE}; return projectModelSelection;`,
+  )();
+  const result = project({
+    revision: 2,
+    providers: [
+      {
+        providerId: "p",
+        providerName: "Provider",
+        config: {
+          access: { apiKey: "PRIVATE_KEY" },
+          api: { headers: { Authorization: "PRIVATE_HEADER" } },
+        },
+        models: [
+          {
+            modelId: "m",
+            config: {
+              optionSpecs: {
+                reasoningLevel: {
+                  values: ["low", "high"],
+                  map: { high: "PRIVATE_MAP" },
+                },
+              },
+            },
+          },
+        ],
+      },
+    ],
+    preferredSelection: {
+      providerId: "p",
+      modelId: "m",
+      options: { reasoningLevel: "high" },
+      secret: "PRIVATE_SELECTION",
+    },
+  });
+  expect(ModelSelectionViewSchema.parse(result)).toEqual({
+    revision: 2,
+    models: [
+      {
+        ref: { providerId: "p", modelId: "m" },
+        label: "m",
+        providerLabel: "Provider",
+        reasoningLevels: ["low", "high"],
+      },
+    ],
+    preferredSelection: {
+      providerId: "p",
+      modelId: "m",
+      options: { reasoningLevel: "high" },
+    },
+  });
+  expect(JSON.stringify(result)).not.toContain("PRIVATE");
+});
 
 type WorkerMessageHandler = (message: unknown) => void;
 

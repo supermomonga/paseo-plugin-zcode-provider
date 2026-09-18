@@ -2,9 +2,49 @@ import { describe, expect, test } from "vitest";
 import {
   DynamicEventSchema,
   PermissionRequestSchema,
+  SessionSnapshotSchema,
 } from "./protocol/v1/host-schemas.js";
+import { snapshot } from "../test/fake-host.js";
 
 describe("ZCode host schemas", () => {
+  test("accepts a 3.12.3 session before a model is selected", () => {
+    const value = snapshot("/workspace");
+    Reflect.deleteProperty(value.settings.model, "current");
+    expect(SessionSnapshotSchema.safeParse(value).success).toBe(true);
+  });
+
+  test.each([false, true])(
+    "accepts the 3.12.3 runtime-header model selection (accountAccess=%s)",
+    (hasAccount) => {
+      expect(
+        DynamicEventSchema.safeParse({
+          type: "providerRuntimeHeaders.request",
+          request: {
+            requestId: "r",
+            sessionId: "s",
+            workspace: { workspacePath: "/w" },
+            modelSelection: {
+              providerId: "p",
+              modelId: "m",
+              options: { reasoningLevel: "high" },
+            },
+            providerId: "p",
+            ...(hasAccount
+              ? {
+                  accountAccess: {
+                    type: "zhipu-account",
+                    accountType: "zai",
+                    mode: "individual-coding-plan",
+                    entitled: true,
+                  },
+                }
+              : {}),
+            reason: "model-request",
+          },
+        }).success,
+      ).toBe(true);
+    },
+  );
   test("accepts the observed permission shape without widening it", () => {
     const request = {
       requestId: "permission-1",
