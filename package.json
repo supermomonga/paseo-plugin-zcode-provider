@@ -18,6 +18,7 @@
     "format:check": "prettier --check index.client.tsx index.server.ts client server shared scripts test docs README.md NOTICE.md package.json tsconfig.json tsconfig.client.json vitest.config.ts paseo-plugin.json .github/workflows",
     "check:zcode-releases": "node scripts/check-zcode-releases.mjs",
     "check:paseo-releases": "node scripts/check-paseo-releases.mjs",
+    "download:zcodecjs": "node scripts/download-zcodecjs.mjs",
     "prepare": "node scripts/generate-build-info.mjs",
     "prebuild": "node scripts/generate-build-info.mjs"
   },

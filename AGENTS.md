@@ -21,6 +21,7 @@ Use Node.js **22.12.0 or later** and npm.
 - `npm run format:check` / `npm run format`: Check or apply Prettier formatting.
 - `npm run test:upstream -- /absolute/path/to/paseo`: Verify integration using the actual compiler and Provider adapter from a supported Paseo checkout. See `docs/development.md` for the target commit.
 - `npm run test:runtime -- /absolute/path/to/workspace`: Initialize the installed host and retrieve the model list. No prompts are sent.
+- `npm run download:zcodecjs`: Download the latest official Linux x64 deb and extract `zcode.cjs`. Use `npm run download:zcodecjs -- --zcode-version 3.12.3` for a specific version. Requires Node.js and a `tar` command with xz support on macOS, Windows, or Linux; existing files are overwritten.
 
 There is no standalone development server. The plugin runs on the Paseo daemon; see `README.md` for installation instructions.
 
@@ -48,3 +49,4 @@ Identify the root cause and do not add ad hoc workarounds. Add backward compatib
 
 - If `ghq` is installed on the local machine and the Paseo source repository has been cloned at `$(ghq root)/getpaseo/paseo`, it is recommended to consult that checkout when investigating Paseo's implementation.
 - Limit feature implementations to what is possible within a Paseo plugin. Do not propose implementation plans that require changes to Paseo itself.
+- When inspecting the implementation of `zcode.cjs`, refer to `libs/zcode/[version]/zcode.cjs`. If the required version has not been downloaded, agents may run `npm run download:zcodecjs -- --zcode-version [version]` to obtain it. These files are for source inspection and must not be committed.
