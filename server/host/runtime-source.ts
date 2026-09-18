@@ -1,5 +1,29 @@
 import { PROVIDER_VERSION } from "../build-info.js";
 
+// The native selection view also contains provider credentials. Project before
+// crossing the host bridge, and never forward the raw registry/config object.
+export const MODEL_SELECTION_PROJECTION_SOURCE = String.raw`
+function projectModelSelection(view) {
+  const selection = value => value == null ? value : ({
+    providerId: value.providerId,
+    modelId: value.modelId,
+    ...(value.options === undefined ? {} : { options: { reasoningLevel: value.options.reasoningLevel } })
+  });
+  return {
+    revision: view.revision,
+    models: view.providers.flatMap(provider => provider.models.map(model => ({
+      ref: { providerId: provider.providerId, modelId: model.modelId },
+      label: model.modelId,
+      providerLabel: provider.providerName,
+      reasoningLevels: model.config.optionSpecs.reasoningLevel.values
+    }))),
+    ...(view.preferredSelection === undefined ? {} : { preferredSelection: selection(view.preferredSelection) }),
+    ...(view.effectiveSelection === undefined ? {} : { effectiveSelection: selection(view.effectiveSelection) }),
+    ...(view.selectionIssue === undefined ? {} : { selectionIssue: view.selectionIssue })
+  };
+}
+`;
+
 const ZCODE_HOST_WORKER_SOURCE = String.raw`
 import { parentPort, workerData } from "node:worker_threads";
 if (!parentPort) throw new Error("ZCode host worker requires a parent port");
@@ -80,7 +104,8 @@ const hostIndex = process.env.PASEO_ZCODE_HOST_INDEX;
 const hostRpcModule = process.env.PASEO_ZCODE_HOST_RPC_MODULE;
 const rpcExportsJson = process.env.PASEO_ZCODE_RPC_EXPORTS;
 const hostProtocolJson = process.env.PASEO_ZCODE_HOST_PROTOCOL;
-if (!hostIndex || !hostRpcModule || !rpcExportsJson || !hostProtocolJson) {
+const builtinProviderConfig = process.env.PASEO_ZCODE_BUILTIN_PROVIDER_CONFIG;
+if (!hostIndex || !hostRpcModule || !rpcExportsJson || !hostProtocolJson || !builtinProviderConfig) {
   throw new Error("Missing ZCode host artifact or protocol");
 }
 const rpcExports = JSON.parse(rpcExportsJson);
@@ -109,8 +134,9 @@ const services = new Map(Object.entries(hostProtocol.serviceChannels).map(([name
 const agentService = services.get("agent");
 if (!agentService) throw new Error("ZCode host protocol has no agent service");
 const subscriptions = new Map();
+${MODEL_SELECTION_PROJECTION_SOURCE}
 const commonAgentMethods = new Set([
-  "initialize", "readWorkspaceState", "createSession", "resumeSession", "listSessions",
+  "initialize", "readWorkspacePresentation", "createSession", "resumeSession", "listSessions",
   "readSession", "readSessionMessages", "readSessionEvents", "sendConversationCommandV4",
   "closeSession", "setModel", "setThoughtLevel", "setMode", "getTaskTokenUsage",
   "respondProviderRuntimeHeaders", "disposeWorkspace",
@@ -125,7 +151,7 @@ let conversationHandshake;
 async function initializeConversation() {
   conversationHandshake ??= (async () => {
     const hello = await agentService.helloConversationV4();
-    if (hello?.kind !== "hello" || hello.protocolVersion !== 3 || hello.clientMode !== "desktop-continuous")
+    if (hello?.kind !== "hello" || hello.protocolVersion !== 3 || hello.clientMode !== "desktop-continuous" || hello.capabilities?.independentPlanState !== true)
       throw new Error("Unsupported V4 conversation handshake");
     await agentService.initializeConversationV4({ kind: "clientHello", protocolVersion: 3,
       clientId: "paseo-zcode-provider", appVersion: ${JSON.stringify(PROVIDER_VERSION)} });
@@ -182,11 +208,12 @@ async function dispatch(message) {
     const service = services.get(serviceName);
     if (!service) throw new Error("Unsupported bridge service: " + serviceName);
     const allowed = serviceName === "agent" && commonAgentMethods.has(nativeMethod) ||
+      serviceName === "modelSelection" && nativeMethod === "getView" ||
       contractOperations.has(serviceName + ":" + nativeMethod) ||
       serviceName === "usage" && ["getEntitlementSnapshot", "getCodingPlanResetStatus"].includes(nativeMethod);
     if (!allowed) throw new Error("Unsupported native bridge method: " + serviceName + ":" + nativeMethod);
     const result = await service[nativeMethod](message.params?.params);
-    write({ id, result: result === undefined ? null : result });
+    write({ id, result: serviceName === "modelSelection" ? projectModelSelection(result) : result === undefined ? null : result });
   } catch (error) {
     write({ id, error: { code: -32000, message: error instanceof Error ? error.message : String(error) } });
   }
@@ -214,6 +241,7 @@ worker.on("exit", code => {
 worker.postMessage({
   data: {
     type: "init-local",
+    zcodeBuiltinProviderConfigFilePath: builtinProviderConfig,
     deviceMid: "paseo-zcode-provider",
     agentSpawnFallbackCwd: process.cwd()
   },

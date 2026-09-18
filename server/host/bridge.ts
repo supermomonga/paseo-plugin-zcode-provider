@@ -130,6 +130,8 @@ export class ZCodeHostBridge implements HostBridge {
           PASEO_ZCODE_HOST_RPC_MODULE: host.hostRpcModule,
           PASEO_ZCODE_RPC_EXPORTS: JSON.stringify(host.rpcExports),
           PASEO_ZCODE_HOST_PROTOCOL: JSON.stringify(host.protocol),
+          PASEO_ZCODE_BUILTIN_PROVIDER_CONFIG:
+            runtime.paths.builtinProviderConfig,
         },
         stdio: ["pipe", "pipe", "pipe"],
       },

@@ -37,7 +37,8 @@ const checks = [
 ] as const;
 const operations = new Set([
   "initialize",
-  "readWorkspaceState",
+  "readWorkspacePresentation",
+  "readModelSelection",
   "createSession",
   "resumeSession",
   "listSessions",

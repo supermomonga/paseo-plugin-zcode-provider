@@ -5,7 +5,7 @@ Use ZCode models, tools, and conversation history in [Paseo](https://github.com/
 ![ZCode conversation in Paseo](images/zcode-conversation.png)
 
 > [!NOTE]
-> This plugin is under development and requires Paseo **0.8.0 or later**. SDK/compiler/adapter tests pass on **0.9.0-beta.1** and the retained minimum **0.8.0**, covering steering, native queue aggregation, provider replacement, and session restoration. Earlier real ZCode checks on macOS arm64 cover text guidance, attachment queues, tool execution, stopping, and restoration through isolated Provider connections. Real daemon/UI operation and real-model requests on 0.9.0-beta.1, daemon/UI steering, and Paseo app restart verification remain outstanding.
+> This plugin is under development and requires Paseo **0.8.0 or later**. SDK/compiler/adapter tests pass on **0.9.0-beta.1** and the retained minimum **0.8.0**, covering steering, native queue aggregation, provider replacement, and session restoration. Real ZCode checks on macOS arm64 cover model/reasoning changes, Plan approval/decline, text guidance, attachment queues, tool execution, stopping, and restoration through direct Provider connections using the 0.9.0-beta.1 SDK. [Optional real-model E2E](docs/development.md#isolated-real-model-e2e) also runs in eligible PR CI jobs. Paseo daemon/UI operation, UI steering, and app restart verification remain outstanding.
 >
 > Earlier 0.8.0-beta.1 checks covered actual prompt responses, plan approval, and restoration across separate processes; UI checks used an isolated daemon with the provider registered as `codex`. Restoration after restarting the Paseo app remains unverified. The screenshot above was supplied by the author. See the [verification notes](docs/verification.md) for details.
 
@@ -34,7 +34,7 @@ These requirements apply to the **machine running the Paseo daemon**.
 | Component          | Supported configuration                                   |
 | ------------------ | --------------------------------------------------------- |
 | OS / CPU           | macOS arm64/x64, Linux arm64/x64, Windows x64             |
-| ZCode              | **3.11.2 or later**, with bundled CLI **0.16.5 or later** |
+| ZCode              | **3.12.3 or later**, with bundled CLI **0.16.5 or later** |
 | ZCode installation | Official installation; default paths below                |
 | Node.js            | **22.12.0 or later**                                      |
 | Paseo              | **0.8.0 or later**                                        |
@@ -43,7 +43,7 @@ Default installation paths are `/Applications/ZCode.app` on macOS, `/opt/ZCode` 
 
 All three OS layouts are implemented and covered by automated tests. Actual ZCode host initialization and model listing have been verified on macOS arm64 only; Linux, Windows, and macOS x64 runtime checks remain unperformed.
 
-Set up authentication and your models in ZCode first. The minimum versions apply to stable releases only. Newer stable releases, including major updates, are allowed; prereleases, missing or invalid versions, and versions below the minimum are rejected. The last verified installation is **ZCode 3.11.2 / CLI 0.16.5 on macOS arm64**. Allowing a newer version does not mean it has been verified.
+Set up authentication and your models in ZCode first. The minimum versions apply to stable releases only. Newer stable releases, including major updates, are allowed; prereleases, missing or invalid versions, and versions below the minimum are rejected. The last verified installation is **ZCode 3.12.3 / CLI 0.16.5 on macOS arm64**. Allowing a newer version does not mean it has been verified.
 
 The plugin discovers the installed host's RPC module through its static imports and required class/method structure. Changed file hashes, chunk names, or shortened export names alone do not reject startup. The official installation, OS/CPU, required files, and RPC structure must still be valid. Responses and events are checked during use: an incompatible update may fail at startup or only when a particular operation runs. Changes in meaning that preserve the data format may not be detected.
 
@@ -87,7 +87,7 @@ Metadata discovery and unsent drafts use ZCode's deferred persistence and do not
 
 The plugin writes this mapping before sending. A write failure prevents sending; corrupt mappings or missing native conversations fail instead of creating a replacement conversation. A process exit between writing the mapping and ZCode saving the first prompt also produces an explicit resume error. Unsent handles without a mapping reopen as deferred drafts.
 
-Provider API callers use `settings.plan_mode: boolean` alongside `mode: "build" | "edit" | "yolo"`. `mode: "plan"` and `providerOptions.planReturnMode` are no longer accepted. Persistence handles now use version 2; older handles are rejected, without automatic migration. Existing saved ZCode conversations can still be imported from the session list.
+Provider API callers use `settings.plan_mode: boolean` alongside `mode: "build" | "edit" | "yolo"`. Pass the saved `settings.plan_mode` when reopening a session; ZCode 3.12.3 does not retain Plan through native resume alone. `mode: "plan"` and `providerOptions.planReturnMode` are no longer accepted. Persistence handles now use version 2; older handles are rejected, without automatic migration. Existing saved ZCode conversations can still be imported from the session list.
 
 ## Updates
 

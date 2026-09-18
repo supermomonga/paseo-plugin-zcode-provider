@@ -20,7 +20,9 @@
     "check:paseo-releases": "node scripts/check-paseo-releases.mjs",
     "download:zcodecjs": "node scripts/download-zcodecjs.mjs",
     "prepare": "node scripts/generate-build-info.mjs",
-    "prebuild": "node scripts/generate-build-info.mjs"
+    "prebuild": "node scripts/generate-build-info.mjs",
+    "test:model-plan-runtime": "node scripts/check-model-plan-runtime.mjs",
+    "test:e2e": "node scripts/check-e2e.mjs"
   },
   "devDependencies": {
     "@getpaseo/client": "0.9.0-beta.1",

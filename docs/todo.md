@@ -36,10 +36,10 @@
 ## ZCode の確認済み host で対応できない指定
 
 - [ ] **独自 system prompt と保存しないセッション**
-  - 3.11.2 の host `createSession` から渡される作成パラメーターには `systemPrompt` がありません。`persistence: "deferred"` は保存を遅延する指定であり、非永続セッションではありません。
+  - 3.12.3 の host `createSession` から渡される作成パラメーターには `systemPrompt` がありません。`persistence: "deferred"` は保存を遅延する指定であり、非永続セッションではありません。
   - 元の patcher もこれらを native 作成時に適用していません。本プラグインは無視せず、非空の `systemPrompt` と `persist: false` を `INVALID_CONFIGURATION` として拒否します。daemon の追加指示や該当する Agent Profile を設定した場合も対象です。
   - 完了条件: 対応 ZCode host に実際の適用経路があることを確認し、通常のユーザーメッセージへの挿入や保存後の削除に頼らず実装できること。
-  - 根拠: 対応 artifact の `out/host/index.js` 内 `M8` / `createSession`。確認した hash は [manifest](../server/discovery/manifest.ts) の動作確認済み情報に記録しています。
+  - 根拠: 対応 artifact の `out/host/index.js` 内 `createSession` と、同梱 CLI の `session/create` schema。確認した hash は [manifest](../server/discovery/manifest.ts) の動作確認済み情報に記録しています。
 
 ## リリース前の確認
 

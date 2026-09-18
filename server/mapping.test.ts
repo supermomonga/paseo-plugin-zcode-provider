@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   catalogModels,
+  catalogThinkingOptions,
+  requireMode,
   decodeModel,
   encodeModel,
   historyTimeline,
@@ -27,12 +29,17 @@ const temporaryDirectories: string[] = [];
 function settings(): SessionSettings {
   return {
     model: {
-      current: { providerId: "anthropic", modelId: "claude", variant: "fast" },
+      current: {
+        providerId: "anthropic",
+        modelId: "claude",
+        options: { reasoningLevel: "high" },
+      },
       available: [
         {
-          ref: { providerId: "anthropic", modelId: "claude", variant: "fast" },
+          ref: { providerId: "anthropic", modelId: "claude" },
           label: "ignored host label",
           providerLabel: "Anthropic",
+          reasoningLevels: ["low", "high"],
         },
       ],
     },
@@ -45,7 +52,7 @@ function settings(): SessionSettings {
         { value: "high", label: "High" },
       ],
     },
-    mode: { current: "plan" },
+    mode: { current: "build" },
   };
 }
 
@@ -59,33 +66,37 @@ afterEach(async () => {
 
 describe("ZCode catalog mapping", () => {
   it("uses a reversible model tuple and the native thought-level catalog", () => {
-    const ref = { providerId: "anthropic", modelId: "claude", variant: "fast" };
+    const ref = { providerId: "anthropic", modelId: "claude" };
     expect(decodeModel(encodeModel(ref))).toEqual(ref);
-    expect(catalogModels(settings().model.available, settings())).toEqual([
+    expect(
+      catalogModels(settings().model.available, settings().model.current),
+    ).toEqual([
       expect.objectContaining({
-        id: '["anthropic","claude","fast"]',
+        id: '["anthropic","claude",null]',
         label: "claude",
         description: "Anthropic",
         isDefault: true,
         defaultThinkingOptionId: "high",
         thinkingOptions: [
-          { id: "low", label: "Low", isDefault: false },
-          { id: "high", label: "High", isDefault: true },
+          { id: "low", label: "low", isDefault: false },
+          { id: "high", label: "high", isDefault: true },
         ],
       }),
     ]);
   });
 
-  it("uses the workspace default thought level before a session exists", () => {
+  it("uses the preferred selection reasoning level before a session exists", () => {
     const value = settings();
     value.thoughtLevel.current = undefined;
-    value.thoughtLevel.defaultLevel = "low";
-    expect(catalogModels(value.model.available, value)[0]).toEqual(
+    value.model.current!.options = { reasoningLevel: "low" };
+    expect(
+      catalogModels(value.model.available, value.model.current)[0],
+    ).toEqual(
       expect.objectContaining({
         defaultThinkingOptionId: "low",
         thinkingOptions: [
-          { id: "low", label: "Low", isDefault: true },
-          { id: "high", label: "High", isDefault: false },
+          { id: "low", label: "low", isDefault: true },
+          { id: "high", label: "high", isDefault: false },
         ],
       }),
     );
@@ -94,21 +105,19 @@ describe("ZCode catalog mapping", () => {
   it("rejects duplicate models and unknown modes", () => {
     const value = settings();
     value.model.available.push({ ...value.model.available[0]! });
-    expect(() => catalogModels(value.model.available, value)).toThrow(
-      /Duplicate ZCode model/u,
-    );
+    expect(() =>
+      catalogModels(value.model.available, value.model.current),
+    ).toThrow(/Duplicate ZCode model/u);
     value.model.available.pop();
     value.mode.current = "future";
-    expect(() => catalogModels(value.model.available, value)).toThrow(
-      /unknown mode/u,
-    );
+    expect(() => requireMode(value.mode.current)).toThrow(/unknown mode/u);
   });
 
   it("rejects an enabled thought-level catalog without a valid default", () => {
     const value = settings();
     value.thoughtLevel.current = undefined;
     value.thoughtLevel.defaultLevel = "future";
-    expect(() => catalogModels(value.model.available, value)).toThrow(
+    expect(() => catalogThinkingOptions(value)).toThrow(
       /default thinking option/u,
     );
   });
@@ -375,4 +384,17 @@ it("restores text and attachments as one native user message", () => {
       text: "Read attachment\n\n[input.txt](artifact://attachment)",
     },
   ]);
+});
+
+it("rejects variant IDs instead of converting them to reasoning levels", () => {
+  expect(() => decodeModel('["provider","model","high"]')).toThrow(
+    /Invalid ZCode model ID/,
+  );
+  expect(
+    encodeModel({
+      providerId: "provider",
+      modelId: "model",
+      options: { reasoningLevel: "high" },
+    }),
+  ).toBe('["provider","model",null]');
 });

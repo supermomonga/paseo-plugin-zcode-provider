@@ -4,6 +4,15 @@ import { CURRENT_HOST_PROTOCOL } from "./discovery/manifest.js";
 import { adaptHostRequest } from "./host/contract.js";
 
 describe("ZCode host artifact and protocol", () => {
+  test("routes model selection to its dedicated service", () => {
+    expect(
+      adaptHostRequest(CURRENT_HOST_PROTOCOL, "readModelSelection", {}),
+    ).toEqual({
+      service: "modelSelection",
+      method: "getView",
+      params: undefined,
+    });
+  });
   test.each(["getEntitlementSnapshot", "getCodingPlanResetStatus"])(
     "routes %s through the usage service",
     (method) => {

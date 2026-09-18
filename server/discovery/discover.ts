@@ -366,6 +366,10 @@ export function resolveRuntimePaths(
       metadata: join(installRoot, "resources/glm/.node-bundle-meta.json"),
       appPackage: join(installRoot, "resources/app.asar/package.json"),
       hostArchive: join(installRoot, "resources/app.asar"),
+      builtinProviderConfig: join(
+        installRoot,
+        "resources/config/provider/zcode-builtin.json",
+      ),
     };
   }
   if (platform !== "darwin") {
@@ -388,6 +392,10 @@ export function resolveRuntimePaths(
     appMetadata: join(installRoot, "Contents/Info.plist"),
     appPackage: join(installRoot, "Contents/Resources/app.asar/package.json"),
     hostArchive: join(installRoot, "Contents/Resources/app.asar"),
+    builtinProviderConfig: join(
+      installRoot,
+      "Contents/Resources/config/provider/zcode-builtin.json",
+    ),
   };
 }
 
@@ -397,6 +405,7 @@ async function validatePaths(paths: RuntimePaths): Promise<void> {
       paths.executable,
       paths.cliEntry,
       paths.metadata,
+      paths.builtinProviderConfig,
       ...(paths.appMetadata === undefined ? [] : [paths.appMetadata]),
     ]) {
       const resolved = await realpath(candidate);

@@ -6,6 +6,8 @@ date: 2026-09-11
 links:
   - target: 2
     kind: amends
+  - target: 11
+    kind: amendedby
 ---
 
 # V4入力受付とネイティブ待機キューを一つのPaseo実行へ対応付ける

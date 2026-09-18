@@ -21,6 +21,7 @@ Use Node.js **22.12.0 or later** and npm.
 - `npm run format:check` / `npm run format`: Check or apply Prettier formatting.
 - `npm run test:upstream -- /absolute/path/to/paseo`: Verify integration using the actual compiler and Provider adapter from a supported Paseo checkout. See `docs/development.md` for the target commit.
 - `npm run test:runtime -- /absolute/path/to/workspace`: Initialize the installed host and retrieve the model list. No prompts are sent.
+- `npm run test:e2e`: Opt-in real-model checks on macOS/Linux using `GLM_API_KEY` (Z.ai Coding Plan), isolated ZCode data, and the installed host. Also runs in eligible PR CI jobs; separate from `npm test`. See `docs/development.md` for coverage and secret requirements.
 - `npm run download:zcodecjs`: Download the latest official Linux x64 deb, extract `zcode.cjs`, and format it with the project's Prettier dependency before saving. Use `npm run download:zcodecjs -- --zcode-version 3.12.3` for a specific version. Requires Node.js and a `tar` command with xz support on macOS, Windows, or Linux; existing files are overwritten only after extraction and formatting succeed.
 
 There is no standalone development server. The plugin runs on the Paseo daemon; see `README.md` for installation instructions.

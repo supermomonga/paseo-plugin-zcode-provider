@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -47,3 +48,37 @@ jobs:
         run: npm run build
       - name: Check Git preparation and upstream integration
         run: npm run test:upstream -- "$GITHUB_WORKSPACE/paseo"
+
+  e2e:
+    name: Real ZCode E2E
+    # Fork and Dependabot PRs cannot access repository Actions secrets.
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --include=dev
+      - name: Install official ZCode 3.12.3
+        env:
+          ZCODE_DEB: ${{ runner.temp }}/zcode-3.12.3.deb
+        run: |
+          curl --fail --location --silent --show-error --max-time 300 \
+            https://cdn-zcode.z.ai/zcode/electron/releases/3.12.3/linux-x64/ZCode-3.12.3-linux-x64.deb \
+            --output "$ZCODE_DEB"
+          echo "631fbd69fcefe5d57c607bbfd047bb7a474af6017464681b99ccb7b15749c60e  $ZCODE_DEB" | sha256sum --check
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends "$ZCODE_DEB"
+      - name: Run isolated real-model E2E
+        env:
+          GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+        run: npm run test:e2e

@@ -1,3 +1,4 @@
+import { cleanupOnSignal } from "./runtime-check-lifecycle.mjs";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -10,6 +11,11 @@ import { pathToFileURL } from "node:url";
 const root = resolve(import.meta.dirname, "..");
 const directory = await mkdtemp(join(tmpdir(), "zcode-steering-"));
 let connection;
+const cleanup = async () => {
+  await connection?.close();
+  await rm(directory, { recursive: true, force: true });
+};
+const removeSignalHandlers = cleanupOnSignal(cleanup);
 try {
   await build({
     stdin: {
@@ -35,7 +41,6 @@ try {
     persist: true,
     settings: {},
     mode: "yolo",
-    thinkingOption: "low",
   };
   let events = [];
   let listeners = new Set();
@@ -68,7 +73,12 @@ try {
         if (failure || result) {
           clearTimeout(timer);
           listeners.delete(check);
-          if (failure) reject(new Error(JSON.stringify(failure)));
+          if (failure)
+            reject(
+              new Error(
+                `${failure.type}: ${failure.error?.code ?? failure.result?.error?.code}`,
+              ),
+            );
           else resolveResult(result);
         }
       };
@@ -122,6 +132,17 @@ try {
     size: 19,
   };
   await connect();
+  await connection.send({
+    type: "catalog",
+    requestId: "catalog",
+    cwd: directory,
+  });
+  const { catalog } = await wait((e) => e.type === "catalog");
+  const defaultModel = catalog.models.find(
+    (model) => model.id === catalog.defaultModel,
+  );
+  assert.ok(defaultModel);
+  config.thinkingOption = defaultModel.thinkingOptions[0].id;
   const persistence = await open();
   const runningTool = (e) =>
     e.type === "timeline.item" &&
@@ -253,6 +274,6 @@ try {
     }),
   );
 } finally {
-  await connection?.close();
-  await rm(directory, { recursive: true, force: true });
+  removeSignalHandlers();
+  await cleanup();
 }

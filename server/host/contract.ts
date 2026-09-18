@@ -5,7 +5,7 @@ import type {
 } from "../discovery/types.js";
 
 export interface AdaptedHostRequest {
-  readonly service: "agent" | "task" | "usage";
+  readonly service: "agent" | "task" | "usage" | "modelSelection";
   readonly method: string;
   readonly params: unknown;
 }
@@ -15,6 +15,14 @@ export function adaptHostRequest(
   method: string,
   params: unknown,
 ): AdaptedHostRequest {
+  if (method === "readModelSelection") {
+    const { selection } = requireRecord(params);
+    return {
+      service: "modelSelection",
+      method: "getView",
+      params: selection === undefined ? undefined : { selection },
+    };
+  }
   if (
     method === "getEntitlementSnapshot" ||
     method === "getCodingPlanResetStatus"

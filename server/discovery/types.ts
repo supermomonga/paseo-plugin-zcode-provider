@@ -13,6 +13,7 @@ export interface RuntimePaths {
   readonly appMetadata?: string;
   readonly appPackage: string;
   readonly hostArchive: string;
+  readonly builtinProviderConfig: string;
 }
 
 export type HostProtocolId = "zcode-task-v1";
@@ -43,6 +44,7 @@ export interface HostProtocolDescriptor {
     readonly agent: string;
     readonly task: string;
     readonly usage: string;
+    readonly modelSelection: string;
   };
   readonly operations: {
     readonly cancelGeneration: HostOperationDescriptor;
