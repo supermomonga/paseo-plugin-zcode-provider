@@ -221,7 +221,7 @@ describe("issue creation", () => {
     const opts = options(pRelease("0.8.0") + pRelease("0.8.0-beta.1"), client);
     expect(await runReleaseCheck(opts)).toHaveLength(1);
     expect(client.createIssue.mock.calls[0][1]).toMatchObject({
-      title: "Paseo 0.8.0 に対応する",
+      title: "Support Paseo 0.8.0",
       version: "0.8.0",
     });
     expect(client.issues[1].body).toContain(
@@ -330,7 +330,7 @@ describe("issue creation", () => {
     const client = memoryClient();
     const opts = options(pRelease("0.8.0"), client, { dryRun: true });
     expect(await runReleaseCheck(opts)).toEqual([]);
-    expect(opts.log.mock.calls[0][0]).toContain("Paseo 0.8.0 に対応する");
+    expect(opts.log.mock.calls[0][0]).toContain("Support Paseo 0.8.0");
     expect(client.listIssues).not.toHaveBeenCalled();
     expect(client.createIssue).not.toHaveBeenCalled();
   });
