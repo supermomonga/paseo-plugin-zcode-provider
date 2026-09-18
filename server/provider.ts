@@ -290,9 +290,9 @@ export class ZCodeConnection implements ProviderConnection {
       const cwd = await resolveWorkspace(input.cwd ?? homedir());
       const host = await this.host({});
       try {
-        const settings = await initializeWorkspace(host, cwd);
+        const { settings, modelCatalog } = await initializeWorkspace(host, cwd);
         if (input.type === "catalog") {
-          const models = catalogModels(settings);
+          const models = catalogModels(modelCatalog.available, settings);
           this.emit({
             type: "catalog",
             requestId: input.requestId,
@@ -515,7 +515,7 @@ export class ZCodeConnection implements ProviderConnection {
     const host = await this.host(config.env);
     let native: ZCodeSession | undefined;
     try {
-      await initializeWorkspace(host, cwd);
+      const { modelCatalog } = await initializeWorkspace(host, cwd);
       const snapshot = await host.request(
         nativeId ? "resumeSession" : "createSession",
         {
@@ -533,6 +533,7 @@ export class ZCodeConnection implements ProviderConnection {
         logger,
         workspace: cwd,
         snapshot,
+        modelCatalog: modelCatalog.available,
         onClose() {},
       });
       await native.applyInitialConfig({

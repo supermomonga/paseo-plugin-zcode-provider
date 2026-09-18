@@ -1,5 +1,6 @@
 import { uploadAttachments } from "./attachments.js";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { Conversation, conversationCommand } from "./conversation.js";
 import { z } from "zod";
 import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
@@ -26,6 +27,7 @@ import type { HostBridge, HostSubscription } from "./host/bridge.js";
 import type { Logger } from "./logger.js";
 import {
   catalogModels,
+  catalogThinkingOptions,
   decodeModel,
   encodeModel,
   historyTimeline,
@@ -41,7 +43,6 @@ import {
 } from "./mapping.js";
 import {
   InitializeResultSchema,
-  SessionSettingsSchema,
   SessionModePatchSchema,
   SessionModeChangedSchema,
   SessionSnapshotSchema,
@@ -52,7 +53,8 @@ import {
   type DynamicEvent,
   type PermissionRequest,
   type SessionEvent,
-  type SessionSettings,
+  type ModelOption,
+  type WorkspaceState,
   type SessionSnapshot,
   type UserInputRequest,
 } from "./protocol/v1/host-schemas.js";
@@ -157,6 +159,9 @@ export class ZCodeSession {
     private readonly logger: Logger,
     private readonly workspace: string,
     snapshot: SessionSnapshot,
+    // Session snapshots intentionally contain only the current model. Keep the
+    // authoritative workspace catalog separate for selection and configuration.
+    private modelCatalog: readonly ModelOption[],
     private readonly onClose: () => void,
   ) {
     assertSnapshotWorkspace(snapshot, workspace);
@@ -177,6 +182,7 @@ export class ZCodeSession {
     logger: Logger;
     workspace: string;
     snapshot: SessionSnapshot;
+    modelCatalog: readonly ModelOption[];
     onClose: () => void;
   }): Promise<ZCodeSession> {
     const session = new ZCodeSession(
@@ -184,6 +190,7 @@ export class ZCodeSession {
       options.logger,
       options.workspace,
       options.snapshot,
+      options.modelCatalog,
       options.onClose,
     );
     session.subscription = await options.bridge.subscribe(
@@ -257,18 +264,18 @@ export class ZCodeSession {
   }
 
   getConfig(): ProviderConfigState {
-    const models = catalogModels(this.snapshot.settings);
+    const models = catalogModels(this.modelCatalog, this.snapshot.settings);
     const model = encodeModel(this.snapshot.settings.model.current);
-    const selected = models.find((entry) => entry.id === model)!;
+    const thinking = catalogThinkingOptions(this.snapshot.settings);
     return {
       model,
       mode: this.editingMode,
       thinkingOption:
         this.snapshot.settings.thoughtLevel.current ??
-        selected.defaultThinkingOptionId,
+        thinking?.defaultOptionId,
       models,
       modes: ZCODE_MODES,
-      thinkingOptions: selected.thinkingOptions ?? [],
+      thinkingOptions: thinking?.options ?? [],
       settings: [
         {
           type: "toggle",
@@ -581,10 +588,14 @@ export class ZCodeSession {
       );
     }
     const model = decodeModel(modelId);
+    const state = await readWorkspaceState(this.bridge, this.workspace);
+    this.assertIdle();
+    if (!isDeepStrictEqual(this.modelCatalog, state.modelCatalog.available)) {
+      this.modelCatalog = state.modelCatalog.available;
+      this.emit({ type: "config_changed" });
+    }
     const available = new Set(
-      this.snapshot.settings.model.available.map((entry) =>
-        encodeModel(entry.ref),
-      ),
+      this.modelCatalog.map((entry) => encodeModel(entry.ref)),
     );
     if (!available.has(modelId)) {
       throw new AdapterError(
@@ -592,6 +603,7 @@ export class ZCodeSession {
         `Unknown ZCode model: ${modelId}`,
       );
     }
+    this.assertIdle();
     const snapshot = await this.bridge.request(
       "setModel",
       {
@@ -1886,7 +1898,7 @@ export function assertSnapshotWorkspace(
 export async function initializeWorkspace(
   bridge: HostBridge,
   workspace: string,
-): Promise<SessionSettings> {
+): Promise<WorkspaceState> {
   const initialized = await bridge.request(
     "initialize",
     { workspacePath: workspace },
@@ -1901,6 +1913,13 @@ export async function initializeWorkspace(
       initialized.reason ?? "ZCode host is unavailable",
     );
   }
+  return readWorkspaceState(bridge, workspace);
+}
+
+async function readWorkspaceState(
+  bridge: HostBridge,
+  workspace: string,
+): Promise<WorkspaceState> {
   const state = await bridge.request(
     "readWorkspaceState",
     { workspacePath: workspace },
@@ -1910,17 +1929,17 @@ export async function initializeWorkspace(
   if (state.workspace.workspacePath !== workspace) {
     throw new AdapterError(
       "INVALID_WORKSPACE",
-      "ZCode initialized a different workspace",
+      "ZCode returned a different workspace",
     );
   }
-  if ((state.modelCatalog?.providers.length ?? 0) === 0) {
+  if (state.modelCatalog.providers.length === 0) {
     throw new AdapterError(
       "AUTH_REQUIRED",
       "No usable ZCode model provider is configured",
     );
   }
-  SessionSettingsSchema.parse(state.settings);
-  return state.settings;
+  catalogModels(state.modelCatalog.available, state.settings);
+  return state;
 }
 
 function safeError(error: unknown): string {

@@ -61,7 +61,7 @@ describe("ZCode catalog mapping", () => {
   it("uses a reversible model tuple and the native thought-level catalog", () => {
     const ref = { providerId: "anthropic", modelId: "claude", variant: "fast" };
     expect(decodeModel(encodeModel(ref))).toEqual(ref);
-    expect(catalogModels(settings())).toEqual([
+    expect(catalogModels(settings().model.available, settings())).toEqual([
       expect.objectContaining({
         id: '["anthropic","claude","fast"]',
         label: "claude",
@@ -80,7 +80,7 @@ describe("ZCode catalog mapping", () => {
     const value = settings();
     value.thoughtLevel.current = undefined;
     value.thoughtLevel.defaultLevel = "low";
-    expect(catalogModels(value)[0]).toEqual(
+    expect(catalogModels(value.model.available, value)[0]).toEqual(
       expect.objectContaining({
         defaultThinkingOptionId: "low",
         thinkingOptions: [
@@ -94,17 +94,23 @@ describe("ZCode catalog mapping", () => {
   it("rejects duplicate models and unknown modes", () => {
     const value = settings();
     value.model.available.push({ ...value.model.available[0]! });
-    expect(() => catalogModels(value)).toThrow(/Duplicate ZCode model/u);
+    expect(() => catalogModels(value.model.available, value)).toThrow(
+      /Duplicate ZCode model/u,
+    );
     value.model.available.pop();
     value.mode.current = "future";
-    expect(() => catalogModels(value)).toThrow(/unknown mode/u);
+    expect(() => catalogModels(value.model.available, value)).toThrow(
+      /unknown mode/u,
+    );
   });
 
   it("rejects an enabled thought-level catalog without a valid default", () => {
     const value = settings();
     value.thoughtLevel.current = undefined;
     value.thoughtLevel.defaultLevel = "future";
-    expect(() => catalogModels(value)).toThrow(/default thinking option/u);
+    expect(() => catalogModels(value.model.available, value)).toThrow(
+      /default thinking option/u,
+    );
   });
 });
 

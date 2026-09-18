@@ -62,10 +62,9 @@ export const WorkspaceStateResultSchema = z
     modelCatalog: z
       .object({
         providers: z.array(z.unknown()),
-        available: z.array(z.unknown()),
+        available: z.array(ModelOptionSchema),
       })
-      .passthrough()
-      .optional(),
+      .passthrough(),
   })
   .passthrough();
 
@@ -332,6 +331,8 @@ export const DynamicEventSchema = z.discriminatedUnion("type", [
 export type DynamicEvent = z.infer<typeof DynamicEventSchema>;
 export type SessionSnapshot = z.infer<typeof SessionSnapshotSchema>;
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
+export type ModelOption = z.infer<typeof ModelOptionSchema>;
+export type WorkspaceState = z.infer<typeof WorkspaceStateResultSchema>;
 export type PermissionRequest = z.infer<typeof PermissionRequestSchema>;
 export type PermissionResponse = z.infer<typeof PermissionResponseSchema>;
 export type UserInputRequest = z.infer<typeof UserInputRequestSchema>;
