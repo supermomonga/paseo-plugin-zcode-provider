@@ -2,6 +2,7 @@
   "worktree": {
       "setup": [
           "ln -s \"$PASEO_SOURCE_CHECKOUT_PATH/mise.local.toml\" mise.local.toml",
+          "ln -s \"$PASEO_SOURCE_CHECKOUT_PATH/libs/zcode\" libs/zcode",
           "mise trust"
       ],
     "teardown": "rm mise.local.toml"
