@@ -4,6 +4,7 @@ import type { HostBridge, HostSubscription } from "../server/host/bridge.js";
 import type {
   DynamicEvent,
   SessionSnapshot,
+  WorkspaceState,
 } from "../server/protocol/v1/host-schemas.js";
 export function snapshot(workspace: string): SessionSnapshot {
   return {
@@ -104,10 +105,32 @@ export class FakeBridge implements HostBridge {
   readonly calls: Array<{ method: string; params: unknown }> = [];
   private handler: ((event: DynamicEvent) => Promise<void> | void) | undefined;
 
-  constructor(public current: SessionSnapshot) {}
+  workspaceState: WorkspaceState;
+
+  constructor(public current: SessionSnapshot) {
+    this.workspaceState = structuredClone({
+      workspace: current.session.workspace,
+      settings: current.settings,
+      modelCatalog: {
+        providers: [{}],
+        available: current.settings.model.available,
+      },
+    });
+  }
+
+  sessionSnapshot(): SessionSnapshot {
+    const result = structuredClone(this.current);
+    // Native session reads and settings responses only describe the current model.
+    result.settings.model.available = [
+      {
+        ref: result.settings.model.current,
+        label: result.settings.model.current.modelId,
+      },
+    ];
+    return result;
+  }
 
   emitModeOnSet = false;
-  collapseModelsOnSetMode = false;
 
   async request<Schema extends z.ZodType>(
     method: string,
@@ -119,17 +142,11 @@ export class FakeBridge implements HostBridge {
     if (method === "initialize") {
       result = { available: true };
     } else if (method === "readWorkspaceState") {
-      result = {
-        workspace: this.current.session.workspace,
-        settings: this.current.settings,
-        modelCatalog: { providers: [{}], available: [] },
-      };
-    } else if (
-      method === "createSession" ||
-      method === "resumeSession" ||
-      method === "readSession"
-    ) {
+      result = this.workspaceState;
+    } else if (method === "createSession" || method === "resumeSession") {
       result = this.current;
+    } else if (method === "readSession") {
+      result = this.sessionSnapshot();
     } else if (method === "listSessions") {
       result = [this.current.session];
     } else if (method === "sendConversationCommandV4") {
@@ -223,14 +240,7 @@ export class FakeBridge implements HostBridge {
           mode: { current: value.mode },
         },
       };
-      if (this.collapseModelsOnSetMode) {
-        this.current.settings.model.available =
-          this.current.settings.model.available.filter(
-            (entry) =>
-              entry.ref.modelId === this.current.settings.model.current.modelId,
-          );
-      }
-      result = this.current;
+      result = this.sessionSnapshot();
       if (this.emitModeOnSet) {
         await this.emit(stateUpdate({ mode: { current: value.mode } }));
       }
@@ -240,12 +250,12 @@ export class FakeBridge implements HostBridge {
           model: SessionSnapshot["settings"]["model"]["current"];
         }
       ).model;
-      result = this.current;
+      result = this.sessionSnapshot();
     } else if (method === "setThoughtLevel") {
       this.current.settings.thoughtLevel.current = (
         params as { thoughtLevel: string }
       ).thoughtLevel;
-      result = this.current;
+      result = this.sessionSnapshot();
     }
     return resultSchema.parse(structuredClone(result));
   }
@@ -261,6 +271,7 @@ export class FakeBridge implements HostBridge {
   ): Promise<HostSubscription> {
     this.calls.push({ method: "subscribe", params: null });
     this.handler = handler;
+    await this.emit({ type: "snapshot", snapshot: this.sessionSnapshot() });
     await this.emitConversation();
     return {
       dispose: async () => {

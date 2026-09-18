@@ -93,6 +93,15 @@ try {
   const { createZCodeProvider } = await load("provider");
   const { SessionPersistenceStore } = await load("persistence");
   const { FakeBridge, snapshot, completeTurn } = await load("fake");
+  const modelA = '["provider","model",null]';
+  const modelB = '["provider","other","fast"]';
+  const modelOptions = [
+    { ref: { providerId: "provider", modelId: "model" }, label: "Model" },
+    {
+      ref: { providerId: "provider", modelId: "other", variant: "fast" },
+      label: "Other",
+    },
+  ];
   const hosts = [];
   const warnings = [];
   const registry = new PluginAgentClientRegistry({
@@ -104,6 +113,8 @@ try {
     return createZCodeProvider(
       async () => {
         const host = new FakeBridge(structuredClone(initial));
+        host.workspaceState.modelCatalog.available =
+          structuredClone(modelOptions);
         hosts.push(host);
         return host;
       },
@@ -134,17 +145,31 @@ try {
       cwd: directory,
     });
     assert.equal(catalog.models[0].provider, "zcode");
+    assert.deepEqual(
+      catalog.models.map((model) => model.id),
+      [modelA, modelB],
+    );
     const session = await client.createSession({
       provider: "zcode",
       cwd: directory,
       modeId: "edit",
+      model: modelB,
     });
+    assert.equal((await session.getRuntimeInfo()).model, modelB);
     const events = [];
     session.subscribe((event) => events.push(event));
     const initialUsageReplayed = events.some(
       (event) => event.type === "usage_updated",
     );
     const host = hosts.at(-1);
+    await session.setModel(modelA);
+    assert.equal((await session.getRuntimeInfo()).model, modelA);
+    await session.setModel(modelB);
+    assert.equal((await session.getRuntimeInfo()).model, modelB);
+    assert.equal(
+      host.calls.filter(({ method }) => method === "setModel").length,
+      3,
+    );
     host.current.runtime.contextUsage = { used: 30, size: 100 };
     await host.emit({
       type: "snapshot",
@@ -210,7 +235,7 @@ try {
     assert.ok(persistence);
 
     // Simulate the native transcript retained after the completed turn.
-    const saved = structuredClone(host.current);
+    const saved = host.sessionSnapshot();
     saved.messages = [
       {
         info: { messageId: "native-user-1", role: "user" },
@@ -242,7 +267,11 @@ try {
     const resumed = await replacement.resumeSession(persistence, {
       cwd: directory,
       modeId: "edit",
+      model: modelA,
     });
+    assert.equal((await resumed.getRuntimeInfo()).model, modelA);
+    await resumed.setModel(modelB);
+    assert.equal((await resumed.getRuntimeInfo()).model, modelB);
     const resumedHost = hosts.at(-1);
     assert.notEqual(resumedHost, host);
     assert.deepEqual(

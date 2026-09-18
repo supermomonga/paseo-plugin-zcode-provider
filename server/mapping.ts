@@ -14,6 +14,7 @@ import type {
 } from "@getpaseo/plugin/server/provider";
 import { AdapterError } from "./errors.js";
 import type {
+  ModelOption,
   PermissionRequest,
   SessionSettings,
   SessionSnapshot,
@@ -91,11 +92,14 @@ export function decodeModel(value: string): ModelRef {
   };
 }
 
-export function catalogModels(settings: SessionSettings): ProviderModel[] {
+export function catalogModels(
+  available: readonly ModelOption[],
+  settings: SessionSettings,
+): ProviderModel[] {
   const ids = new Set<string>();
   const current = encodeModel(settings.model.current);
   const thinking = catalogThinkingOptions(settings);
-  const models = settings.model.available.map((model) => {
+  const models = available.map((model) => {
     const id = encodeModel(model.ref);
     if (ids.has(id)) {
       throw new AdapterError(
@@ -119,17 +123,11 @@ export function catalogModels(settings: SessionSettings): ProviderModel[] {
           }),
     };
   });
-  if (!ids.has(current)) {
-    throw new AdapterError(
-      "NATIVE_PROTOCOL_ERROR",
-      "The current ZCode model is absent from the available model list",
-    );
-  }
   requireMode(settings.mode.current);
   return models;
 }
 
-function catalogThinkingOptions(
+export function catalogThinkingOptions(
   settings: SessionSettings,
 ): { options: ProviderThinkingOption[]; defaultOptionId: string } | undefined {
   const thoughtLevel = settings.thoughtLevel;
