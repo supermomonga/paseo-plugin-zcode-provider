@@ -74,9 +74,9 @@ export function issueMarker(product, version) {
 export function buildIssueDraft(product, release) {
   if (!release.markdown.trim())
     throw new Error(`Empty changelog for ${release.version}`);
-  const title = `${product.name} ${release.version} に対応する`;
+  const title = `Support ${product.name} ${release.version}`;
   const body = [
-    `${product.name} ${release.version} がリリースされました。paseo-plugin-zcode-provider の互換性を確認し、必要な対応を行ってください。`,
+    `${product.name} ${release.version} has been released. Please verify that paseo-plugin-zcode-provider remains compatible and make any necessary changes.`,
     `Changelog: ${release.url}`,
     "## Changelog",
     release.markdown.trim(),
