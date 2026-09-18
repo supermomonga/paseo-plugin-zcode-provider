@@ -1,6 +1,6 @@
 # 未実装項目
 
-当初の調査基準は Paseo main `c424f82922fcd36aa9cc9e473644bca04417b420`、patcher `572100368774df7632728a72568466ac3632d458`（2026-09-07）です。Paseo 0.8.0 で再確認した項目は個別に記載しています。
+当初の調査基準は Paseo main `c424f82922fcd36aa9cc9e473644bca04417b420`、patcher `572100368774df7632728a72568466ac3632d458`（2026-09-07）です。Paseo 0.8.0 / 0.9.0-beta.1 で再確認した項目は個別に記載しています。
 
 ## Paseo 本体の公開 API に不足がある項目
 
@@ -15,7 +15,7 @@
   - プラグインは native snapshot の使用量を `session.ready` より前に `session.usage` として送信します。
   - main のアダプターは初期イベントを内部履歴に取り込みますが、その後の `subscribe` で使用量を再通知しません。AgentManager の履歴復元も timeline 以外を使用量として反映しません。以降に到着する使用量更新は通知できます。
   - 現在は実際の初期値を通常どおり送信します。購読時点に合わせるタイマーや架空の変化通知は使いません。
-  - Paseo `v0.8.0` の実アダプターでも初期使用量の再通知がないことと、その後の更新が届くことを確認しました。詳細は [検証記録](verification.md) を参照してください。
+  - Paseo `v0.8.0` / `v0.9.0-beta.1` の実アダプターでも初期使用量の再通知がないことと、その後の更新が届くことを確認しました。詳細は [検証記録](verification.md) を参照してください。
   - 完了条件: 本体が最新の使用量を保持し、新規購読・復元時に反映すること。会話を送信しなくても初期表示できることを UI で確認すること。
   - 根拠: [PluginAgentSession](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/plugin-provider.ts#L1020)、[AgentManager](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/agent-manager.ts)。
 
@@ -25,6 +25,13 @@
   - Settings にプラグイン独自の読み取り専用診断画面を追加しました（[ADR 8](adr/0008-設定画面は読み取り専用の診断に限定しホスト状態を専用rpcで返す.md)）。検出パス・バージョン・互換性・動作確認済み artifact との一致・保存先を表示し、host check を実行できます。標準診断欄の代替ではなく、本体 API が追加された場合の接続は未実装です。
   - 完了条件: 診断要求と応答の公開 API が追加され、本体の標準診断欄へ接続できること。認証値やプロンプトを表示しないことも検証すること。
   - 根拠: [標準診断の処理](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/provider-snapshot-manager.ts#L790)。
+
+## プラグインの要求範囲として見送っている機能
+
+- **診断画面からの設定編集**
+  - Paseo 0.9.0-beta.1 では `server.registerSettings()` の戻り値に `read()` / `subscribe()` が追加され、サーバー側の設定読取という ADR 8 の技術的制約は解消しています。
+  - 今回は互換性確認が目的のため、診断専用画面を維持します（[ADR 10](adr/0010-サーバー設定apiの追加後も診断専用画面を維持する.md)）。API 不足による未対応としては扱いません。
+  - 設定編集が必要になった場合は、公式 Settings API を使い、環境変数との優先順位、既存セッションへの適用時点、無効な保存値の扱いと Paseo の最低要件を別途決めます。ZCode の認証・モデル設定を管理する機能ではありません。
 
 ## ZCode の確認済み host で対応できない指定
 
@@ -50,6 +57,7 @@
 - [x] **Provider API を含む SDK リリースへの開発依存の切替**
   - 2026-09-08 に公開 SDK `0.8.0-beta.1` へ切り替え、Provider API の保存済みソースと alias を削除しました。
   - 2026-09-11 に SDK 3パッケージを正式版 `0.8.0` に固定し、同版の実コンパイラ・アダプターとの互換性を確認しました。実行時は引き続き Paseo が提供する `@getpaseo/plugin/server/provider` を使用します。
+  - 2026-09-18 に SDK 3パッケージと CI の上流基準を `0.9.0-beta.1` へ更新しました。更新後のソースを `0.8.0` の実コンパイラ・アダプター・実行用 Provider SDK でも再検証し、manifest の最低要件 `>=0.8.0` を維持しています。実 daemon/UI と実モデル送信の今回の未確認範囲は [検証記録](verification.md) に記載しています。
 
 ## 自動対応しない事項
 
