@@ -7,14 +7,9 @@ import type {
 } from "@getpaseo/plugin/server/provider";
 
 export type NativePromptInput = string | ProviderContent[];
-type WithoutIdentity<T> = T extends ProviderTimelineItem
-  ? Omit<T, "id" | "revertToken">
-  : never;
-export type NativeTimelineItem = WithoutIdentity<ProviderTimelineItem>;
+export type NativeTimelineItem = ProviderTimelineItem;
 
-// Native text fragments are assembled into complete ProviderTimelineItem snapshots at the connection boundary.
 export type NativeSessionEvent =
-  | { type: "timeline_boundary" }
   | {
       type: "prompt_accepted";
       clientMessageId: string;

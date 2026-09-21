@@ -1,147 +1,76 @@
 # ZCode Provider for Paseo
 
-Use ZCode models, tools, and conversation history in [Paseo](https://github.com/getpaseo/paseo). This plugin connects to your installed ZCode app and uses the authentication and models you have configured there.
+Use ZCode models, tools and conversations through Paseo's public Provider API. The plugin launches the **official stdio Services Server from the integrated ZCode CLI distribution**. Authentication, models, tools and conversation storage remain owned by ZCode. ZCode Desktop is not required.
 
-![ZCode conversation in Paseo](images/zcode-conversation.png)
+> This migration is not ready for release. The pinned upstream source restores an older editing mode and drops Plan during cold resume, even though the correct execution state is present in its database. The native regression test intentionally fails. See [verification and release blockers](docs/verification.md).
 
-> [!NOTE]
-> This plugin is under development and requires Paseo **0.8.0 or later**. SDK/compiler/adapter tests pass on **0.9.0-beta.1** and the retained minimum **0.8.0**, covering steering, native queue aggregation, provider replacement, and session restoration. Real ZCode checks on macOS arm64 cover model/reasoning changes, Plan approval/decline, text guidance, attachment queues, tool execution, stopping, and restoration through direct Provider connections using the 0.9.0-beta.1 SDK. [Optional real-model E2E](docs/development.md#isolated-real-model-e2e) also runs in eligible PR CI jobs. Paseo daemon/UI operation, UI steering, and app restart verification remain outstanding.
->
-> Earlier 0.8.0-beta.1 checks covered actual prompt responses, plan approval, and restoration across separate processes; UI checks used an isolated daemon with the provider registered as `codex`. Restoration after restarting the Paseo app remains unverified. The screenshot above was supplied by the author. See the [verification notes](docs/verification.md) for details.
+This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai. The official RPC/V4 implementation is public source, but it is not a stable third-party SDK.
 
-> [!IMPORTANT]
-> This project is an unofficial tool and is not officially released, endorsed, or maintained by ZCode or Z.ai.
+## Requirements and configuration
 
-> [!WARNING]
-> This plugin uses ZCode's undocumented headless mode. It does not modify the ZCode application itself or include any implementation that bypasses its communications. However, there is no guarantee that it will not be interpreted as violating the [Terms of Service](https://zcode.z.ai/en/terms). Therefore, please use it at your own risk.
+Configure the machine running the Paseo daemon:
 
-## Features
+| Setting               | Requirement                                                                                                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Paseo                 | 0.8.0 or later; development SDK 0.9.0-beta.1                                                                                                                                  |
+| Plugin Node.js        | 22.12.0 or later                                                                                                                                                              |
+| `PASEO_ZCODE_RUNTIME` | Absolute path to an extracted **integrated CLI distribution**, containing `server/remote/zcode-server.cjs`, `agent/zcode.cjs`, its provider configuration, and `package.json` |
+| `PASEO_ZCODE_NODE`    | Absolute path to **ordinary Node.js 24.14.0 or later**, used for both Server and Agent                                                                                        |
+| ZCode                 | Stable Server 3.14.0+ / Agent 0.16.9+; necessary files and runtime contracts are checked                                                                                      |
 
-- **Model and mode selection** — Model discovery, thinking settings, and `build` / `edit` / `yolo` editing modes with an independent plan toggle.
-- **Conversations and tools** — Text and image prompts, slash commands, streaming responses, and tool execution status.
-- **Steering and queued attachments** — Add text to active generation; messages with attachments run sequentially in ZCode’s queue. Paseo reports completion after the entire run finishes. Stop cancels both active and pending work.
-- **Approvals and questions** — Tool permissions, structured questions, plan approval and rejection, and generation interruption.
-- **Persistence and restoration** — Conversation lists per workspace, importing existing ZCode conversations, and history restoration.
-- **Session configuration** — MCP server configuration and notifications for token, cost, and context usage.
-- **Diagnostics screen** — A read-only screen under **Settings → Plugins → zcode-provider** shows the detected installation path, versions, compatibility, verified-release fingerprint, session mapping location, and an on-demand host check.
+```bash
+export PASEO_ZCODE_RUNTIME=/absolute/path/to/zcode
+export PASEO_ZCODE_NODE=/absolute/path/to/node
+```
 
-The ZCode host manages credentials, model settings, and conversation storage. This repository does not bundle ZCode or credentials.
+Set these in the daemon's environment, then restart the daemon. A terminal export does not change an already running Desktop application. Electron, `process.execPath`, Desktop discovery and `PASEO_ZCODE_INSTALL` are not alternative launch paths. Missing or invalid settings fail explicitly.
 
-## Requirements
+You install and update the CLI and its Node.js runtime. Set up authentication and models using the official CLI/TUI. The plugin neither decrypts nor copies credentials. Session environment variables are forwarded, subject to ZCode's own proxy, certificate and runtime environment handling.
 
-These requirements apply to the **machine running the Paseo daemon**.
-
-| Component          | Supported configuration                                   |
-| ------------------ | --------------------------------------------------------- |
-| OS / CPU           | macOS arm64/x64, Linux arm64/x64, Windows x64             |
-| ZCode              | **3.12.3 or later**, with bundled CLI **0.16.5 or later** |
-| ZCode installation | Official installation; default paths below                |
-| Node.js            | **22.12.0 or later**                                      |
-| Paseo              | **0.8.0 or later**                                        |
-
-Default installation paths are `/Applications/ZCode.app` on macOS, `/opt/ZCode` on Linux, and `%LOCALAPPDATA%\Programs\ZCode` on Windows. For a nonstandard location, set `PASEO_ZCODE_INSTALL` to its absolute path in the Paseo daemon environment. Specify the installation directory, not `zcode.cjs`. On Windows, the default requires `LOCALAPPDATA` to be a nonempty absolute path in that same environment; otherwise set `PASEO_ZCODE_INSTALL` explicitly. Installations under Program Files also require explicit configuration. An invalid explicit path fails instead of reverting to the default. The installed bundle's OS and CPU must match the daemon process; emulation does not bypass this check.
-
-All three OS layouts are implemented and covered by automated tests. Actual ZCode host initialization and model listing have been verified on macOS arm64 only; Linux, Windows, and macOS x64 runtime checks remain unperformed.
-
-Set up authentication and your models in ZCode first. The minimum versions apply to stable releases only. Newer stable releases, including major updates, are allowed; prereleases, missing or invalid versions, and versions below the minimum are rejected. The last verified installation is **ZCode 3.12.3 / CLI 0.16.5 on macOS arm64**. Allowing a newer version does not mean it has been verified.
-
-The plugin discovers the installed host's RPC module through its static imports and required class/method structure. Changed file hashes, chunk names, or shortened export names alone do not reject startup. The official installation, OS/CPU, required files, and RPC structure must still be valid. Responses and events are checked during use: an incompatible update may fail at startup or only when a particular operation runs. Changes in meaning that preserve the data format may not be detected.
+The source baseline is `872ad960de7ec172591f7e1952f7849229f94521`. Its version strings do not prove that a public CLI artifact has been released or verified. [Build and validation instructions](docs/development.md) distinguish source, distribution hashes and actual runtime results. Newer stable versions are allowed, including major versions; passing the minimum check does not certify compatibility. Only macOS arm64 has been exercised locally for this migration. Other OS/CPU combinations remain unverified.
 
 ## Installation
 
-Run these commands on the **machine running the Paseo daemon**.
-
-1. Turn on **Settings → Plugins → Enable plugins** in Paseo for that daemon.
-2. Install the plugin from GitHub:
-
-   ```bash
-   paseo plugin add supermomonga/paseo-plugin-zcode-provider
-   ```
-
-3. Confirm that `zcode-provider` is `running`:
-
-   ```bash
-   paseo plugin ls
-   ```
-
-Paseo downloads and compiles the plugin automatically; no manual clone, dependency installation, or build is needed. See the [official installation guide](https://paseo.sh/docs/plugins) for more options.
-
-> [!NOTE]
-> Plugins run with the daemon user's permissions. Make sure you trust the code and its dependencies before installing.
-
-## Usage
-
-Open a workspace on the daemon where you installed the plugin. When creating an agent, select **ZCode** as the provider, then choose a model and editing mode. Turn on **Toggle plan mode** (the Settings2 icon to the right of the mode selector) to plan first. The selected editing mode remains the destination after plan approval; changing it while planning updates that destination.
-
-Authentication and available models are managed in the ZCode app. Configure them there before using the provider in Paseo.
-
-### Messages during generation
-
-Additional text uses ZCode's `guide` delivery. Attachments are uploaded to ZCode's persistent store and queued for a subsequent native turn. The public Paseo turn ID stays the same across those native turns. Acceptance is reported only after ZCode acknowledges the input; errors and unknown delivery outcomes are not automatically retried. Each attachment is limited to the native upload maximum of 20 MiB.
-
-Mode and other slash commands must wait until the run finishes. Additional messages do not resolve pending permissions. Stop disables automatic queue execution, cancels generation, and removes pending input. A new explicit run enables queue execution again. Native recovery discards unconsumed input when reopening an interrupted conversation; the plugin restores consumed messages and does not replay the discarded queue.
-
-### Session storage
-
-Metadata discovery and unsent drafts use ZCode's deferred persistence and do not leave saved conversations. The first prompt saves the conversation in ZCode. The plugin records its stable Paseo identifier's native conversation ID under `$XDG_STATE_HOME/paseo-plugin-zcode-provider/sessions`, or `~/.local/state/paseo-plugin-zcode-provider/sessions` when `XDG_STATE_HOME` is unset. Keep this directory when reinstalling or backing up the plugin; it contains identifiers and workspace paths, not message contents.
-
-The plugin writes this mapping before sending. A write failure prevents sending; corrupt mappings or missing native conversations fail instead of creating a replacement conversation. A process exit between writing the mapping and ZCode saving the first prompt also produces an explicit resume error. Unsent handles without a mapping reopen as deferred drafts.
-
-Provider API callers use `settings.plan_mode: boolean` alongside `mode: "build" | "edit" | "yolo"`. Pass the saved `settings.plan_mode` when reopening a session; ZCode 3.12.3 does not retain Plan through native resume alone. `mode: "plan"` and `providerOptions.planReturnMode` are no longer accepted. Persistence handles now use version 2; older handles are rejected, without automatic migration. Existing saved ZCode conversations can still be imported from the session list.
-
-## Updates
-
-Update the plugin and check its status:
+Enable **Settings → Plugins → Enable plugins** for the target daemon, then install and inspect:
 
 ```bash
-paseo plugin update zcode-provider
+paseo plugin add supermomonga/paseo-plugin-zcode-provider
 paseo plugin ls
 ```
 
-The installation command above tracks this repository's default branch. Check the supported ZCode version in [Requirements](#requirements) when updating.
+Paseo prepares the Git checkout and compiles the plugin. Choose **ZCode** when creating an agent. Update with `paseo plugin update zcode-provider`. Plugins execute with the daemon user's permissions.
 
-## Limitations
+## Behavior
 
-- Browser control is unsupported. MCP `alwaysLoad` is unsupported, and stdio server commands must use absolute paths.
-- **Custom system prompts and `persist: false` are unsupported.** Both produce `INVALID_CONFIGURATION`. This also applies to additional instructions configured in the Paseo daemon or Agent Profiles.
-- Integration with the standard account quota, reset time, and provider diagnostics panels is not implemented. The plugin's own Diagnostics screen is read-only and is not a replacement for the standard provider diagnostics panel.
-- The Diagnostics screen cannot change settings. The install path and other daemon environment settings are still configured on the daemon host.
-- In Paseo 0.8.0 and 0.9.0-beta.1, initial context usage is not replayed to subscribers immediately after creating or resuming a session, so the standard UI cannot display that initial value. Subsequent usage updates are delivered.
-- Conversation rewind, structured output, independent child session management, and automatic conversion of persistence handles from the old patcher are unsupported.
+- Models and reasoning options come from ZCode. Editing modes are `build`, `edit`, and `yolo`; `settings.plan_mode` is independent.
+- Text, thoughts, tools, subagent progress, usage and history use V4 snapshots and deltas. Tool output is marked when ZCode truncates it. Usage is cumulative; repeated snapshots do not add it again.
+- Text submitted during generation uses native guidance. Attachments use the native queue. Paseo reports one run across these native turns and completes it only after all accepted input has been consumed and foreground work has ended.
+- Acceptance is reported once, after the native acknowledgement. Unknown delivery results are never automatically resent. Stop identifies the current native execution, disables automatic queue execution and removes pending input. A new explicit run enables the queue again.
+- Native permission IDs, option values, questions and Plan approval retain their meanings. Question auto-resolution is disabled for each owned Server. Workspace hook trust is reviewed through the official CLI; it is not represented as “allow once.”
+- Each session owns its Server process and environment. Metadata requests use temporary Servers. Closing stdin gives ZCode time to clean up before process termination.
 
-See [remaining work](docs/todo.md) for the evidence and conditions for resolving each limitation.
+The plugin uses ZCode's own skills, MCP configuration and tools. Browser/Computer Use, generic rewind, independent Paseo child agents, hook-review UI and Goal/Workflow controls are outside this migration. `prompt.output_schema`, custom system prompts and `persist:false` are unsupported. MCP `alwaysLoad` is unsupported; stdio MCP commands must be absolute paths. Standard Paseo quota and initial usage UI limitations are not filled with substitute displays.
 
-## Troubleshooting
+## Persistence
 
-Check the plugin's status in Paseo's plugin list and inspect **Settings → Plugins → Logs**, or use the CLI:
+New handles use **version 3**. Versions 1 and 2 are rejected without migration or replacement. Old Paseo sessions are outside this migration.
+
+Unsent conversations are deferred drafts. Before the first prompt, the plugin atomically saves the logical-to-native ID mapping under `$XDG_STATE_HOME/paseo-plugin-zcode-provider/sessions-v3`, or `~/.local/state/paseo-plugin-zcode-provider/sessions-v3`. It stores identifiers and workspace paths, not message bodies. Preserve this directory for backup. A mapping write failure prevents sending. Corrupt mappings and missing native conversations fail explicitly; no replacement conversation is created.
+
+New conversations support listing, resume and paged V4 history. Explicit settings supplied by Paseo on resume are applied after native restore. There is no private Plan restoration store. **The pinned upstream cold-resume defect remains a release blocker.** Existing ZCode databases may be migrated by ZCode itself on startup; the native tests isolate the home, configuration and database.
+
+## Diagnostics
+
+**Settings → Plugins → zcode-provider → Diagnostics** shows the configured runtime, explicit Node.js executable/version, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds.
 
 ```bash
-paseo plugin ls
 paseo plugin logs zcode-provider
 ```
 
-Open **Settings → Plugins → zcode-provider → Diagnostics** for the detected installation path, ZCode and bundled CLI versions, compatibility, verified-release fingerprint, and session mapping location. **Run host check** runs the bundled version and doctor commands. The screen is read-only; change the daemon environment to move or update ZCode.
+For failures, report the operation, error code, structured diagnostic and versions/hashes. Native stderr, raw errors, credentials and conversation bodies are excluded from diagnostics. Review any additional material before sharing. Reports are not sent automatically.
 
-| Symptom                                          | What to check                                                                                                          |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| Plugin fails to load                             | Plugins are enabled on the target daemon, the public Provider API is supported, and the installation path is correct.  |
-| `UNSUPPORTED_PLATFORM`                           | The daemon uses a supported OS / CPU and the installed ZCode bundle matches that OS / CPU.                             |
-| `RUNTIME_DISCOVERY_FAILED` / `UNSUPPORTED_ZCODE` | ZCode's installation path (including `PASEO_ZCODE_INSTALL`), minimum stable versions, and required host/RPC structure. |
-| `RUNTIME_SMOKE_FAILED`                           | The bundled CLI works and can access ZCode's user data.                                                                |
-| `INVALID_CONFIGURATION`                          | No custom system prompt or nonpersistent session has been requested.                                                   |
+## Development and license
 
-If a ZCode update causes a failure, [open a GitHub Issue](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/new) with:
+See [development](docs/development.md), [verification](docs/verification.md), [remaining work](docs/todo.md) and [ADR 13](docs/adr/0013-公開ソースの公式stdio-serverとv4会話状態を採用する.md).
 
-- The action that failed and reproducible steps.
-- The error code and the structured `diagnostic` text, or the corresponding plugin log entry.
-- Whether it occurs during startup or after the conversation starts.
-
-Diagnostics include the provider, ZCode and CLI versions when available, OS/CPU, failure stage, operation, validation location, and relevant artifact hashes. A differing artifact fingerprint is evidence for investigation, not a startup restriction. Raw native errors, stderr, credentials, conversation text, and user-controlled record keys are excluded. Review any additional text or screenshots you attach. The plugin does not automatically submit reports.
-
-## Contributing
-
-For build and test commands and the project structure, see the [development guide](docs/development.md). See [NOTICE.md](NOTICE.md) for source and icon attribution.
-
-## License
-
-Original code is licensed under the [MIT License](LICENSE). Third-party materials retain their own licenses: `icon.svg` is distributed under Apache-2.0, and the screenshot includes third-party application UI and branding. See [NOTICE.md](NOTICE.md) for attribution and license scope.
+Original code is [MIT](LICENSE). Vendored ZCode RPC/contracts retain their upstream license and provenance. The icon retains Apache-2.0 attribution; the historical screenshot includes third-party UI and branding. See [NOTICE](NOTICE.md).

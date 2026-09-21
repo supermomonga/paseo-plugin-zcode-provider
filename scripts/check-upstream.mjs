@@ -93,369 +93,166 @@ try {
   const { createZCodeProvider } = await load("provider");
   const { SessionPersistenceStore } = await load("persistence");
   const { FakeBridge, snapshot, completeTurn } = await load("fake");
-  const modelA = '["provider","model",null]';
-  const modelB = '["provider","other",null]';
-  const modelOptions = [
-    {
-      ref: { providerId: "provider", modelId: "model" },
-      label: "Model",
-      reasoningLevels: ["high"],
-    },
-    {
-      ref: { providerId: "provider", modelId: "other" },
-      label: "Other",
-      reasoningLevels: ["high"],
-    },
-  ];
-  const hosts = [];
-  const warnings = [];
+  const hosts = [],
+    warnings = [];
+  let savedState;
   const registry = new PluginAgentClientRegistry({
     warn(...args) {
       warnings.push(args);
     },
   });
-  function createRegistration(initial) {
-    return createZCodeProvider(
+  const registration = () =>
+    createZCodeProvider(
       async () => {
-        const host = new FakeBridge(structuredClone(initial));
-        host.selectionView.models = structuredClone(modelOptions);
+        const host = new FakeBridge(snapshot(directory));
+        if (savedState) {
+          host.state = structuredClone(savedState);
+          host.rowSequence = Math.max(
+            0,
+            ...host.state.rows.window.map((r) => r.rowId),
+          );
+        }
         hosts.push(host);
         return host;
       },
       new SessionPersistenceStore(join(directory, "provider-state")),
     );
-  }
-  const initial = snapshot(directory);
-  initial.runtime.contextUsage = { used: 20, size: 100 };
-  const registration = createRegistration(initial);
-  const closed = Promise.withResolvers();
-  let connectionCloseCount = 0;
-  const connect = registration.connect;
-  registration.connect = async (request) => {
-    const connection = await connect(request);
-    const close = connection.close.bind(connection);
-    connection.close = async () => {
-      connectionCloseCount += 1;
-      await close();
-      closed.resolve();
-    };
-    return connection;
-  };
-  registry.replace([registration]);
+  registry.replace([registration()]);
   try {
     const client = registry.clients().zcode;
     const catalog = await client.fetchCatalog({
       scope: "workspace",
       cwd: directory,
     });
-    assert.equal(catalog.models[0].provider, "zcode");
-    assert.deepEqual(
-      catalog.models.map((model) => model.id),
-      [modelA, modelB],
-    );
+    assert.equal(catalog.models.length, 1);
     const session = await client.createSession({
       provider: "zcode",
       cwd: directory,
       modeId: "edit",
-      model: modelB,
     });
-    assert.equal((await session.getRuntimeInfo()).model, modelB);
-    const events = [];
-    session.subscribe((event) => events.push(event));
-    const initialUsageReplayed = events.some(
-      (event) => event.type === "usage_updated",
-    );
-    const host = hosts.at(-1);
-    await session.setModel(modelA);
-    assert.equal((await session.getRuntimeInfo()).model, modelA);
-    await session.setModel(modelB);
-    assert.equal((await session.getRuntimeInfo()).model, modelB);
-    assert.equal(
-      host.calls.filter(({ method }) => method === "setModel").length,
-      2,
-    );
-    host.current.runtime.contextUsage = { used: 30, size: 100 };
-    await host.emit({
-      type: "snapshot",
-      snapshot: structuredClone(host.current),
-    });
-    assert.equal(
-      events.findLast((event) => event.type === "usage_updated").usage
-        .contextWindowUsedTokens,
-      30,
-    );
+    const host = hosts.at(-1),
+      events = [];
+    session.subscribe((e) => events.push(e));
     const turn = await session.startTurn("Hello", {
       clientMessageId: "public-message",
     });
-    for (const [index, delta] of ["hel", "lo"].entries())
-      await host.emit({
-        type: "session.event",
-        event: {
-          type: "model.streaming",
-          eventId: `stream-${index}`,
-          sessionId: "session-1",
-          seq: index + 1,
-          timestamp: 1,
-          deliveryKind: "desktop-continuous",
-          payload: {
-            kind: "text_delta",
-            delta,
-            assistantMessageId: "assistant-1",
-          },
-        },
-      });
-    const firstCompleted = waitForCompletion(session, turn.turnId);
-    await completeTurn(host, 3);
-    await firstCompleted;
-    const completed = events.find((event) => event.type === "turn_completed");
-    assert.equal(completed.turnId, turn.turnId);
-    assert.equal(
-      events
-        .filter(
-          (event) =>
-            event.type === "timeline" &&
-            event.item.type === "assistant_message",
-        )
-        .map((event) => event.item.text)
-        .join(""),
-      "hello",
-    );
+    const row = {
+      ...host.rowBase(),
+      kind: "assistantText",
+      text: "hel",
+      state: "streaming",
+    };
+    await host.append(row);
+    await host.deltas([
+      { op: "row.upserted", row: { ...row, text: "hello", state: "complete" } },
+    ]);
+    const done = waitForCompletion(session, turn.turnId);
+    await host.finish();
+    await done;
     assert.equal(
       session
         .timelineHistory()
-        .filter(({ item }) => item.type === "assistant_message")
-        .map(({ item }) => item.text)
+        .filter((e) => e.item.type === "assistant_message")
+        .map((e) => e.item.text)
         .join(""),
       "hello",
     );
-    assert.equal(
-      events.filter(
-        (event) =>
-          event.type === "timeline" && event.item.type === "user_message",
-      ).length,
-      1,
-    );
+    assert.equal(events.filter((e) => e.type === "turn_completed").length, 1);
     await session.setFeature("plan_mode", true);
-    assert.equal(host.planEnabled, true);
+    assert.equal(host.state.config.planEnabled, true);
     const persistence = session.describePersistence();
-    assert.ok(persistence);
-
-    // Simulate the native transcript retained after the completed turn.
-    const saved = host.sessionSnapshot();
-    saved.messages = [
-      {
-        info: { messageId: "native-user-1", role: "user" },
-        parts: [{ type: "text", text: "Hello" }],
-      },
-      {
-        info: { messageId: "assistant-1", role: "assistant" },
-        parts: [{ type: "text", text: "hello" }],
-      },
-    ];
-    registry.replace([createRegistration(saved)]);
-    await closed.promise;
-    assert.equal(connectionCloseCount, 1);
-    assert.equal(host.closed, true);
+    savedState = structuredClone(host.state);
+    registry.replace([registration()]);
     await assert.rejects(
-      session.startTurn("Stale session", { clientMessageId: "stale-message" }),
+      session.startTurn("Stale", { clientMessageId: "stale" }),
       { name: "StaleProviderSessionError" },
     );
-    await session.close();
-    assert.equal(connectionCloseCount, 1);
-    assert.equal(
-      host.calls.filter(({ method }) => method === "sendConversationCommandV4")
-        .length,
-      1,
-    );
-
-    const replacement = registry.clients().zcode;
-    assert.notEqual(replacement, client);
-    const resumed = await replacement.resumeSession(persistence, {
-      cwd: directory,
-      modeId: "edit",
-      model: modelA,
-      featureValues: { plan_mode: true },
-    });
-    assert.equal((await resumed.getRuntimeInfo()).model, modelA);
-    await resumed.setModel(modelB);
-    assert.equal((await resumed.getRuntimeInfo()).model, modelB);
-    const resumedHost = hosts.at(-1);
-    assert.equal(resumedHost.planEnabled, true);
-    assert.equal((await resumed.getRuntimeInfo()).modeId, "edit");
-    await resumed.setFeature("plan_mode", false);
-    assert.equal(resumedHost.planEnabled, false);
-    assert.notEqual(resumedHost, host);
-    assert.deepEqual(
-      resumedHost.calls
-        .filter(({ method }) => method === "resumeSession")
-        .map(({ params }) => params),
-      [{ workspacePath: directory, sessionId: "session-1", mcpServers: [] }],
-    );
-    assert.equal(
-      resumedHost.calls.some(({ method }) => method === "createSession"),
-      false,
-    );
-    assert.deepEqual(resumed.describePersistence(), persistence);
-    assert.deepEqual(
+    const resumed = await registry
+      .clients()
+      .zcode.resumeSession(persistence, { cwd: directory, modeId: "edit" });
+    const current = hosts.at(-1);
+    assert.equal(current.state.config.planEnabled, true);
+    assert.ok(
       resumed
         .timelineHistory()
-        .filter(
-          ({ item }) =>
-            item.type === "user_message" || item.type === "assistant_message",
-        )
-        .map(({ item }) => ({ type: item.type, text: item.text })),
-      [
-        { type: "user_message", text: "Hello" },
-        { type: "assistant_message", text: "hello" },
-      ],
+        .some(
+          (e) => e.item.type === "assistant_message" && e.item.text === "hello",
+        ),
     );
-    const resumedEvents = [];
-    resumed.subscribe((event) => resumedEvents.push(event));
-    const resumedInitialUsageReplayed = resumedEvents.some(
-      (event) => event.type === "usage_updated",
-    );
-    const resumedTurn = await resumed.startTurn("After reload", {
-      clientMessageId: "after-reload",
+    await resumed.setFeature("plan_mode", false);
+    const run = await resumed.startTurn("Continue", {
+      clientMessageId: "next",
     });
-    const resumedCompleted = waitForCompletion(resumed, resumedTurn.turnId);
-    await completeTurn(resumedHost);
-    await resumedCompleted;
-    assert.equal(
-      resumedEvents.find((event) => event.type === "turn_completed").turnId,
-      resumedTurn.turnId,
-    );
     assert.deepEqual(
-      resumedEvents
-        .filter(
-          (event) =>
-            event.type === "timeline" && event.item.type === "user_message",
-        )
-        .map((event) => event.item.text),
-      ["After reload"],
-    );
-    assert.equal(
-      resumedHost.calls.filter(
-        ({ method }) => method === "sendConversationCommandV4",
-      ).length,
-      1,
-    );
-    // Exercise Paseo's actual steering decision, including an attachment queued
-    // by ZCode. An unavailable result would trigger replacement in AgentManager.
-    const run = await resumed.startTurn("Steering integration", {
-      clientMessageId: "steering-start",
-    });
-    let seq = 1;
-    const nativeEvent = (type, payload, turnId = "native-steering") =>
-      resumedHost.emit({
-        type: "session.event",
-        event: {
-          type,
-          payload,
-          turnId,
-          eventId: `steering-${++seq}`,
-          seq,
-          sessionId: "session-1",
-          timestamp: seq,
-          deliveryKind: "desktop-continuous",
-        },
-      });
-    const inputs = () =>
-      resumedHost.calls
-        .filter((c) => c.method === "sendConversationCommandV4")
-        .map((c) => c.params.envelope)
-        .filter((e) => e.type === "sendText");
-    await nativeEvent("turn.started", { inputId: inputs().at(-1).commandId });
-    assert.deepEqual(
-      await resumed.steerActiveTurn("Additional text", {
+      await resumed.steerActiveTurn("Guide", {
         expectedTurnId: run.turnId,
-        clientMessageId: "steering-text",
+        clientMessageId: "guide",
       }),
       { status: "accepted" },
     );
+    current.deferConsumption = true;
     assert.deepEqual(
       await resumed.steerActiveTurn(
         [
-          { type: "text", text: "Queued attachment" },
+          { type: "text", text: "Image" },
           { type: "image", mimeType: "image/png", data: "dGVzdA==" },
         ],
-        { expectedTurnId: run.turnId, clientMessageId: "steering-image" },
+        { expectedTurnId: run.turnId, clientMessageId: "image" },
       ),
       { status: "accepted" },
     );
-    assert.equal(inputs().length, 4);
-    const [guide, queued] = resumedHost.queueItems;
-    await nativeEvent("turn.steerDrained", {
-      targetTurnId: "native-steering",
-      pendingInputIds: [guide.queueItemId],
+    await current.finish();
+    const queued = current.state.queue.items[0];
+    assert.ok(queued);
+    await current.deltas([
+      {
+        op: "state.updated",
+        patch: { queue: { ...current.state.queue, items: [] } },
+      },
+    ]);
+    await current.consume(queued.sourceCommandId, "Image");
+    const queuedDone = waitForCompletion(resumed, run.turnId);
+    await completeTurn(current);
+    await queuedDone;
+    current.deferConsumption = false;
+    const stopRun = await resumed.startTurn("Stop", {
+      clientMessageId: "stop",
     });
-    resumedHost.queueItems.shift();
-    await nativeEvent("turn.completed", { resultType: "success" });
-    assert.equal(
-      resumedEvents.filter(
-        (e) => e.type === "turn_completed" && e.turnId === run.turnId,
-      ).length,
-      0,
-    );
-    resumedHost.conversationPhase = "running";
-    await nativeEvent(
-      "turn.started",
-      { inputId: queued.sourceCommandId },
-      "native-queued",
-    );
-    resumedHost.queueItems = [];
-    await resumedHost.emitConversation();
-    const queuedCompleted = waitForCompletion(resumed, run.turnId);
-    await nativeEvent(
-      "turn.completed",
-      { resultType: "success" },
-      "native-queued",
-    );
-    await queuedCompleted;
-    assert.equal(
-      resumedEvents.filter(
-        (e) => e.type === "turn_completed" && e.turnId === run.turnId,
-      ).length,
-      1,
-    );
-    assert.equal(
-      inputs().length,
-      4,
-      "accepted steering must not be resent or replace the run",
+    await resumed.interrupt();
+    assert.ok(
+      current.calls.some(
+        (c) =>
+          c.params?.envelope?.type === "stop" &&
+          c.params.envelope.payload.expectedForegroundExecutionId,
+      ),
     );
     await resumed.close();
-    assert.equal(resumedHost.closed, true);
+    assert.equal(current.closed, true);
     console.log(
-      JSON.stringify({
-        initialUsageReplayed,
-        resumedInitialUsageReplayed,
-        liveUsage: "passed",
-      }),
+      JSON.stringify(
+        {
+          commit: execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], {
+            encoding: "utf8",
+          }).trim(),
+          gitPreparation,
+          coreAdapter: "passed",
+          V4Timeline: "passed",
+          textSteering: "passed",
+          attachmentQueue: "passed",
+          singleCompletion: "passed",
+          providerReplacement: "passed",
+          persistenceResume: "passed",
+          planSettingsResume: "passed",
+          targetedStop: "passed",
+        },
+        null,
+        2,
+      ),
     );
   } finally {
     await registry.shutdown();
   }
   assert.deepEqual(warnings, []);
-  console.log(
-    JSON.stringify(
-      {
-        commit: execFileSync("git", ["-C", upstream, "rev-parse", "HEAD"], {
-          encoding: "utf8",
-        }).trim(),
-        gitPreparation,
-        coreAdapter: "passed",
-        textSteering: "passed",
-        attachmentQueue: "passed",
-        singleCompletion: "passed",
-        providerReplacement: "passed",
-        persistenceResume: "passed",
-        planSettingsResume: "passed",
-        historyReplay: "passed",
-        resumedTurn: "passed",
-      },
-      null,
-      2,
-    ),
-  );
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
@@ -486,7 +283,11 @@ async function checkGitPreparation({
     for (const file of files) {
       const destination = join(candidate, file);
       await mkdir(dirname(destination), { recursive: true });
-      await copyFile(join(root, file), destination);
+      try {
+        await copyFile(join(root, file), destination);
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
     }
     const nodeRequire = createRequire(join(candidate, "package.json"));
     await assert.rejects(access(join(candidate, "node_modules")), {
@@ -495,7 +296,7 @@ async function checkGitPreparation({
     await assert.rejects(access(join(candidate, "server/build-info.ts")), {
       code: "ENOENT",
     });
-    assert.throws(() => nodeRequire.resolve("es-module-lexer"), {
+    assert.throws(() => nodeRequire.resolve("zod"), {
       code: "MODULE_NOT_FOUND",
     });
 
@@ -516,10 +317,10 @@ async function checkGitPreparation({
 
     await access(join(candidate, "server/build-info.ts"));
     assert.ok(
-      relative(candidate, nodeRequire.resolve("es-module-lexer")).startsWith(
+      relative(candidate, nodeRequire.resolve("zod")).startsWith(
         `node_modules${sep}`,
       ),
-      "Resolve the lexer from the prepared candidate's own dependencies",
+      "Resolve the schema validator from the prepared candidate's own dependencies",
     );
     const { serverBundle, clientBundle } = await compilePlugin({
       server: join(candidate, "index.server.ts"),

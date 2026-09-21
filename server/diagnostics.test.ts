@@ -64,7 +64,7 @@ test("only serializes allowlisted diagnostic fields", () => {
     cliVersion: "secret",
     platform: "secret",
     operation: "secret",
-    hostIndexSha256: "secret",
+    serverSha256: "secret",
     validation: [{ path: "models.secret", code: "secret" }],
   });
   expect(formatDiagnostic(error)).not.toContain("secret");

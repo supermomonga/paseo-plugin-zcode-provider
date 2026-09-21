@@ -33,6 +33,13 @@ jobs:
           ref: 7c1958f5b0a4ae9f2cb12f77b0a754a644cd0081 # v0.9.0-beta.1
           path: paseo
           persist-credentials: false
+      - name: Check out reference ZCode source
+        uses: actions/checkout@v6
+        with:
+          repository: zai-org/ZCode
+          ref: 872ad960de7ec172591f7e1952f7849229f94521
+          path: zcode-source
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -40,6 +47,8 @@ jobs:
           cache-dependency-path: plugin/package-lock.json
       - name: Install dependencies and generate build metadata
         run: npm ci --include=dev
+      - name: Verify vendored official contracts
+        run: npm run check:zcode-source -- "$GITHUB_WORKSPACE/zcode-source"
       - name: Check types
         run: npm run typecheck
       - name: Run unit tests
@@ -49,9 +58,55 @@ jobs:
       - name: Check Git preparation and upstream integration
         run: npm run test:upstream -- "$GITHUB_WORKSPACE/paseo"
 
+  runtime:
+    name: Official stdio runtime contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: plugin
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: zai-org/ZCode
+          ref: 872ad960de7ec172591f7e1952f7849229f94521
+          path: zcode-source
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.14.0"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.33.2"
+      - name: Build the official integrated CLI
+        working-directory: zcode-source
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec tsc -b packages/shared
+          node scripts/build-zcode.mjs --base-url https://example.invalid/zcode/
+      - name: Extract outside the source checkout
+        run: |
+          mkdir "$RUNNER_TEMP/zcode-runtime"
+          sha256sum zcode-source/dist/zcode/releases/3.14.0/zcode-3.14.0.tar.gz
+          tar -xzf zcode-source/dist/zcode/releases/3.14.0/zcode-3.14.0.tar.gz -C "$RUNNER_TEMP/zcode-runtime"
+          echo "PASEO_ZCODE_RUNTIME=$RUNNER_TEMP/zcode-runtime/zcode" >> "$GITHUB_ENV"
+          echo "PASEO_ZCODE_NODE=$(command -v node)" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zcode-runtime-linux-x64
+          path: zcode-source/dist/zcode/releases/3.14.0/zcode-3.14.0.tar.gz
+      - name: Install plugin dependencies
+        working-directory: plugin
+        run: npm ci --include=dev
+      - name: Verify native behavior without a billable model
+        working-directory: plugin
+        # The pinned upstream cold-resume regression must fail, not be skipped.
+        run: npm run test:stdio-runtime
+
   e2e:
     name: Real ZCode E2E
-    # Fork and Dependabot PRs cannot access repository Actions secrets.
+    needs: runtime
     if: >-
       github.actor != 'dependabot[bot]' &&
       (github.event_name != 'pull_request' ||
@@ -64,20 +119,20 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24.14.0"
           cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: zcode-runtime-linux-x64
+          path: runtime-archive
+      - name: Configure official runtime
+        run: |
+          mkdir "$RUNNER_TEMP/zcode-runtime"
+          tar -xzf runtime-archive/zcode-3.14.0.tar.gz -C "$RUNNER_TEMP/zcode-runtime"
+          echo "PASEO_ZCODE_RUNTIME=$RUNNER_TEMP/zcode-runtime/zcode" >> "$GITHUB_ENV"
+          echo "PASEO_ZCODE_NODE=$(command -v node)" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: npm ci --include=dev
-      - name: Install official ZCode 3.12.3
-        env:
-          ZCODE_DEB: ${{ runner.temp }}/zcode-3.12.3.deb
-        run: |
-          curl --fail --location --silent --show-error --max-time 300 \
-            https://cdn-zcode.z.ai/zcode/electron/releases/3.12.3/linux-x64/ZCode-3.12.3-linux-x64.deb \
-            --output "$ZCODE_DEB"
-          echo "631fbd69fcefe5d57c607bbfd047bb7a474af6017464681b99ccb7b15749c60e  $ZCODE_DEB" | sha256sum --check
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends "$ZCODE_DEB"
       - name: Run isolated real-model E2E
         env:
           GLM_API_KEY: ${{ secrets.GLM_API_KEY }}

@@ -1,7 +1,7 @@
 ---
 number: 3
 title: OS別の配置解決で共通ZCodeホストを起動する
-status: accepted
+status: superseded
 date: 2026-09-08
 links:
   - target: 2
@@ -10,6 +10,8 @@ links:
     kind: amendedby
   - target: 7
     kind: amendedby
+  - target: 13
+    kind: supersededby
 ---
 
 # OS別の配置解決で共通ZCodeホストを起動する

@@ -5,8 +5,6 @@ export const smokeResultSchema = z
   .object({
     passed: z.boolean(),
     cliVersion: z.string().optional(),
-    doctorPassed: z.boolean(),
-    authentication: z.enum(["present", "missing", "unknown"]),
     error: z.string().optional(),
   })
   .strict();
@@ -17,13 +15,15 @@ export const diagnosticsResultSchema = z.discriminatedUnion("status", [
       status: z.literal("ready"),
       providerVersion: z.string(),
       installRoot: z.string(),
-      installRootSource: z.enum(["environment", "default"]),
+      nodeExecutable: z.string(),
+      nodeVersion: z.string(),
+      serverSha256: z.string(),
+      agentSha256: z.string(),
       platform: z.string(),
       appVersion: z.string().optional(),
       cliVersion: z.string().optional(),
       compatibility: z.enum(["supported", "unsupported"]),
       compatibilityReason: z.string(),
-      artifactMatch: z.boolean().optional(),
       writableInstallRoot: z.boolean(),
       sessionsDirectory: z.string(),
       smoke: smokeResultSchema.optional(),

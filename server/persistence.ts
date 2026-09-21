@@ -29,10 +29,10 @@ const recordSchema = z
 export type PersistenceData = z.infer<typeof dataSchema>;
 
 export function parsePersistence(handle: ProviderPersistence): PersistenceData {
-  if (handle.version !== 2)
+  if (handle.version !== 3)
     throw new AdapterError(
       "PERSISTENCE_VERSION_UNSUPPORTED",
-      "Unsupported ZCode persistence version; expected version 2",
+      "Unsupported ZCode persistence version; expected version 3",
     );
   try {
     return dataSchema.parse(handle.data);
@@ -45,7 +45,7 @@ export function parsePersistence(handle: ProviderPersistence): PersistenceData {
 }
 
 export function persistenceHandle(data: PersistenceData): ProviderPersistence {
-  return { version: 2, data };
+  return { version: 3, data };
 }
 
 // Outside the plugin checkout: reinstalling/building the plugin must not erase handles.
@@ -55,7 +55,7 @@ export function defaultSessionDirectory(
   return join(
     environment.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
     "paseo-plugin-zcode-provider",
-    "sessions",
+    "sessions-v3",
   );
 }
 

@@ -21,7 +21,10 @@ test.each([false, true])(
     const run = async (script, environment) => {
       calls.push(script);
       dataDirectory = environment.ZCODE_DATA_BASE_DIR;
-      expect(environment.HOME).toBe("/unchanged-home");
+      expect(environment.HOME).toBe(dataDirectory);
+      expect(environment.ZCODE_SESSION_DB_PATH).toBe(
+        join(dataDirectory, "sessions.db"),
+      );
       expect(environment.GLM_API_KEY).toBeUndefined();
       expect(environment.UNRELATED_SECRET).toBeUndefined();
       expect(environment.ZCODE_STORAGE_DIR).toBe(join(dataDirectory, ".zcode"));

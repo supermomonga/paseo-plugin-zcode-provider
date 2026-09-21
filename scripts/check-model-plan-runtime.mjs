@@ -238,7 +238,7 @@ try {
   await connection.close();
   await connect();
   // Paseo restores editing mode and featureValues separately from the native
-  // persistence handle. Native resume alone does not persist planEnabled.
+  // persistence handle. V4 must restore the native planEnabled state.
   await open(savedSettings, saved);
   assertMode("edit", true);
   assert.equal(current().model, defaultModel.id);

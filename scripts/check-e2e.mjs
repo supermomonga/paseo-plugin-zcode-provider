@@ -6,7 +6,7 @@ import { runMain } from "./releases/common.mjs";
 const root = resolve(import.meta.dirname, "..");
 const checks = ["check-model-plan-runtime.mjs", "check-steering-runtime.mjs"];
 
-// ZCode 3.12.3 personal provider schema. No account login or existing user
+// ZCode 3.14.0 personal provider schema. No account login or existing user
 // configuration is needed. Both models use the user's Z.ai Coding Plan key.
 export function e2eProviderConfig(apiKey) {
   if (typeof apiKey !== "string" || !apiKey.trim())
@@ -40,6 +40,7 @@ export function e2eProviderConfig(apiKey) {
       defaultModelSelection: {
         providerId: "paseo-e2e",
         modelId: "GLM-5.3-Flash",
+        options: { reasoningLevel: "low" },
       },
     },
   };
@@ -98,13 +99,22 @@ export async function runE2E({
       { mode: 0o600, flag: "wx" },
     );
     // Do not pass GLM_API_KEY or unrelated credentials to the test subprocess.
-    // Keep HOME unchanged; the official ZCODE_DATA_BASE_DIR isolates ZCode data.
+    // Isolate both native configuration and the conversation database.
     const childEnvironment = Object.fromEntries(
-      ["PATH", "HOME", "SHELL", "LANG", "LC_ALL", "PASEO_ZCODE_INSTALL"]
+      [
+        "PATH",
+        "SHELL",
+        "LANG",
+        "LC_ALL",
+        "PASEO_ZCODE_RUNTIME",
+        "PASEO_ZCODE_NODE",
+      ]
         .filter((key) => environment[key] !== undefined)
         .map((key) => [key, environment[key]]),
     );
     Object.assign(childEnvironment, {
+      HOME: directory,
+      ZCODE_SESSION_DB_PATH: join(directory, "sessions.db"),
       ZCODE_DATA_BASE_DIR: directory,
       ZCODE_STORAGE_DIR: join(directory, ".zcode"),
       ZCODE_CUA_PRODUCT_HELPER: "0",

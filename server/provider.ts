@@ -47,10 +47,7 @@ import {
   initializeWorkspace,
   resolveWorkspace,
 } from "./session.js";
-import {
-  SessionSnapshotSchema,
-  SessionListSchema,
-} from "./protocol/v1/host-schemas.js";
+import { SessionSnapshotSchema, SessionListSchema } from "./host/schemas.js";
 import { TimelineSnapshots } from "./timeline.js";
 import type { NativeSessionEvent } from "./session-types.js";
 
@@ -68,11 +65,13 @@ export const CAPABILITIES = [
 export type BridgeFactory = (
   environment: Readonly<Record<string, string>>,
   signal: AbortSignal,
+  workspace?: string,
 ) => Promise<HostBridge>;
 
 async function createHost(
   environment: Readonly<Record<string, string>>,
   signal: AbortSignal,
+  workspace?: string,
 ): Promise<HostBridge> {
   const env = { ...process.env, ...environment };
   const runtime = await discoverRuntime({ environment: env, signal });
@@ -85,7 +84,7 @@ async function createHost(
         { stage: "smoke", check: "cli-smoke" },
       );
     signal.throwIfAborted();
-    return ZCodeHostBridge.start(runtime, logger, env);
+    return ZCodeHostBridge.start(runtime, logger, env, workspace);
   } catch (error) {
     if (signal.aborted) throw error;
     throw diagnosticError(
@@ -277,8 +276,9 @@ export class ZCodeConnection implements ProviderConnection {
 
   private async host(
     env: Readonly<Record<string, string>>,
+    workspace: string,
   ): Promise<HostBridge> {
-    const host = await this.bridgeFactory(env, this.abort.signal);
+    const host = await this.bridgeFactory(env, this.abort.signal, workspace);
     if (this.closed) {
       await host.close();
       throw new Error("ZCode connection is closed");
@@ -295,7 +295,7 @@ export class ZCodeConnection implements ProviderConnection {
           "ZCode session listing requires a workspace",
         );
       const cwd = await resolveWorkspace(input.cwd ?? homedir());
-      const host = await this.host({});
+      const host = await this.host({}, cwd);
       try {
         const { presentation, selection } = await initializeWorkspace(
           host,
@@ -331,7 +331,7 @@ export class ZCodeConnection implements ProviderConnection {
                 );
               return {
                 persistence: {
-                  version: 2,
+                  version: 3,
                   data: { kind: "native", sessionId: row.sessionId, cwd },
                 },
                 cwd,
@@ -522,7 +522,7 @@ export class ZCodeConnection implements ProviderConnection {
         "ZCode persistence belongs to another workspace",
       );
     const nativeId = await this.persistenceStore.resolve(persistence);
-    const host = await this.host(config.env);
+    const host = await this.host(config.env, cwd);
     let native: ZCodeSession | undefined;
     try {
       const { selection } = await initializeWorkspace(host, cwd);
@@ -681,9 +681,6 @@ export class ZCodeConnection implements ProviderConnection {
     event: NativeSessionEvent,
   ): void {
     switch (event.type) {
-      case "timeline_boundary":
-        entry.timeline.boundary();
-        break;
       case "timeline":
         this.emit({
           type: "timeline.item",
@@ -813,7 +810,7 @@ function publicError(error: unknown): ProviderError {
     RUNTIME_DISCOVERY_FAILED:
       "ZCode installation or required host structure could not be inspected. See the diagnostic for the failure stage.",
     PERSISTENCE_VERSION_UNSUPPORTED:
-      "ZCode persistence version is unsupported. Import the saved conversation from the session list.",
+      "ZCode persistence version is unsupported. Create a new Paseo ZCode session.",
     PERSISTENCE_INVALID:
       "ZCode resume information is unreadable or invalid. No replacement conversation was created.",
     PERSISTENCE_WRITE_FAILED:

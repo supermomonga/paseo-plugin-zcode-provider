@@ -1,64 +1,19 @@
-# 未実装項目
+# 公開前に残る確認と機能境界
 
-当初の調査基準は Paseo main `c424f82922fcd36aa9cc9e473644bca04417b420`、patcher `572100368774df7632728a72568466ac3632d458`（2026-09-07）です。Paseo 0.8.0 / 0.9.0-beta.1 で再確認した項目は個別に記載しています。
+## 公開を妨げる upstream 不具合
 
-## Paseo 本体の公開 API に不足がある項目
+固定ソースの stdio cold resume が、DB の `runtime/execution_state` に保存された mode / Plan を復元しない。`server-operations.ts` が過去のメッセージから得た mode を明示指定として渡し、Core の保存状態復元を抑止する。[再現と根拠](verification.md)を参照。Provider に補完ストアや旧 Host への切替は追加しない。upstream の修正されたソース・配布物で `test:stdio-runtime` が成功するまで公開しない。
 
-- [ ] **標準アカウント欄の ZCode 使用枠・リセット時刻**
-  - patcher は標準の使用量取得処理へ ZCode を追加し、認証済み host の entitlement / Coding Plan reset を表示します。
-  - main の使用量取得サービスは本体の fetcher を固定登録します。プラグインの `session.usage` はトークン・費用・コンテキスト用で、アカウント枠の提供口ではありません。登録画面の RPC を増やしても標準欄と同等にはなりません。
-  - 現在はセッションの使用量のみを通知します。アカウント枠の独自画面や認証情報の再取得処理は追加していません。
-  - 完了条件: 本体に使用枠の Provider 登録 API と host セッションに対応する取得経路、リセット日時の表示契約が追加されること。その後に ZCode の取得処理を接続し、標準 UI を検証すること。
-  - 根拠: [quota service](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/services/quota-fetcher/service.ts)、[公開 Provider 契約](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/plugin/src/provider.ts)。
+## 検証の残項目
 
-- [ ] **作成・再開直後のコンテキスト使用量を標準 UI に反映**
-  - プラグインは native snapshot の使用量を `session.ready` より前に `session.usage` として送信します。
-  - main のアダプターは初期イベントを内部履歴に取り込みますが、その後の `subscribe` で使用量を再通知しません。AgentManager の履歴復元も timeline 以外を使用量として反映しません。以降に到着する使用量更新は通知できます。
-  - 現在は実際の初期値を通常どおり送信します。購読時点に合わせるタイマーや架空の変化通知は使いません。
-  - Paseo `v0.8.0` / `v0.9.0-beta.1` の実アダプターでも初期使用量の再通知がないことと、その後の更新が届くことを確認しました。詳細は [検証記録](verification.md) を参照してください。
-  - 完了条件: 本体が最新の使用量を保持し、新規購読・復元時に反映すること。会話を送信しなくても初期表示できることを UI で確認すること。
-  - 根拠: [PluginAgentSession](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/plugin-provider.ts#L1020)、[AgentManager](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/agent-manager.ts)。
+- 公式アカウントログイン・期限切れ・未認証、公式 TUI と複数 Server の共有データ同時利用。
+- Desktop/Electron 起動下と daemon 単独、実 UI の入力・質問・承認・再起動復元。
+- Linux/Windows/macOS x64 の実ランタイム、長時間ツール/MCP 子プロセスを含む異常終了時の回収。
+- native の長い会話・世代変更・background continuation・子エージェントからの権限要求。現在の契約試験の結果と実行確認を混同しない。
+- 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 
-- [ ] **標準 Provider 診断欄**
-  - main の標準診断欄は AgentClient の `getDiagnostic()` を呼びます。公開 Provider API とそのアダプターには対応する診断 hook がありません。
-  - 現在は ZCode の最低バージョン・RPC の構造・同梱 CLI の動作を起動前に検証し、実行中の応答・イベントも検証します。host hash は診断情報です。失敗時の ProviderError.diagnostic とプラグインログには報告用の情報を出しますが、標準診断欄との同等性はありません。
-  - Settings にプラグイン独自の読み取り専用診断画面を追加しました（[ADR 8](adr/0008-設定画面は読み取り専用の診断に限定しホスト状態を専用rpcで返す.md)）。検出パス・バージョン・互換性・動作確認済み artifact との一致・保存先を表示し、host check を実行できます。標準診断欄の代替ではなく、本体 API が追加された場合の接続は未実装です。
-  - 完了条件: 診断要求と応答の公開 API が追加され、本体の標準診断欄へ接続できること。認証値やプロンプトを表示しないことも検証すること。
-  - 根拠: [標準診断の処理](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/server/src/server/agent/provider-snapshot-manager.ts#L790)。
+## 今回追加しない機能
 
-## プラグインの要求範囲として見送っている機能
+Browser/Computer Use、一般的な rewind、独立した Paseo 子エージェント管理、Hook 信頼レビュー画面、Goal/Workflow 操作 UI、カスタム system prompt、非永続会話、モデルへの JSON Schema 出力制約。通常の ZCode tools / skills / MCP は native に委ねる。
 
-- **診断画面からの設定編集**
-  - Paseo 0.9.0-beta.1 では `server.registerSettings()` の戻り値に `read()` / `subscribe()` が追加され、サーバー側の設定読取という ADR 8 の技術的制約は解消しています。
-  - 今回は互換性確認が目的のため、診断専用画面を維持します（[ADR 10](adr/0010-サーバー設定apiの追加後も診断専用画面を維持する.md)）。API 不足による未対応としては扱いません。
-  - 設定編集が必要になった場合は、公式 Settings API を使い、環境変数との優先順位、既存セッションへの適用時点、無効な保存値の扱いと Paseo の最低要件を別途決めます。ZCode の認証・モデル設定を管理する機能ではありません。
-
-## ZCode の確認済み host で対応できない指定
-
-- [ ] **独自 system prompt と保存しないセッション**
-  - 3.12.3 の host `createSession` から渡される作成パラメーターには `systemPrompt` がありません。`persistence: "deferred"` は保存を遅延する指定であり、非永続セッションではありません。
-  - 元の patcher もこれらを native 作成時に適用していません。本プラグインは無視せず、非空の `systemPrompt` と `persist: false` を `INVALID_CONFIGURATION` として拒否します。daemon の追加指示や該当する Agent Profile を設定した場合も対象です。
-  - 完了条件: 対応 ZCode host に実際の適用経路があることを確認し、通常のユーザーメッセージへの挿入や保存後の削除に頼らず実装できること。
-  - 根拠: 対応 artifact の `out/host/index.js` 内 `createSession` と、同梱 CLI の `session/create` schema。確認した hash は [manifest](../server/discovery/manifest.ts) の動作確認済み情報に記録しています。
-
-## リリース前の確認
-
-- [ ] **実際の Paseo 画面からの一連の確認**
-  - 未パッチの対応 main でプラグインをインストールし、実モデルへの送信、ツール、質問、計画承認・却下、割り込み、Paseo 再起動後の復元を確認すること。
-  - 現時点の検証結果と未実施範囲は [verification.md](verification.md) を参照してください。
-
-## 完了済み
-
-- [x] **実行中テキストの追加と添付メッセージの待機送信**
-  - V4 `sendText`、`guide` / `queue`、添付保存APIに接続。一つのPaseoターンで待機分まで追跡し、最後に一度だけ完了を通知します。
-  - 停止は未送信分・ネイティブ待機分・実行中処理を対象とし、復元時に未処理入力を再投入しません。承認待ちは従来の承認操作で解決します。
-  - SDK・実アダプターの自動検証と、分離したProvider接続からの実ZCode検証を実施。分離daemon・UIでのステアリング検証は上記「リリース前の確認」に残します。
-
-- [x] **Provider API を含む SDK リリースへの開発依存の切替**
-  - 2026-09-08 に公開 SDK `0.8.0-beta.1` へ切り替え、Provider API の保存済みソースと alias を削除しました。
-  - 2026-09-11 に SDK 3パッケージを正式版 `0.8.0` に固定し、同版の実コンパイラ・アダプターとの互換性を確認しました。実行時は引き続き Paseo が提供する `@getpaseo/plugin/server/provider` を使用します。
-  - 2026-09-18 に SDK 3パッケージと CI の上流基準を `0.9.0-beta.1` へ更新しました。更新後のソースを `0.8.0` の実コンパイラ・アダプター・実行用 Provider SDK でも再検証し、manifest の最低要件 `>=0.8.0` を維持しています。実 daemon/UI と実モデル送信の今回の未確認範囲は [検証記録](verification.md) に記載しています。
-
-## 自動対応しない事項
-
-旧 patcher の保存ハンドルの変換、未検証の ZCode バージョンや OS、ZCode host 自身の仕様を超える steering / rewind / 構造化出力 / 子セッションの独立管理は対象外です。必要になった場合に別途仕様を調査します。既存の ZCode 保存会話のインポートは実装済みです。
+Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグイン API の範囲でのみ対応する。本体変更や別の表示への置き換えは提案・実装しない。新しい公開 API が導入された時に契約と実 UI の両方を再評価する。

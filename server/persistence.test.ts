@@ -40,7 +40,7 @@ it("writes durable mappings without changing identifiers and rejects damaged rec
       "broken",
     );
     expect(() =>
-      parsePersistence({ version: 2, data: { ...data, id: "../outside" } }),
+      parsePersistence({ version: 3, data: { ...data, id: "../outside" } }),
     ).toThrow();
     expect(
       await store.resolve({

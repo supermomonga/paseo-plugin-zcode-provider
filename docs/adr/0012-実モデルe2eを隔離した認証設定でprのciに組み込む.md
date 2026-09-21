@@ -3,6 +3,9 @@ number: 12
 title: 実モデルE2Eを隔離した認証設定でPRのCIに組み込む
 status: accepted
 date: 2026-09-18
+links:
+  - target: 13
+    kind: amendedby
 ---
 
 # 実モデルE2Eを隔離した認証設定でPRのCIに組み込む
