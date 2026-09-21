@@ -622,11 +622,12 @@ export class ZCodeConnection implements ProviderConnection {
       });
       this.emitConfig(input.sessionId, entry);
       if (input.history === "replay")
-        for (const item of native.historyItems())
+        for (const { item, timestamp } of native.historyItems())
           this.emit({
             type: "timeline.item",
             sessionId: input.sessionId,
             item: entry.timeline.replay(item),
+            timestamp,
           });
       entry.unsubscribe = native.subscribe((event) =>
         this.accept(input.sessionId, entry, event),
@@ -686,6 +687,7 @@ export class ZCodeConnection implements ProviderConnection {
           type: "timeline.item",
           sessionId: id,
           item: entry.timeline.live(event.item, event.turnId),
+          timestamp: event.timestamp,
         });
         break;
       case "usage_updated":

@@ -7,7 +7,7 @@
 ## 検証の残項目
 
 - 公式アカウントログイン・期限切れ・未認証、公式 TUI と複数 Server の共有データ同時利用。
-- Desktop/Electron 起動下と daemon 単独、実 UI の入力・質問・承認・再起動復元。
+- Desktop ネイティブ画面とモバイル実機での操作。Electron Helper / 通常 Node の両 daemon 起動と、実 Web UI の入力・質問・承認・停止・再起動復元は確認済み（[検証記録](verification.md)）。
 - Linux/Windows/macOS x64 の実ランタイム、長時間ツール/MCP 子プロセスを含む異常終了時の回収。
 - native の長い会話・世代変更・background continuation・子エージェントからの権限要求。現在の契約試験の結果と実行確認を混同しない。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。

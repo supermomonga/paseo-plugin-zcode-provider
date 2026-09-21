@@ -1,6 +1,6 @@
 # 公開ソース・stdio / V4 移行の検証（2026-09-21）
 
-接続方式と会話処理を置換し、通常テストと実モデル E2E は成功した。ただし、固定した ZCode ソースに native cold resume の実行状態復元不具合があり、**公開条件は未達**。実 UI の確認も未実施である。以下の成功と失敗を分けて扱う。
+接続方式と会話処理を置換し、通常テスト、実モデル E2E、隔離 daemon の実 Web UI 検証は成功した。ただし、固定した ZCode ソースに native cold resume の実行状態復元不具合があり、**公開条件は未達**。以下の成功と失敗を分けて扱う。
 
 ## 対象と成果物
 
@@ -22,7 +22,7 @@
 
 ## 成功した検証
 
-- `npm run typecheck`、`npm test`（15 ファイル、121 tests）、`npm run build`。通常テストには課金 API 呼び出しを含めない。
+- `npm run typecheck`、`npm test`（15 ファイル、122 tests）、`npm run build`。通常テストには課金 API 呼び出しを含めない。UI 検証で見つけた投稿時刻の回帰テストを含む。Unix socket を使う既存の 2 テストは sandbox 内では EPERM となり、通常環境で全件成功した。
 - 固定 source SHA に対する vendored 91 ファイルの内容・出典ハッシュ照合。Apache-2.0 LICENSE、上流 NOTICE、該当する VS Code MIT 通知を保持し、ビルド出力にも配置。
 - 公式 RPC のプロセス試験：hello / V4 negotiation、3-byte 分割フレーム、質問自動終了無効化、不正 handshake、RPC timeout、Server 異常終了、購読中の EOF close。
 - V4 契約試験：重複、seq 欠落後の resync、壊れたフレーム、430 行のページング、異なる revision の拒否、新 epoch の履歴を揃えてから通知、購読解除後の通知無視。
@@ -32,6 +32,21 @@
 - `npm run test:e2e`：既存 GLM_API_KEY と公式 Z.ai Coding Plan endpoint、GLM-5.3-Flash / GLM-5.3。モデル変更、広告された推論選択肢、独立 Plan と build/edit/yolo、各 mode の Plan 承認、edit の却下、Paseo 明示設定による復元、実モデル guide・添付 queue・一完了・停止・再開・取消入力の非再生が成功。
 
 実ランタイム試験は HOME、provider configuration、SQLite DB、socket temp、workspace、Provider mapping を隔離した。元の ZCode clone・ユーザーの実データ・稼働中の Paseo プラグインは変更していない。キー値・native stderr・実モデルの会話は検証文書へ記録しない。
+
+## 実 Web UI・起動形態の追加検証
+
+Paseo CLI の実行制限解除後、macOS arm64 / Paseo 0.9.0-beta.2 の別 daemon で確認した。`--home` は一時ディレクトリ、listen は loopback、relay/MCP injection は無効、Web UI と plugins は有効。現在の worktree を `zcode-provider-ui` としてディレクトリ導入した。ZCode のソース・成果物・Node 24.20.0 は上記と同一で、認証は隔離した provider configuration の既存 Z.ai Coding Plan API キーを使用した。
+
+- **Desktop 同梱 CLI の起動形態:** daemon は `/Applications/Paseo.app/Contents/Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper`、公式 Server は指定した通常の Node 24.20.0、その子に Agent が起動した。利用中の Desktop 管理 daemon は変更していない。
+- **通常 Node の起動形態:** 前の daemon を正常停止し、公式 npm `@getpaseo/cli@0.9.0-beta.2` を Node 22.23.0 で起動。同じ一時ホームから同じ会話を復元し、実 Web UI の送信ボタンから継続入力して実モデルの応答・idle を確認した。
+- **診断・選択:** Settings → Plugins → Diagnostics に Server/Agent 版、ハッシュ、明示 Node、v3 保存先を表示。Run host check は Passed。モデル選択には隔離設定の 2 モデルが表示され、GLM-5.3-Flash / Low / Ask before changes で会話を作成できた。
+- **質問・承認:** 実 Agent の AskUserQuestion が選択フォームになり、回答後に Write の Allow once / Always allow in this project / Deny が表示された。承認前は対象ファイルが存在せず、Allow once 後に選択値と一致する内容が作成され、応答完了後は idle となった。
+- **停止・再開:** Bash の待機コマンドを UI の停止ボタンで中断。Edit automatically と独立 Plan を指定した後、一時 daemon を `paseo daemon restart --home <isolated-home>` で再起動して画面も reload した。履歴を再表示でき、再入力への応答が以前の選択を保持していた。確認した SQLite の会話は 1 件で、`runtime/execution_state` は `edit / planEnabled:true`。Paseo が明示設定を再適用する経路の成功であり、下記 native-only restore の不具合解消を意味しない。
+- **表示:** 1280px と 420px の画面で会話を確認した。質問・承認待ち、完了、再開後の本文・ツール表示を目視確認。Web UI の console に Provider 由来のエラーはなく、Web 版の通知・animation に関する警告のみだった。
+
+最初の画面再読み込みでは過去の投稿時刻が復元時刻になった。V4 row の `createdAt` が `timeline.item.timestamp` へ渡らず、Paseo が受信時刻を採用していたためである。行とその元の時刻を一緒に保持し、履歴・ライブ差分・再開のいずれでも ISO 8601 の時刻を渡すよう修正した。修正前に回帰テストの失敗を確認し、修正後はテスト、実 compiler/adapter、実 UI で元の投稿時刻の表示が成功した。Paseo の Worked for 表示を ZCode の `activeMs` と完全一致させる保証は含まない。
+
+検証終了後、一時 daemon を強制終了なしで停止し、検証用ブラウザタブを閉じ、認証を含む一時ホーム・DB・会話・ワークスペースを削除した。
 
 ## 公開を妨げる native Plan / mode 復元不具合
 
@@ -64,7 +79,7 @@ Provider はこの terminal API を使用しない。別経路の Agent Bash は
 
 - 公式アカウントログイン/期限切れ/未認証、公式 TUI と複数プロセスの共有データ同時利用。独自 API キー設定の実モデル試験とは別。
 - Linux、Windows、macOS x64。更新した GitHub Actions は未 push のためリモート実行結果なし。
-- 実 Paseo Desktop/daemon UI で入力・承認・再起動復元。隔離 daemon 起動のための Paseo CLI 呼び出しは PreToolUse 自動承認フックに拒否された（Paseo セッションでは CLI ではなく MCP を使うルール）。利用可能な Paseo MCP に隔離 daemon 起動・プラグイン導入操作がなく、稼働中の環境へ差し替えずに未実施として残した。client は実 compiler と登録試験まで。
+- Desktop ネイティブ画面とモバイル実機での操作。今回操作したのは Desktop 内ブラウザの実 Web UI であり、Desktop 同梱 Electron Helper と通常 Node の両 daemon 起動を確認した。
 - native の長大履歴、世代変更、子からの承認、background continuation は契約試験中心。全 OS での強制終了、長時間ツール/MCP 子プロセスを含む回収は未検証。
 
 ADR 13 は Accepted。ADR 3/6 を Superseded とし、2/7/9/11/12 に双方向の Amends リンクを設定した。管理対象 TOC を CLI で更新。`adrs doctor` は 0 errors、既存 ADR 1 の 1 warning / 1 info のみ。設計の採用と、未達の公開条件を区別する。

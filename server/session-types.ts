@@ -8,6 +8,10 @@ import type {
 
 export type NativePromptInput = string | ProviderContent[];
 export type NativeTimelineItem = ProviderTimelineItem;
+export interface NativeTimelineEntry {
+  item: NativeTimelineItem;
+  timestamp?: string;
+}
 
 export type NativeSessionEvent =
   | {
@@ -16,7 +20,7 @@ export type NativeSessionEvent =
       turnId: string;
       delivery: "turn" | "steer";
     }
-  | { type: "timeline"; item: NativeTimelineItem; turnId?: string }
+  | ({ type: "timeline"; turnId?: string } & NativeTimelineEntry)
   | { type: "usage_updated"; usage: ProviderUsage; turnId?: string }
   | {
       type: "turn_started" | "turn_completed" | "turn_canceled";

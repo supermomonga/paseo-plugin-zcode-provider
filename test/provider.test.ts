@@ -66,6 +66,64 @@ it("aggregates guide input and emits complete row snapshots with stable IDs", as
     ),
   ).toHaveLength(1);
 });
+it("preserves native row timestamps during replay, live updates and resume", async () => {
+  const f = await fixture();
+  const createdAt = Date.parse("2026-01-02T03:04:05.000Z");
+  const original = {
+    ...f.host.rowBase(),
+    createdAt,
+    kind: "assistantText" as const,
+    text: "Earlier response",
+    state: "complete" as const,
+  };
+  await f.host.append(original);
+  await f.open();
+  const replay = await f.wait(
+    (e) =>
+      e.type === "timeline.item" && e.item.id === `zcode:row:${original.rowId}`,
+  );
+  expect(replay).toMatchObject({
+    timestamp: new Date(createdAt).toISOString(),
+  });
+  await f.prompt();
+  const live = {
+    ...f.host.rowBase(),
+    createdAt: createdAt + 60_000,
+    kind: "assistantText" as const,
+    text: "Live",
+    state: "streaming" as const,
+  };
+  await f.host.append(live);
+  await f.host.deltas([
+    { op: "row.delta", rowId: live.rowId, path: "text", append: " response" },
+  ]);
+  const updates = f.events.filter(
+    (e) =>
+      e.type === "timeline.item" && e.item.id === `zcode:row:${live.rowId}`,
+  );
+  expect(updates).toHaveLength(2);
+  for (const event of updates)
+    expect(event).toMatchObject({
+      timestamp: new Date(live.createdAt).toISOString(),
+    });
+  await completeTurn(f.host);
+  const persisted = f.events.find((e) => e.type === "session.opened");
+  if (persisted?.type !== "session.opened")
+    throw new Error("Missing persistence");
+  await f.send({
+    type: "session.close",
+    sessionId: "public",
+    requestId: "close",
+  });
+  f.events.length = 0;
+  await f.open({}, persisted.persistence);
+  expect(
+    await f.wait(
+      (e) =>
+        e.type === "timeline.item" && e.item.id === `zcode:row:${live.rowId}`,
+    ),
+  ).toMatchObject({ timestamp: new Date(live.createdAt).toISOString() });
+});
 it("does not infer queue consumption from disappearance", async () => {
   const f = await fixture();
   await f.open();

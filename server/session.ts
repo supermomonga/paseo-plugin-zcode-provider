@@ -41,7 +41,11 @@ import {
 } from "./host/schemas.js";
 import type { HostBridge } from "./host/bridge.js";
 import type { Logger } from "./logger.js";
-import type { NativePromptInput, NativeSessionEvent } from "./session-types.js";
+import type {
+  NativePromptInput,
+  NativeSessionEvent,
+  NativeTimelineEntry,
+} from "./session-types.js";
 import { AdapterError } from "./errors.js";
 import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
 interface Admission {
@@ -67,7 +71,7 @@ export class ZCodeSession {
   private readonly admissions = new Map<string, Admission>();
   private readonly seenTurns = new Set<string>();
   private readonly publicTurns = new Map<string, string>();
-  private readonly presented = new Map<string, ProviderTimelineItem>();
+  private readonly presented = new Map<string, NativeTimelineEntry>();
   private readonly pending = new Map<string, PresentedInteraction>();
   private readonly answering = new Set<string>();
   private readonly resolvedInteractions = new Set<string>();
@@ -125,7 +129,11 @@ export class ZCodeSession {
         if (row.kind === "turnHeader")
           session.seenTurns.add(session.productTurn(row));
         const item = rowTimeline(row);
-        if (item) session.presented.set(item.id, item);
+        if (item)
+          session.presented.set(item.id, {
+            item,
+            timestamp: new Date(row.createdAt).toISOString(),
+          });
       }
       session.conversation.subscribe(() => {
         try {
@@ -211,12 +219,13 @@ export class ZCodeSession {
           ? this.admissions.get(row.sourceCommandId)?.clientMessageId
           : undefined;
       const item = rowTimeline(row, clientMessageId);
-      if (!item || isDeepStrictEqual(item, this.presented.get(item.id)))
-        continue;
-      this.presented.set(item.id, item);
+      if (!item) continue;
+      const entry = { item, timestamp: new Date(row.createdAt).toISOString() };
+      if (isDeepStrictEqual(entry, this.presented.get(item.id))) continue;
+      this.presented.set(item.id, entry);
       this.runEvent({
         type: "timeline",
-        item,
+        ...entry,
         turnId: row.productTurnId
           ? this.publicTurns.get(row.productTurnId)
           : undefined,
@@ -232,8 +241,8 @@ export class ZCodeSession {
           status: i.status === "inProgress" ? "in_progress" : i.status,
         })),
       };
-      if (!isDeepStrictEqual(item, this.presented.get(item.id))) {
-        this.presented.set(item.id, item);
+      if (!isDeepStrictEqual(item, this.presented.get(item.id)?.item)) {
+        this.presented.set(item.id, { item });
         this.runEvent({ type: "timeline", item, turnId: this.active?.id });
       }
     }
@@ -289,7 +298,7 @@ export class ZCodeSession {
           "ZCode workspace hooks require trust review. Review them with the official zcode hooks trust command.",
       };
       if (!this.presented.has(item.id)) {
-        this.presented.set(item.id, item);
+        this.presented.set(item.id, { item });
         this.runEvent({ type: "timeline", item });
       }
     }
@@ -406,7 +415,7 @@ export class ZCodeSession {
     listener({ type: "usage_updated", usage: usage(this.state) });
     return () => this.listeners.delete(listener);
   }
-  historyItems(): readonly ProviderTimelineItem[] {
+  historyItems(): readonly NativeTimelineEntry[] {
     return [...this.presented.values()];
   }
   getPendingPermissions(): ProviderPermissionRequest[] {
