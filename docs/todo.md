@@ -1,8 +1,12 @@
 # 公開前に残る確認と機能境界
 
+Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限定し、独自 fork・パッチ済みランタイムを対処案に含めない。公式の設定・通信 API を通じた操作と、無改変の公式ソースからの検証用ビルドは利用する。
+
 ## 公開を妨げる upstream 不具合
 
-固定ソースの stdio cold resume が、DB の `runtime/execution_state` に保存された mode / Plan を復元しない。`server-operations.ts` が過去のメッセージから得た mode を明示指定として渡し、Core の保存状態復元を抑止する。[再現と根拠](verification.md)を参照。Provider に補完ストアや旧 Host への切替は追加しない。upstream の修正されたソース・配布物で `test:stdio-runtime` が成功するまで公開しない。
+固定ソースの stdio cold resume が、DB の `runtime/execution_state` に保存された mode / Plan を復元しない。`server-operations.ts` が過去のメッセージから得た mode を明示指定として渡し、Core の保存状態復元を抑止する。[再現と根拠](verification.md)を参照。
+
+本体改変なしで確認済みの対応は、Paseo が保持する mode / Plan の両方を Provider から公式 API で再適用する経路であり、実装済み。設定省略時の復元不具合は上流依存の制約として残す。Provider に補完ストアや旧 Host への切替は追加しない。公式側で修正された無改変のソース・配布物で `test:stdio-runtime` が成功するまで、既存の公開条件は未達として扱う。
 
 ## 検証の残項目
 

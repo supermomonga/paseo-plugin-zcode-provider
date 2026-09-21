@@ -63,6 +63,8 @@ CI runs ordinary non-billable tests, actual Paseo integration and vendored-sourc
 
 ## Architecture
 
+Paseo and ZCode themselves must remain unmodified. Changes belong to this Provider plugin; a fork, source patch or patched upstream runtime is not an implementation option. Official configuration and protocol operations remain available. For mode/Plan resume, the plugin reapplies both settings when Paseo supplies them and waits for native confirmation before accepting prompts. This does not fix native-only restoration when those settings are omitted. Keep that upstream defect and its failing contract test visible until an unmodified official version resolves it.
+
 `discovery/` validates the explicitly configured runtime. `host/bridge.ts` owns hello/ack, official binary framing, RPC, process preferences and process shutdown. `conversation.ts` owns one V4 state, wire assembly, sequencing, resync and coherent history paging. `session.ts` coordinates admissions, public execution IDs, stop and native configuration. `presentation.ts` translates rows and interactions to Paseo. `persistence.ts` stores only the pre-send logical/native identity mapping. Authentication remains in Services Host.
 
 Model admission is never retried after an unknown outcome. Only a stale conditional control command, which confirms no mutation occurred, may be retried with the returned revision. Recovery must not mix history epochs/revisions or publish a partial recovery window as complete history. Foreground execution and background continuation are distinct. Product turn IDs, row IDs and source command IDs have different meanings.

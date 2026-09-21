@@ -48,7 +48,7 @@ PRs should describe the problem, the resulting behavior, related issues, verific
 Identify the root cause and do not add ad hoc workarounds. Add backward compatibility logic only when explicitly instructed. Consult the existing `docs/adr/` for design decisions. Do not commit credentials, conversation content, generated artifacts, or the local `mise.local.toml`. Use `gh` for GitHub operations and investigations.
 
 - If `ghq` is installed on the local machine and the Paseo source repository has been cloned at `$(ghq root)/getpaseo/paseo`, it is recommended to consult that checkout when investigating Paseo's implementation.
-- Limit feature implementations to what is possible within a Paseo plugin. Do not propose implementation plans that require changes to Paseo itself.
+- Limit implementations and proposed solutions to this Paseo plugin. Do not modify Paseo or ZCode itself, or require a fork, source patch, or patched upstream runtime. Building official ZCode from unmodified source for verification is allowed.
 
 - Use `~/ghq/github.com/zai-org/ZCode` as the implementation reference. Record commit SHA and source paths; do not extract Electron/deb bundles for source investigation.
 - Current source baseline: `872ad960de7ec172591f7e1952f7849229f94521`. Verify vendored RPC/V4 source with `npm run check:zcode-source`. Keep `server/vendor/zcode` unformatted and retain its license/provenance.

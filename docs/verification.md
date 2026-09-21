@@ -67,7 +67,7 @@ Paseo CLI の実行制限解除後、macOS arm64 / Paseo 0.9.0-beta.2 の別 dae
 - [create-app.ts:490](https://github.com/zai-org/ZCode/blob/872ad960de7ec172591f7e1952f7849229f94521/apps/zcode-cli/packages/bootstrap/src/app/create-app.ts#L490) はそれを `modeOverride` として Core へ渡す。
 - [resume.ts:213](https://github.com/zai-org/ZCode/blob/872ad960de7ec172591f7e1952f7849229f94521/apps/zcode-cli/packages/core/src/runtime/methods/resume.ts#L213) は `modeOverride !== undefined` の場合、保存した実行状態を適用しない。
 
-この経路が新しい保存状態より古い message mode を優先する。Paseo が明示した mode / Plan を適用する E2E は成功しており、native-only restore の成功を示すものではない。Provider に別の Plan 保存や自動復元を加えて隠していない。upstream の根本修正と、そのソース・成果物での再検証が必要。
+この経路が新しい保存状態より古い message mode を優先する。Paseo が明示した mode / Plan を適用する E2E は成功しており、native-only restore の成功を示すものではない。Provider に別の Plan 保存や自動復元を加えて隠していない。Paseo・ZCode 本体は改変不可のため、独自パッチによる解消は対応範囲外とする。設定省略時の復元については、公式側の修正と、その無改変のソース・成果物での再検証が必要。
 
 ## 配布の node-pty 問題
 
