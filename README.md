@@ -2,7 +2,7 @@
 
 Use ZCode models, tools and conversations through Paseo's public Provider API. The plugin launches the **official stdio Services Server from the integrated ZCode CLI distribution**. Authentication, models, tools and conversation storage remain owned by ZCode. ZCode Desktop is not required.
 
-> This migration is not ready for release. The pinned upstream source restores an older editing mode and drops Plan during cold resume, even though the correct execution state is present in its database. The native regression test intentionally fails. See [verification and release blockers](docs/verification.md).
+> Mode/Plan restoration is guaranteed when Paseo supplies both saved settings on resume. Without them, the pinned ZCode source can restore an older editing mode and drop Plan. That upstream defect remains unresolved and is outside the supported restoration contract. See [verification and remaining checks](docs/verification.md).
 
 This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai. The official RPC/V4 implementation is public source, but it is not a stable third-party SDK.
 
@@ -27,7 +27,7 @@ Set these in the daemon's environment, then restart the daemon. A terminal expor
 
 You install and update the CLI and its Node.js runtime. Set up authentication and models using the official CLI/TUI. The plugin neither decrypts nor copies credentials. Session environment variables are forwarded, subject to ZCode's own proxy, certificate and runtime environment handling.
 
-The source baseline is `872ad960de7ec172591f7e1952f7849229f94521`. Its version strings do not prove that a public CLI artifact has been released or verified. [Build and validation instructions](docs/development.md) distinguish source, distribution hashes and actual runtime results. Newer stable versions are allowed, including major versions; passing the minimum check does not certify compatibility. Only macOS arm64 has been exercised locally for this migration. Other OS/CPU combinations remain unverified.
+The source baseline is `872ad960de7ec172591f7e1952f7849229f94521`. Its version strings do not prove that a public CLI artifact has been released or verified. [Build and validation instructions](docs/development.md) distinguish source, distribution hashes and actual runtime results. Newer stable versions are allowed, including major versions; passing the minimum check does not certify compatibility. macOS arm64 has been exercised locally; Linux x64 runtime checks ran in CI, with the settings-free restoration failure recorded separately. See the verification record for the exact coverage. Other OS/CPU combinations remain unverified.
 
 ## Installation
 
@@ -57,7 +57,7 @@ New handles use **version 3**. Versions 1 and 2 are rejected without migration o
 
 Unsent conversations are deferred drafts. Before the first prompt, the plugin atomically saves the logical-to-native ID mapping under `$XDG_STATE_HOME/paseo-plugin-zcode-provider/sessions-v3`, or `~/.local/state/paseo-plugin-zcode-provider/sessions-v3`. It stores identifiers and workspace paths, not message bodies. Preserve this directory for backup. A mapping write failure prevents sending. Corrupt mappings and missing native conversations fail explicitly; no replacement conversation is created.
 
-New conversations support listing, resume and paged V4 history. Explicit settings supplied by Paseo on resume are applied after native restore. There is no private Plan restoration store. **The pinned upstream cold-resume defect remains a release blocker.** Existing ZCode databases may be migrated by ZCode itself on startup; the native tests isolate the home, configuration and database.
+New conversations support listing, resume and paged V4 history. Mode/Plan restoration requires both `mode` and `settings.plan_mode` saved by Paseo. The plugin applies them after native restore and confirms the resulting state before reporting the session ready. Omitted settings retain whatever ZCode returns, which can be stale on the pinned source; restoration of those values is not guaranteed. There is no private Plan restoration store. [ADR 14](docs/adr/0014-paseoの保存設定を再適用する復元を保証範囲とする.md) limits the guarantee to this supported path; settings-free restoration is checked separately with `npm run test:native-restore`. Existing ZCode databases may be migrated by ZCode itself on startup; the native tests isolate the home, configuration and database.
 
 ## Diagnostics
 

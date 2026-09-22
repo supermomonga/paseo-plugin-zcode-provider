@@ -1,6 +1,6 @@
 # 公開ソース・stdio / V4 移行の検証（2026-09-21）
 
-接続方式と会話処理を置換し、通常テスト、実モデル E2E、隔離 daemon の実 Web UI 検証は成功した。ただし、固定した ZCode ソースに native cold resume の実行状態復元不具合があり、**公開条件は未達**。以下の成功と失敗を分けて扱う。
+接続方式と会話処理を置換し、通常テスト、実モデル E2E、隔離 daemon の実 Web UI 検証は成功した。固定した ZCode ソースには設定省略時の実行状態復元不具合がある。ユーザー承認と ADR 14 により、**mode / Plan の復元保証は Paseo が保存した両設定を再適用する経路に限定**した。設定省略時の不具合は保証対象外として追跡し、その修正自体を公開条件にはしない。以下の成功・失敗・未検証範囲を分けて扱う。
 
 ## 対象と成果物
 
@@ -22,7 +22,7 @@
 
 ## 成功した検証
 
-- `npm run typecheck`、`npm test`（15 ファイル、122 tests）、`npm run build`。通常テストには課金 API 呼び出しを含めない。UI 検証で見つけた投稿時刻の回帰テストを含む。Unix socket を使う既存の 2 テストは sandbox 内では EPERM となり、通常環境で全件成功した。
+- `npm run typecheck`、`npm test`（15 ファイル、128 tests）、`npm run build`。通常テストには課金 API 呼び出しを含めない。UI 検証で見つけた投稿時刻の回帰テストと、Paseo の保存設定を再開完了前に適用する build/edit/yolo × Plan true/false の 6 通りを含む。Unix socket を使う既存の 2 テストは sandbox 内では EPERM となり、通常環境で全件成功した。
 - 固定 source SHA に対する vendored 91 ファイルの内容・出典ハッシュ照合。Apache-2.0 LICENSE、上流 NOTICE、該当する VS Code MIT 通知を保持し、ビルド出力にも配置。
 - 公式 RPC のプロセス試験：hello / V4 negotiation、3-byte 分割フレーム、質問自動終了無効化、不正 handshake、RPC timeout、Server 異常終了、購読中の EOF close。
 - V4 契約試験：重複、seq 欠落後の resync、壊れたフレーム、430 行のページング、異なる revision の拒否、新 epoch の履歴を揃えてから通知、購読解除後の通知無視。
@@ -48,9 +48,19 @@ Paseo CLI の実行制限解除後、macOS arm64 / Paseo 0.9.0-beta.2 の別 dae
 
 検証終了後、一時 daemon を強制終了なしで停止し、検証用ブラウザタブを閉じ、認証を含む一時ホーム・DB・会話・ワークスペースを削除した。
 
-## 公開を妨げる native Plan / mode 復元不具合
+## 必須 CI の復元条件の修正
 
-`npm run test:stdio-runtime` は **exit 1**。独立した試験は続けるが、native-only restore が失敗した事実を非ゼロ終了で保持する。CI もこの失敗を無視しない。
+[修正前の GitHub Actions](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/35573383559)（Provider `320adff4b28224edfe64bba6856d92ff9191a74f`）を確認した。通常テスト・型検査・ビルド・ソース照合・実 Paseo 結合試験は成功。Ubuntu 24.04 / Linux x64 / Node 24.14.0 の公式ランタイム試験も、設定省略時の復元を除く項目は成功した。この復元失敗だけで runtime ジョブが失敗し、依存する実モデル E2E は未実行となっていた。Linux の Server / Agent ハッシュは上記 macOS のものと一致したが、配布全体や OS の検証範囲が同じという意味ではない。
+
+ユーザーの選択に従い、`test:stdio-runtime` は Paseo が保存した `mode` と `settings.plan_mode` を別プロセスでの再開時に渡す契約を必須とした。閉じる前の通知から両設定を取得し、再開完了より前の設定通知がすべて `edit / Plan有効` であること、履歴が復元されることを検証する。この修正後のコマンドは上記 macOS arm64 の無改変ランタイムで **exit 0** となった。
+
+修正後に型検査、ビルド、全体の整形検査、Paseo 0.9.0-beta.1 の実 compiler / adapter 結合試験を再実行して成功した。隔離した実モデル E2E も再実行し、モデル・推論設定、3 モードの Plan 承認、edit の却下、保存設定による復元、追加指示・添付キュー、完了一回、停止・再開、取消入力の非再生と正常終了がすべて成功した。追加した 6 ケースを含む通常テストは 15 ファイル・128 件成功。Paseo と ZCode の参照 checkout に変更はない。
+
+設定省略時の厳密な検証は `test:native-restore` へ分離し、同じランタイムで **exit 1**、期待値 `edit / true` に対して実際は `yolo / false` となることを確認した。必須 CI に `continue-on-error` 等は追加していない。設定再適用、起動、ツール、質問、停止、終了処理など、保証対象の失敗は引き続き必須 CI を失敗させる。変更後の GitHub Actions は未 push のため未実行であり、ローカル成功とは区別する。
+
+## 設定省略時の native Plan / mode 復元不具合（保証対象外）
+
+`npm run test:native-restore` は **exit 1**。必須 CI とは別の検証として、native-only restore の不一致を assertion で検出する。公式ランタイムの更新時に再実行する。
 
 再現手順は同スクリプト内に固定した。
 
@@ -67,7 +77,7 @@ Paseo CLI の実行制限解除後、macOS arm64 / Paseo 0.9.0-beta.2 の別 dae
 - [create-app.ts:490](https://github.com/zai-org/ZCode/blob/872ad960de7ec172591f7e1952f7849229f94521/apps/zcode-cli/packages/bootstrap/src/app/create-app.ts#L490) はそれを `modeOverride` として Core へ渡す。
 - [resume.ts:213](https://github.com/zai-org/ZCode/blob/872ad960de7ec172591f7e1952f7849229f94521/apps/zcode-cli/packages/core/src/runtime/methods/resume.ts#L213) は `modeOverride !== undefined` の場合、保存した実行状態を適用しない。
 
-この経路が新しい保存状態より古い message mode を優先する。Paseo が明示した mode / Plan を適用する E2E は成功しており、native-only restore の成功を示すものではない。Provider に別の Plan 保存や自動復元を加えて隠していない。Paseo・ZCode 本体は改変不可のため、独自パッチによる解消は対応範囲外とする。設定省略時の復元については、公式側の修正と、その無改変のソース・成果物での再検証が必要。
+この経路が新しい保存状態より古い message mode を優先する。Paseo が明示した mode / Plan を適用する E2E は成功しており、native-only restore の成功を示すものではない。Provider に別の Plan 保存や自動復元を加えて隠していない。Paseo・ZCode 本体は改変不可のため、独自パッチによる解消は対応範囲外とする。設定省略時は ZCode が返した状態を使うため、復元を保証しない。この範囲の保証を追加する場合は、公式の無改変のソース・成果物で再検証し、別途判断する。
 
 ## 配布の node-pty 問題
 
@@ -78,11 +88,11 @@ Provider はこの terminal API を使用しない。別経路の Agent Bash は
 ## 未検証と環境による制限
 
 - 公式アカウントログイン/期限切れ/未認証、公式 TUI と複数プロセスの共有データ同時利用。独自 API キー設定の実モデル試験とは別。
-- Linux、Windows、macOS x64。更新した GitHub Actions は未 push のためリモート実行結果なし。
+- 修正後 CI の Linux x64 での保存設定による復元・実モデル E2E。修正前 CI の非課金項目は設定省略時の復元を除き成功した。Windows、macOS x64 は未検証。
 - Desktop ネイティブ画面とモバイル実機での操作。今回操作したのは Desktop 内ブラウザの実 Web UI であり、Desktop 同梱 Electron Helper と通常 Node の両 daemon 起動を確認した。
 - native の長大履歴、世代変更、子からの承認、background continuation は契約試験中心。全 OS での強制終了、長時間ツール/MCP 子プロセスを含む回収は未検証。
 
-ADR 13 は Accepted。ADR 3/6 を Superseded とし、2/7/9/11/12 に双方向の Amends リンクを設定した。管理対象 TOC を CLI で更新。`adrs doctor` は 0 errors、既存 ADR 1 の 1 warning / 1 info のみ。設計の採用と、未達の公開条件を区別する。
+ADR 13 は Accepted。ADR 3/6 を Superseded とし、2/7/9/11/12 に双方向の Amends リンクを設定した。今回の ADR 14 は Accepted とし、ADR 13 の復元保証と公開条件を Amends で変更した。管理対象 TOC を CLI で更新。`adrs doctor` は 0 errors、既存 ADR 1 の 1 warning / 1 info のみ。設計の採用と、未検証項目の完了を区別する。
 
 ---
 

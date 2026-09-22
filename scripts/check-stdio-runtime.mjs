@@ -4,11 +4,15 @@ import { createServer } from "node:http";
 import { mkdir, mkdtemp, realpath, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
 import { build } from "esbuild";
 import { e2eProviderConfig } from "./check-e2e.mjs";
 import { cleanupOnSignal } from "./runtime-check-lifecycle.mjs";
 
 // Real official Server/Agent, deterministic local model. No account or billable API.
+const { values } = parseArgs({
+  options: { "check-native-restore": { type: "boolean", default: false } },
+});
 const root = resolve(import.meta.dirname, "..");
 const runtime = process.env.PASEO_ZCODE_RUNTIME,
   node = process.env.PASEO_ZCODE_NODE;
@@ -184,7 +188,7 @@ try {
   };
   let seq = 0;
   const send = (input) => connection.send({ ...input, sessionId: "test" });
-  const open = async (persistence) => {
+  const open = async (persistence, restoredConfig = {}) => {
     const requestId = `open-${++seq}`;
     await send({
       type: "session.open",
@@ -197,6 +201,7 @@ try {
         mcpServers: {},
         settings: {},
         providerOptions: {},
+        ...restoredConfig,
       },
       ...(persistence ? { persistence } : {}),
     });
@@ -277,12 +282,45 @@ try {
   await wait((e) => e.type === "session.closed");
   await connection.close();
   await connect();
-  await open(saved);
-  const resumed = events.findLast((e) => e.type === "session.config").config;
-  const nativePlanRestore =
-    resumed.mode === "edit" &&
-    resumed.settings.find((s) => s.id === "plan_mode").value === true;
-  if (!nativePlanRestore) process.exitCode = 1; // Keep the release-blocking upstream regression visible; continue independent checks.
+  if (values["check-native-restore"]) {
+    // Separate upstream check: settings omitted here intentionally. The normal
+    // Provider contract requires Paseo's saved mode and Plan settings instead.
+    await open(saved);
+    const resumed = events.findLast((e) => e.type === "session.config").config;
+    assert.deepEqual(
+      {
+        mode: resumed.mode,
+        plan: resumed.settings.find((s) => s.id === "plan_mode").value,
+      },
+      { mode: "edit", plan: true },
+      "ZCode cold resume without explicit settings must restore its saved execution state",
+    );
+    await connection.close();
+    await connect();
+  }
+  // Paseo keeps modeId and featureValues separately from the native handle.
+  // Reapply the actual values captured before shutdown, not native resume's
+  // potentially stale values. No prompt is submitted to trigger the change.
+  await open(saved, {
+    mode: beforeResume.mode,
+    settings: Object.fromEntries(
+      beforeResume.settings.map((setting) => [setting.id, setting.value]),
+    ),
+  });
+  const restoredConfigs = events.filter((e) => e.type === "session.config");
+  assert.ok(restoredConfigs.length);
+  for (const { config } of restoredConfigs) {
+    assert.equal(config.mode, "edit");
+    assert.equal(config.settings.find((s) => s.id === "plan_mode").value, true);
+  }
+  assert.ok(
+    events.indexOf(restoredConfigs[0]) <
+      events.findIndex((e) => e.type === "session.ready"),
+  );
+  assert.equal(
+    events.some((e) => e.type === "session.turn"),
+    false,
+  );
   assert.ok(
     events.some(
       (e) =>
@@ -381,14 +419,16 @@ try {
     JSON.stringify(
       {
         identity,
-        nativePlanRestore: nativePlanRestore
-          ? "passed"
-          : "FAILED: native cold resume overrides persisted execution state",
+        restoration: "Paseo's saved mode and Plan settings",
+        ...(values["check-native-restore"]
+          ? { nativePlanRestore: "passed" }
+          : {}),
         checks: [
           "catalog",
           "draft",
           "Bash",
           "single ACK/completion",
+          "cold resume with Paseo mode and Plan settings",
           "history replay",
           "question",
           "permission",

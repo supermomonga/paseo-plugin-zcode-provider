@@ -99,9 +99,10 @@ jobs:
       - name: Install plugin dependencies
         working-directory: plugin
         run: npm ci --include=dev
-      - name: Verify native behavior without a billable model
+      - name: Verify Provider behavior on the official runtime
         working-directory: plugin
-        # The pinned upstream cold-resume regression must fail, not be skipped.
+        # Resume uses Paseo's saved mode and Plan settings (ADR 14).
+        # The separate test:native-restore tracks unsupported settings-free resume.
         run: npm run test:stdio-runtime
 
   e2e:

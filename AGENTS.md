@@ -53,5 +53,6 @@ Identify the root cause and do not add ad hoc workarounds. Add backward compatib
 - Use `~/ghq/github.com/zai-org/ZCode` as the implementation reference. Record commit SHA and source paths; do not extract Electron/deb bundles for source investigation.
 - Current source baseline: `872ad960de7ec172591f7e1952f7849229f94521`. Verify vendored RPC/V4 source with `npm run check:zcode-source`. Keep `server/vendor/zcode` unformatted and retain its license/provenance.
 - Require `PASEO_ZCODE_RUNTIME` and ordinary Node.js 24.14.0+ via `PASEO_ZCODE_NODE`. CLI installation and updates belong to the user. Never fall back to Desktop/Electron.
-- `npm run test:stdio-runtime` uses the real runtime with isolated data and a local model fixture. Keep source SHA, distribution hashes, runtime versions and actual OS coverage separate. Native contract failures block release.
+- `npm run test:stdio-runtime` uses the real runtime with isolated data and a local model fixture. Resume guarantees require both Paseo's saved `mode` and `settings.plan_mode`; failures of this supported contract block release. Keep source SHA, distribution hashes, runtime versions and actual OS coverage separate.
+- `npm run test:native-restore` separately checks resume without explicit settings. The pinned upstream fails this unsupported path; retain its nonzero exit and run it when evaluating runtime updates. It is not a required CI or release condition (ADR 14).
 - Persistence handles use version 3. Do not migrate old Paseo handles or introduce Plan restoration storage.

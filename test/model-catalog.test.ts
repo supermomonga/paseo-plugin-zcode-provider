@@ -60,3 +60,37 @@ it("preserves native Plan state on resume and keeps mode independent", async () 
     planEnabled: false,
   });
 });
+
+it.each([
+  ["build", false],
+  ["build", true],
+  ["edit", false],
+  ["edit", true],
+  ["yolo", false],
+  ["yolo", true],
+] as const)(
+  "reapplies Paseo mode %s and Plan %s before reporting a restored session ready",
+  async (mode, plan) => {
+    const f = await providerFixture();
+    cleanup.push(f.close);
+    // The native resume may return stale configuration. Paseo's saved settings
+    // are authoritative when provided, including an explicit false Plan value.
+    f.host.state.config.mode = mode === "yolo" ? "build" : "yolo";
+    f.host.state.config.planEnabled = !plan;
+    const ready = await f.open(
+      { mode, settings: { plan_mode: plan } },
+      {
+        version: 3,
+        data: { kind: "native", sessionId: "session-1", cwd: f.cwd },
+      },
+    );
+    expect(ready.type).toBe("session.ready");
+    expect(f.host.state.config).toMatchObject({ mode, planEnabled: plan });
+    const configs = f.events.filter((e) => e.type === "session.config");
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({
+      config: { mode, settings: [{ id: "plan_mode", value: plan }] },
+    });
+    expect(f.events.indexOf(configs[0]!)).toBeLessThan(f.events.indexOf(ready));
+  },
+);

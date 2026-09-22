@@ -18,6 +18,8 @@ links:
     kind: amends
   - target: 12
     kind: amends
+  - target: 14
+    kind: amendedby
 ---
 
 # 公開ソースの公式stdio ServerとV4会話状態を採用する
