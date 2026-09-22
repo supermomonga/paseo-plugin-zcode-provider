@@ -12,6 +12,8 @@ links:
     kind: amends
   - target: 11
     kind: amendedby
+  - target: 13
+    kind: amendedby
 ---
 
 # 最低バージョンと実行時検証でZCodeの更新を許可する

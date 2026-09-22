@@ -1,598 +1,201 @@
-import { spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { access, constants, readFile, realpath, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join } from "node:path";
+import { gte, valid } from "semver";
 import { z } from "zod";
-
 import { AdapterError } from "../errors.js";
-import {
-  resolveHostIndex,
-  resolveHostImports,
-  RPC_INSPECTION_SOURCE,
-} from "./host-contract.js";
-import {
-  assessCompatibility,
-  CURRENT_HOST_PROTOCOL,
-  VERIFIED_ZCODE_ARTIFACT,
-} from "./manifest.js";
-import {
-  diagnosticError,
-  runtimeDiagnostic,
-  type RuntimeDiagnostic,
-} from "../diagnostics.js";
-import type {
-  BundleMetadata,
-  DiscoveredRuntime,
-  RuntimePaths,
-  RuntimeSmokeResult,
-} from "./types.js";
-
-const BundleMetadataSchema = z
-  .object({
-    runtime: z.literal("electron-node"),
-    entry: z.literal("zcode.cjs"),
-    platform: z.string().min(1),
-    source: z.literal("apps/zcode-cli/packages/cli/dist/zcode.cjs"),
-  })
-  .strict();
-
-const HostInspectionSchema = z
-  .object({
-    hostIndexSha256: z.string().regex(/^[0-9a-f]{64}$/u),
-    hostRpcModuleSha256: z.string().regex(/^[0-9a-f]{64}$/u),
-    hostRpcModule: z.string().min(1),
-    rpcExports: z
-      .object({
-        protocol: z.string().min(1),
-        client: z.string().min(1),
-        service: z.string().min(1),
-      })
-      .strict(),
-  })
-  .strict();
+import { assessCompatibility, MINIMUM_NODE_VERSION } from "./manifest.js";
+import type { DiscoveredRuntime, RuntimeSmokeResult } from "./types.js";
 
 export interface DiscoveryOptions {
-  readonly installRoot?: string;
   readonly environment?: NodeJS.ProcessEnv;
-  readonly platform?: NodeJS.Platform;
-  readonly architecture?: string;
   readonly signal?: AbortSignal;
 }
-
-interface CommandResult {
-  exitCode: number;
-  stdout: string;
+export function runtimeEnvironment(
+  environment: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const result = { ...environment };
+  delete result.ELECTRON_RUN_AS_NODE;
+  return result;
 }
-
-const INSPECTION_TIMEOUT_MS = 60_000;
-
 async function run(
-  command: string,
-  args: readonly string[],
-  options: {
-    cwd: string;
-    environment: NodeJS.ProcessEnv;
-    signal?: AbortSignal;
-    maxOutputBytes?: number;
-  },
-): Promise<CommandResult> {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, [...args], {
-      cwd: options.cwd,
-      env: options.environment,
-      signal: options.signal,
-      timeout: INSPECTION_TIMEOUT_MS,
-      killSignal: "SIGTERM",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stdoutBytes = 0;
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdoutBytes += Buffer.byteLength(chunk);
-      if (stdoutBytes > (options.maxOutputBytes ?? 1024 * 1024)) {
-        child.kill("SIGTERM");
-        reject(
-          new AdapterError(
-            "NATIVE_PROTOCOL_ERROR",
-            "ZCode inspection output is too large",
-          ),
-        );
-        return;
-      }
-      stdout += chunk;
-    });
-    child.stderr.resume();
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (signal !== null) {
-        reject(
-          new AdapterError(
-            "NATIVE_EXITED",
-            `ZCode runtime terminated by ${signal}`,
-          ),
-        );
-        return;
-      }
-      resolve({ exitCode: code ?? -1, stdout });
-    });
+  executable: string,
+  args: string[],
+  environment: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      executable,
+      args,
+      {
+        env: environment,
+        signal,
+        timeout: 15_000,
+        maxBuffer: 64 * 1024,
+        windowsHide: true,
+      },
+      (error, stdout) => {
+        if (error)
+          reject(
+            new AdapterError(
+              "RUNTIME_SMOKE_FAILED",
+              "Configured ZCode executable failed its runtime check",
+            ),
+          );
+        else resolve(stdout.trim());
+      },
+    );
   });
 }
-
-export async function discoverRuntime(
-  options: DiscoveryOptions = {},
-): Promise<DiscoveredRuntime> {
-  const diagnostic: RuntimeDiagnostic = {
-    stage: "discovery",
-    platform: `${options.platform ?? process.platform}-${options.architecture ?? process.arch}`,
-  };
+export async function discoverRuntime({
+  environment = process.env,
+  signal,
+}: DiscoveryOptions = {}): Promise<DiscoveredRuntime> {
+  const configured = ["PASEO_ZCODE_RUNTIME", "PASEO_ZCODE_NODE"] as const;
+  for (const name of configured) {
+    if (!environment[name] || !isAbsolute(environment[name]!))
+      throw new AdapterError(
+        "RUNTIME_DISCOVERY_FAILED",
+        `${name} must be an absolute path`,
+      );
+  }
   try {
-    return await discoverRuntimeInternal(options, diagnostic);
-  } catch (error) {
-    if (options.signal?.aborted) throw error;
-    throw diagnosticError(error, diagnostic, "RUNTIME_DISCOVERY_FAILED");
-  }
-}
-
-async function discoverRuntimeInternal(
-  options: DiscoveryOptions,
-  diagnostic: RuntimeDiagnostic,
-): Promise<DiscoveredRuntime> {
-  const platform = options.platform ?? process.platform;
-  const architecture = options.architecture ?? process.arch;
-  options.signal?.throwIfAborted();
-  const detectedPlatform = `${platform}-${architecture}`;
-  if (
-    ![
-      "darwin-arm64",
-      "darwin-x64",
-      "linux-arm64",
-      "linux-x64",
-      "win32-x64",
-    ].includes(detectedPlatform)
-  ) {
-    throw new AdapterError(
-      "UNSUPPORTED_PLATFORM",
-      `Unsupported platform: ${detectedPlatform}`,
+    const installRoot = await realpath(environment.PASEO_ZCODE_RUNTIME!);
+    const executable = await realpath(environment.PASEO_ZCODE_NODE!);
+    if (
+      !(await stat(installRoot)).isDirectory() ||
+      !(await stat(executable)).isFile()
+    )
+      throw new Error("Invalid runtime path");
+    await access(executable, constants.X_OK);
+    const paths = {
+      installRoot,
+      executable,
+      serverEntry: join(installRoot, "server/remote/zcode-server.cjs"),
+      cliEntry: join(installRoot, "agent/zcode.cjs"),
+      appPackage: join(installRoot, "package.json"),
+      builtinProviderConfig: join(
+        installRoot,
+        "agent/provider/zcode-builtin.json",
+      ),
+    };
+    for (const file of [
+      paths.serverEntry,
+      paths.cliEntry,
+      paths.appPackage,
+      paths.builtinProviderConfig,
+    ])
+      if (!(await stat(file)).isFile()) throw new Error("Missing runtime file");
+    // Run Electron in Node mode only during identification, so a mistaken path
+    // cannot launch its desktop UI. It is rejected before any Server starts.
+    const node = z
+      .object({
+        node: z.string(),
+        electron: z.string().optional(),
+        platform: z.string(),
+        arch: z.string(),
+      })
+      .parse(
+        JSON.parse(
+          await run(
+            executable,
+            [
+              "-e",
+              "console.log(JSON.stringify({node:process.versions.node,electron:process.versions.electron,platform:process.platform,arch:process.arch}))",
+            ],
+            { ...environment, ELECTRON_RUN_AS_NODE: "1" },
+            signal,
+          ),
+        ),
+      );
+    if (
+      node.electron ||
+      !valid(node.node) ||
+      !gte(node.node, MINIMUM_NODE_VERSION)
+    )
+      throw new AdapterError(
+        "UNSUPPORTED_ZCODE",
+        `PASEO_ZCODE_NODE requires ordinary Node.js >=${MINIMUM_NODE_VERSION}; Electron is unsupported`,
+      );
+    const pkg = z
+      .object({ name: z.literal("zcode-runtime"), version: z.string() })
+      .parse(JSON.parse(await readFile(paths.appPackage, "utf8")));
+    const env = runtimeEnvironment(environment);
+    const [serverVersion, cliOutput, serverBytes, cliBytes] = await Promise.all(
+      [
+        run(executable, [paths.serverEntry, "--version"], env, signal),
+        run(executable, [paths.cliEntry, "--version"], env, signal),
+        readFile(paths.serverEntry),
+        readFile(paths.cliEntry),
+      ],
     );
-  }
-  const environment: NodeJS.ProcessEnv = {
-    ...(options.environment ?? process.env),
-    ELECTRON_RUN_AS_NODE: "1",
-  };
-  const configuredRoot =
-    options.installRoot ??
-    environment.PASEO_ZCODE_INSTALL ??
-    defaultInstallRoot(platform, environment);
-  if (!isAbsolute(configuredRoot)) {
-    throw new AdapterError(
-      "INVALID_CONFIGURATION",
-      "ZCode install root must be absolute",
-    );
-  }
-  let installRoot: string;
-  try {
-    installRoot = await realpath(configuredRoot);
+    if (serverVersion !== pkg.version)
+      throw new AdapterError(
+        "UNSUPPORTED_ZCODE",
+        "ZCode runtime package and Server versions differ",
+      );
+    const cliVersion = cliOutput.match(
+      /^(?:zcode\s+)?v?(\d+\.\d+\.\d+(?:-[\w.-]+)?)$/i,
+    )?.[1];
+    if (!cliVersion)
+      throw new AdapterError(
+        "UNSUPPORTED_ZCODE",
+        "ZCode Agent returned an invalid version",
+      );
+    const identity = {
+      platform: `${node.platform}-${node.arch}`,
+      appVersion: serverVersion,
+      cliVersion,
+      nodeVersion: node.node,
+      cliSha256: createHash("sha256").update(cliBytes).digest("hex"),
+      serverSha256: createHash("sha256").update(serverBytes).digest("hex"),
+    };
+    const compatibility = assessCompatibility(identity);
+    return {
+      paths,
+      identity,
+      compatibility: compatibility.status,
+      compatibilityReason: compatibility.reason,
+      writableInstallRoot: await access(installRoot, constants.W_OK).then(
+        () => true,
+        () => false,
+      ),
+    };
   } catch (error) {
+    if (error instanceof AdapterError || signal?.aborted) throw error;
     throw new AdapterError(
       "RUNTIME_DISCOVERY_FAILED",
-      "ZCode install root does not exist",
-      {},
-      { cause: error },
+      "Configured ZCode runtime is missing required files or has invalid metadata",
     );
   }
-  const paths = resolveRuntimePaths(installRoot, platform);
-  await validatePaths(paths);
-  const metadataValue: unknown = JSON.parse(
-    await readFile(paths.metadata, "utf8"),
-  );
-  Object.assign(diagnostic, { check: "bundle-metadata" });
-  const bundle = validateBundleMetadata(metadataValue, detectedPlatform);
-  Object.assign(diagnostic, { stage: "version", check: "minimum-version" });
-  const [appVersion, cliSha256, metadataSha256, cliResult] = await Promise.all([
-    readAppVersion(paths, environment, options.signal),
-    sha256(paths.cliEntry),
-    sha256(paths.metadata),
-    run(paths.executable, [paths.cliEntry, "version"], {
-      cwd: installRoot,
-      environment,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    }),
-  ]);
-  const cliVersion =
-    cliResult.exitCode === 0 ? cliResult.stdout.trim() : undefined;
-  const identity = {
-    platform: detectedPlatform,
-    appVersion,
-    ...(cliVersion === undefined ? {} : { cliVersion }),
-    cliSha256,
-    metadataSha256,
-    bundle,
-  };
-  const assessment = assessCompatibility(identity);
-  Object.assign(diagnostic, { appVersion, cliVersion });
-  if (assessment.status === "supported")
-    Object.assign(diagnostic, {
-      stage: "host-inspection",
-      check: "host-entry",
-    });
-  const host =
-    assessment.status === "supported"
-      ? await resolveHost(paths, environment, options.signal)
-      : undefined;
-  const rootStat = await stat(installRoot);
-  return {
-    paths,
-    identity,
-    ...(host === undefined
-      ? {}
-      : {
-          resolvedHost: {
-            ...host,
-            artifactMatch:
-              appVersion === VERIFIED_ZCODE_ARTIFACT.appVersion &&
-              cliVersion === VERIFIED_ZCODE_ARTIFACT.cliVersion &&
-              cliSha256 === VERIFIED_ZCODE_ARTIFACT.cliSha256 &&
-              host.hostIndexSha256 ===
-                VERIFIED_ZCODE_ARTIFACT.hostIndexSha256 &&
-              host.hostRpcModuleSha256 ===
-                VERIFIED_ZCODE_ARTIFACT.hostRpcModuleSha256,
-          },
-        }),
-    compatibility: assessment.status,
-    compatibilityReason: assessment.reason,
-    writableInstallRoot: (rootStat.mode & 0o022) !== 0,
-  };
 }
-
+export function assertRuntimeSupported(runtime: DiscoveredRuntime): void {
+  if (runtime.compatibility !== "supported")
+    throw new AdapterError("UNSUPPORTED_ZCODE", runtime.compatibilityReason);
+}
 export async function runRuntimeSmoke(
   runtime: DiscoveredRuntime,
   environment: NodeJS.ProcessEnv = process.env,
   signal?: AbortSignal,
 ): Promise<RuntimeSmokeResult> {
+  // Discovery checks both executable versions. Protocol and V4 are checked by
+  // the real Server connection, without inspecting an embedded bundle export.
   try {
-    const commandEnvironment = { ...environment, ELECTRON_RUN_AS_NODE: "1" };
-    const [version, doctor] = await Promise.all([
-      run(runtime.paths.executable, [runtime.paths.cliEntry, "version"], {
-        cwd: runtime.paths.installRoot,
-        environment: commandEnvironment,
-        ...(signal === undefined ? {} : { signal }),
-      }),
-      run(
-        runtime.paths.executable,
-        [runtime.paths.cliEntry, "doctor", "--json"],
-        {
-          cwd: runtime.paths.installRoot,
-          environment: commandEnvironment,
-          ...(signal === undefined ? {} : { signal }),
-        },
-      ),
-    ]);
-    return {
-      passed: version.exitCode === 0 && doctor.exitCode === 0,
-      ...(runtime.identity.cliVersion === undefined
-        ? {}
-        : { cliVersion: runtime.identity.cliVersion }),
-      doctorPassed: doctor.exitCode === 0,
-      authentication: "unknown",
-      ...(version.exitCode === 0 && doctor.exitCode === 0
-        ? {}
-        : { error: "Bundled version or doctor command failed" }),
-    };
-  } catch (error) {
-    return {
-      passed: false,
-      doctorPassed: false,
-      authentication: "unknown",
-      error: error instanceof Error ? error.message : "Runtime smoke failed",
-    };
-  }
-}
-
-export function assertRuntimeSupported(runtime: DiscoveredRuntime): void {
-  if (runtime.compatibility !== "supported") {
-    throw new AdapterError(
-      "UNSUPPORTED_ZCODE",
-      runtime.compatibilityReason,
-      {
-        platform: runtime.identity.platform,
-        appVersion: runtime.identity.appVersion,
-        cliVersion: runtime.identity.cliVersion,
-        hostProtocol: runtime.resolvedHost?.protocol.id,
-      },
-      undefined,
-      {
-        ...runtimeDiagnostic(runtime),
-        stage: "version",
-        check: "minimum-version",
-      },
-    );
-  }
-}
-
-export function defaultInstallRoot(
-  platform: NodeJS.Platform,
-  environment: NodeJS.ProcessEnv,
-): string {
-  switch (platform) {
-    case "darwin":
-      return "/Applications/ZCode.app";
-    case "linux":
-      return "/opt/ZCode";
-    case "win32": {
-      const localAppData = environment.LOCALAPPDATA;
-      if (!localAppData || !isAbsolute(localAppData)) {
-        throw new AdapterError(
-          "INVALID_CONFIGURATION",
-          "Set LOCALAPPDATA to an absolute path or set PASEO_ZCODE_INSTALL to the absolute ZCode install root",
-        );
-      }
-      return join(localAppData, "Programs", "ZCode");
-    }
-    default:
-      throw new AdapterError(
-        "UNSUPPORTED_PLATFORM",
-        `Unsupported platform: ${platform}`,
-      );
-  }
-}
-
-export function validateBundleMetadata(
-  value: unknown,
-  detectedPlatform: string,
-): BundleMetadata {
-  const bundle = BundleMetadataSchema.parse(value);
-  if (bundle.platform !== detectedPlatform) {
-    throw new AdapterError(
-      "UNSUPPORTED_PLATFORM",
-      "ZCode bundle platform does not match the current process",
-    );
-  }
-  return bundle;
-}
-
-export function resolveRuntimePaths(
-  installRoot: string,
-  platform: NodeJS.Platform,
-): RuntimePaths {
-  if (platform === "linux" || platform === "win32") {
-    return {
-      installRoot,
-      executable: join(
-        installRoot,
-        platform === "win32" ? "ZCode.exe" : "zcode",
-      ),
-      cliEntry: join(installRoot, "resources/glm/zcode.cjs"),
-      metadata: join(installRoot, "resources/glm/.node-bundle-meta.json"),
-      appPackage: join(installRoot, "resources/app.asar/package.json"),
-      hostArchive: join(installRoot, "resources/app.asar"),
-      builtinProviderConfig: join(
-        installRoot,
-        "resources/config/provider/zcode-builtin.json",
-      ),
-    };
-  }
-  if (platform !== "darwin") {
-    throw new AdapterError(
-      "UNSUPPORTED_PLATFORM",
-      `Unsupported platform: ${platform}`,
-    );
-  }
-  return {
-    installRoot,
-    executable: join(
-      installRoot,
-      "Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper",
-    ),
-    cliEntry: join(installRoot, "Contents/Resources/glm/zcode.cjs"),
-    metadata: join(
-      installRoot,
-      "Contents/Resources/glm/.node-bundle-meta.json",
-    ),
-    appMetadata: join(installRoot, "Contents/Info.plist"),
-    appPackage: join(installRoot, "Contents/Resources/app.asar/package.json"),
-    hostArchive: join(installRoot, "Contents/Resources/app.asar"),
-    builtinProviderConfig: join(
-      installRoot,
-      "Contents/Resources/config/provider/zcode-builtin.json",
-    ),
-  };
-}
-
-async function validatePaths(paths: RuntimePaths): Promise<void> {
-  try {
-    for (const candidate of [
-      paths.executable,
-      paths.cliEntry,
-      paths.metadata,
-      paths.builtinProviderConfig,
-      ...(paths.appMetadata === undefined ? [] : [paths.appMetadata]),
-    ]) {
-      const resolved = await realpath(candidate);
-      ensureInside(paths.installRoot, resolved);
-      await access(resolved, constants.R_OK);
-    }
-    const hostArchive = await realpath(paths.hostArchive);
-    ensureInside(paths.installRoot, hostArchive);
-    const hostArchiveStat = await stat(hostArchive);
-    if (!hostArchiveStat.isFile() && !hostArchiveStat.isDirectory()) {
-      throw new Error("ZCode host archive has an unsupported file type");
-    }
-    await access(paths.executable, constants.X_OK);
-  } catch (error) {
-    if (error instanceof AdapterError) throw error;
-    throw new AdapterError(
-      "RUNTIME_DISCOVERY_FAILED",
-      "Required ZCode runtime files are unavailable",
-      {},
-      { cause: error },
-    );
-  }
-}
-
-function ensureInside(root: string, candidate: string): void {
-  const child = relative(root, candidate);
-  if (child.startsWith("..") || isAbsolute(child)) {
-    throw new AdapterError(
-      "RUNTIME_DISCOVERY_FAILED",
-      "Resolved runtime path is outside the install root",
-    );
-  }
-}
-
-async function sha256(file: string): Promise<string> {
-  return createHash("sha256")
-    .update(await readFile(file))
-    .digest("hex");
-}
-
-async function readAppVersion(
-  paths: RuntimePaths,
-  environment: NodeJS.ProcessEnv,
-  signal?: AbortSignal,
-): Promise<string> {
-  if (paths.appMetadata !== undefined) {
-    return readPlist(
-      paths.appMetadata,
-      "CFBundleShortVersionString",
-      environment,
+    assertRuntimeSupported(runtime);
+    const version = await run(
+      runtime.paths.executable,
+      [runtime.paths.serverEntry, "--version"],
+      runtimeEnvironment(environment),
       signal,
     );
-  }
-  const script =
-    `const value=require(${JSON.stringify(paths.appPackage)});` +
-    'if(typeof value.version!=="string")process.exit(2);process.stdout.write(value.version)';
-  const result = await run(paths.executable, ["-e", script], {
-    cwd: paths.installRoot,
-    environment,
-    ...(signal === undefined ? {} : { signal }),
-  });
-  if (result.exitCode !== 0 || result.stdout.trim() === "") {
-    throw new AdapterError(
-      "RUNTIME_DISCOVERY_FAILED",
-      "ZCode app package version is unavailable",
-    );
-  }
-  return result.stdout.trim();
-}
-
-async function readPlist(
-  file: string,
-  key: string,
-  environment: NodeJS.ProcessEnv,
-  signal?: AbortSignal,
-): Promise<string> {
-  const result = await run(
-    "/usr/libexec/PlistBuddy",
-    ["-c", `Print :${key}`, file],
-    {
-      cwd: dirname(file),
-      environment,
-      ...(signal === undefined ? {} : { signal }),
-    },
-  );
-  if (result.exitCode !== 0 || result.stdout.trim() === "") {
-    throw new AdapterError(
-      "RUNTIME_DISCOVERY_FAILED",
-      `ZCode Info.plist is missing ${key}`,
-    );
-  }
-  return result.stdout.trim();
-}
-
-async function resolveHost(
-  paths: RuntimePaths,
-  environment: NodeJS.ProcessEnv,
-  signal?: AbortSignal,
-): Promise<
-  Omit<NonNullable<DiscoveredRuntime["resolvedHost"]>, "artifactMatch">
-> {
-  const hostIndex = resolveHostIndex(paths.installRoot, paths.hostArchive);
-  const commandOptions = {
-    cwd: paths.installRoot,
-    environment,
-    ...(signal ? { signal } : {}),
-  };
-  // ASAR contents are read by bundled Electron, not the system Node filesystem.
-  const source = await run(
-    paths.executable,
-    [
-      "-e",
-      RPC_INSPECTION_SOURCE +
-        `
-inside(${JSON.stringify(paths.installRoot)}, ${JSON.stringify(hostIndex)});
-process.stdout.write(fs.readFileSync(${JSON.stringify(hostIndex)}, "utf8"));`,
-    ],
-    { ...commandOptions, maxOutputBytes: 16 * 1024 * 1024 },
-  );
-  if (source.exitCode !== 0)
-    throw diagnosticError(
-      new Error(),
-      { stage: "host-inspection", check: "host-entry" },
-      "RUNTIME_DISCOVERY_FAILED",
-    );
-  let modules: string[];
-  try {
-    modules = await resolveHostImports(
-      source.stdout,
-      hostIndex,
-      paths.installRoot,
-    );
+    return {
+      passed: version === runtime.identity.appVersion,
+      cliVersion: runtime.identity.cliVersion,
+    };
   } catch (error) {
-    throw diagnosticError(
-      error,
-      { stage: "host-inspection", check: "host-imports" },
-      "RUNTIME_DISCOVERY_FAILED",
-    );
-  }
-  const script =
-    RPC_INSPECTION_SOURCE +
-    `
-console.log = console.info = console.warn = console.error = () => {};
-inspectRpcModules(${JSON.stringify(paths.installRoot)}, ${JSON.stringify(hostIndex)}, ${JSON.stringify(modules)})
-  .then(result => process.stdout.write(JSON.stringify({ result }), () => process.exit(0)))
-  .catch(error => process.stdout.write(JSON.stringify({ failure: ["host-path", "rpc-module-load", "rpc-missing", "rpc-ambiguous"].includes(error.message) ? error.message : "host-inspection-result" }), () => process.exit(0)));`;
-  const result = await run(paths.executable, ["-e", script], commandOptions);
-  try {
-    if (result.exitCode !== 0) throw new Error();
-    const envelope = z
-      .union([
-        z.object({ result: HostInspectionSchema }).strict(),
-        z
-          .object({
-            failure: z.enum([
-              "host-path",
-              "rpc-module-load",
-              "rpc-missing",
-              "rpc-ambiguous",
-              "host-inspection-result",
-            ]),
-          })
-          .strict(),
-      ])
-      .parse(JSON.parse(result.stdout));
-    if ("failure" in envelope)
-      throw diagnosticError(
-        new Error(),
-        { stage: "host-inspection", check: envelope.failure },
-        "RUNTIME_DISCOVERY_FAILED",
-      );
-    if (!modules.includes(envelope.result.hostRpcModule)) {
-      // realpath can normalize an in-root symlink; validate the returned path independently.
-      const child = relative(paths.installRoot, envelope.result.hostRpcModule);
-      if (child.startsWith("..") || isAbsolute(child))
-        throw diagnosticError(
-          new Error(),
-          { check: "host-path" },
-          "RUNTIME_DISCOVERY_FAILED",
-        );
-    }
-    return { ...envelope.result, hostIndex, protocol: CURRENT_HOST_PROTOCOL };
-  } catch (error) {
-    throw diagnosticError(
-      error,
-      { stage: "host-inspection", check: "host-inspection-result" },
-      "RUNTIME_DISCOVERY_FAILED",
-    );
+    if (signal?.aborted) throw error;
+    return { passed: false, error: "ZCode runtime check failed" };
   }
 }

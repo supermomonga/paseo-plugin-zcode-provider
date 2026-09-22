@@ -21,22 +21,12 @@ export interface DiagnosticsDependencies {
   readonly smoke?: typeof runRuntimeSmoke;
 }
 
-function installRootSource(
-  environment: NodeJS.ProcessEnv,
-): "environment" | "default" {
-  return environment.PASEO_ZCODE_INSTALL === undefined
-    ? "default"
-    : "environment";
-}
-
 function smokeResult(result: RuntimeSmokeResult) {
   return {
     passed: result.passed,
     ...(result.cliVersion === undefined
       ? {}
       : { cliVersion: result.cliVersion }),
-    doctorPassed: result.doctorPassed,
-    authentication: result.authentication,
     ...(result.error === undefined ? {} : { error: result.error }),
   };
 }
@@ -65,7 +55,10 @@ export function createDiagnosticsHandler(
         status: "ready",
         providerVersion,
         installRoot: runtime.paths.installRoot,
-        installRootSource: installRootSource(environment),
+        nodeExecutable: runtime.paths.executable,
+        nodeVersion: runtime.identity.nodeVersion,
+        serverSha256: runtime.identity.serverSha256,
+        agentSha256: runtime.identity.cliSha256,
         platform: runtime.identity.platform,
         ...(runtime.identity.appVersion === undefined
           ? {}
@@ -75,9 +68,6 @@ export function createDiagnosticsHandler(
           : { cliVersion: runtime.identity.cliVersion }),
         compatibility: runtime.compatibility,
         compatibilityReason: runtime.compatibilityReason,
-        ...(runtime.resolvedHost === undefined
-          ? {}
-          : { artifactMatch: runtime.resolvedHost.artifactMatch }),
         writableInstallRoot: runtime.writableInstallRoot,
         sessionsDirectory,
         ...(checked === undefined ? {} : { smoke: smokeResult(checked) }),

@@ -1,0 +1,102 @@
+{
+  "protocolVersion": 1,
+  "sessionId": "session-1",
+  "logEpoch": "epoch",
+  "seq": 0,
+  "revision": 0,
+  "control": {
+    "phase": "draft",
+    "sessionEnded": false,
+    "canStop": false,
+    "stopState": "idle",
+    "stopTargetKind": "unknown",
+    "activeWorks": [],
+    "lastError": null,
+    "apiRetry": null
+  },
+  "availability": {
+    "fork": {
+      "allowed": false,
+      "reasonCode": "forkTargetNotStable"
+    },
+    "compact": {
+      "allowed": false,
+      "reasonCode": "idleCannotCompact"
+    },
+    "switchModelConfig": {
+      "allowed": true
+    },
+    "setFollowupMode": {
+      "allowed": true
+    },
+    "queueEdit": {
+      "allowed": true
+    },
+    "sendQueuedNow": {
+      "allowed": false,
+      "reasonCode": "sendQueuedNowRequiresRunning"
+    },
+    "pauseGoal": {
+      "allowed": false,
+      "reasonCode": "noGoalToPause"
+    },
+    "resumeGoal": {
+      "allowed": false,
+      "reasonCode": "noGoalToResume"
+    }
+  },
+  "inputRouting": {
+    "mode": "startNow"
+  },
+  "meta": {
+    "title": "",
+    "titleSource": "default"
+  },
+  "config": {
+    "provider": "provider",
+    "model": "model",
+    "thought": "high",
+    "thoughtLevels": ["high"],
+    "followupMode": "queue",
+    "mode": "build",
+    "modelSelection": {
+      "providerId": "provider",
+      "modelId": "model",
+      "options": {
+        "reasoningLevel": "high"
+      }
+    },
+    "planEnabled": false
+  },
+  "modelTransition": null,
+  "usage": {
+    "contextWindow": null,
+    "cumulative": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0
+    }
+  },
+  "queue": {
+    "items": [],
+    "autoDrain": true
+  },
+  "pendingInteractions": [],
+  "pendingCommands": [],
+  "backgroundWorks": [],
+  "subagents": {
+    "revision": 0,
+    "childSessionIds": [],
+    "running": [],
+    "endedTotal": 0
+  },
+  "goal": null,
+  "plan": null,
+  "workspaceHookAdmission": null,
+  "rows": {
+    "window": [],
+    "totalCount": 0,
+    "firstRowId": null
+  }
+}

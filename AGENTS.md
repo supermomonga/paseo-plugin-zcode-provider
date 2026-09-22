@@ -2,7 +2,7 @@
 
 ## Project Structure
 
-This plugin connects Paseo's public Provider API to the official host included in the installed ZCode application.
+This plugin connects Paseo's public Provider API to the official stdio Services Server included in the integrated ZCode CLI distribution.
 
 - `index.server.ts` / `index.client.tsx`: Server and settings UI registration.
 - `server/`: Provider, sessions, and persistence. `discovery/` locates installations; `host/` and `protocol/` handle startup, communication, and validation.
@@ -22,7 +22,6 @@ Use Node.js **22.12.0 or later** and npm.
 - `npm run test:upstream -- /absolute/path/to/paseo`: Verify integration using the actual compiler and Provider adapter from a supported Paseo checkout. See `docs/development.md` for the target commit.
 - `npm run test:runtime -- /absolute/path/to/workspace`: Initialize the installed host and retrieve the model list. No prompts are sent.
 - `npm run test:e2e`: Opt-in real-model checks on macOS/Linux using `GLM_API_KEY` (Z.ai Coding Plan), isolated ZCode data, and the installed host. Also runs in eligible PR CI jobs; separate from `npm test`. See `docs/development.md` for coverage and secret requirements.
-- `npm run download:zcodecjs`: Download the latest official Linux x64 deb, extract `zcode.cjs`, and format it with the project's Prettier dependency before saving. Use `npm run download:zcodecjs -- --zcode-version 3.12.3` for a specific version. Requires Node.js and a `tar` command with xz support on macOS, Windows, or Linux; existing files are overwritten only after extraction and formatting succeed.
 
 There is no standalone development server. The plugin runs on the Paseo daemon; see `README.md` for installation instructions.
 
@@ -49,5 +48,11 @@ PRs should describe the problem, the resulting behavior, related issues, verific
 Identify the root cause and do not add ad hoc workarounds. Add backward compatibility logic only when explicitly instructed. Consult the existing `docs/adr/` for design decisions. Do not commit credentials, conversation content, generated artifacts, or the local `mise.local.toml`. Use `gh` for GitHub operations and investigations.
 
 - If `ghq` is installed on the local machine and the Paseo source repository has been cloned at `$(ghq root)/getpaseo/paseo`, it is recommended to consult that checkout when investigating Paseo's implementation.
-- Limit feature implementations to what is possible within a Paseo plugin. Do not propose implementation plans that require changes to Paseo itself.
-- When inspecting the implementation of `zcode.cjs`, refer to `libs/zcode/[version]/zcode.cjs`. If the required version has not been downloaded, agents may run `npm run download:zcodecjs -- --zcode-version [version]` to obtain it. These files are for source inspection and must not be committed.
+- Limit implementations and proposed solutions to this Paseo plugin. Do not modify Paseo or ZCode itself, or require a fork, source patch, or patched upstream runtime. Building official ZCode from unmodified source for verification is allowed.
+
+- Use `~/ghq/github.com/zai-org/ZCode` as the implementation reference. Record commit SHA and source paths; do not extract Electron/deb bundles for source investigation.
+- Current source baseline: `872ad960de7ec172591f7e1952f7849229f94521`. Verify vendored RPC/V4 source with `npm run check:zcode-source`. Keep `server/vendor/zcode` unformatted and retain its license/provenance.
+- Require `PASEO_ZCODE_RUNTIME` and ordinary Node.js 24.14.0+ via `PASEO_ZCODE_NODE`. CLI installation and updates belong to the user. Never fall back to Desktop/Electron.
+- `npm run test:stdio-runtime` uses the real runtime with isolated data and a local model fixture. Resume guarantees require both Paseo's saved `mode` and `settings.plan_mode`; failures of this supported contract block release. Keep source SHA, distribution hashes, runtime versions and actual OS coverage separate.
+- `npm run test:native-restore` separately checks resume without explicit settings. The pinned upstream fails this unsupported path; retain its nonzero exit and run it when evaluating runtime updates. It is not a required CI or release condition (ADR 14).
+- Persistence handles use version 3. Do not migrate old Paseo handles or introduce Plan restoration storage.

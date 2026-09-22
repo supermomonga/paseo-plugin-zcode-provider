@@ -14,6 +14,8 @@ links:
     kind: amendedby
   - target: 9
     kind: amendedby
+  - target: 13
+    kind: amendedby
 ---
 
 # ZCode公式hostを公開ProviderプラグインAPIへ直接接続する

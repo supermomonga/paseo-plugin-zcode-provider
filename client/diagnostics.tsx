@@ -32,14 +32,10 @@ function Value({
 }
 
 function Installation({ result, theme, compact }: SectionProps) {
-  const source =
-    result.installRootSource === "environment"
-      ? "PASEO_ZCODE_INSTALL"
-      : "Default location";
   return (
     <SettingsSection title="ZCode installation">
       <SettingsCard>
-        <SettingsRow label="Install root" hint={`Source: ${source}`}>
+        <SettingsRow label="Install root" hint="PASEO_ZCODE_RUNTIME">
           <Value color={theme.colors.foreground} compact={compact}>
             {result.installRoot}
           </Value>
@@ -49,12 +45,12 @@ function Installation({ result, theme, compact }: SectionProps) {
             {result.platform}
           </Value>
         </SettingsRow>
-        <SettingsRow label="ZCode app version">
+        <SettingsRow label="ZCode Server version">
           <Value color={theme.colors.foregroundMuted} compact={compact}>
             {result.appVersion ?? "Not reported"}
           </Value>
         </SettingsRow>
-        <SettingsRow label="Bundled CLI version">
+        <SettingsRow label="Agent version">
           <Value color={theme.colors.foregroundMuted} compact={compact}>
             {result.cliVersion ?? "Not reported"}
           </Value>
@@ -89,16 +85,19 @@ function Compatibility({ result, theme, compact }: SectionProps) {
             {result.compatibilityReason}
           </Value>
         </SettingsRow>
-        <SettingsRow
-          label="Verified release fingerprint"
-          hint="A difference is investigation evidence, not a startup restriction."
-        >
+        <SettingsRow label="Node.js" hint="PASEO_ZCODE_NODE">
           <Value color={theme.colors.foregroundMuted} compact={compact}>
-            {result.artifactMatch === undefined
-              ? "Not inspected"
-              : result.artifactMatch
-                ? "Matches"
-                : "Differs"}
+            {`${result.nodeExecutable} (${result.nodeVersion})`}
+          </Value>
+        </SettingsRow>
+        <SettingsRow label="Server SHA-256">
+          <Value color={theme.colors.foregroundMuted} compact={compact}>
+            {result.serverSha256}
+          </Value>
+        </SettingsRow>
+        <SettingsRow label="Agent SHA-256">
+          <Value color={theme.colors.foregroundMuted} compact={compact}>
+            {result.agentSha256}
           </Value>
         </SettingsRow>
         <SettingsRow label="Install root permissions">
@@ -124,7 +123,7 @@ function HostCheck({
       <SettingsCard>
         <SettingsRow
           label="Result"
-          hint="Runs the bundled version and doctor commands."
+          hint="Checks the configured Node.js and Server versions. No prompt is sent."
         >
           <Value
             color={
@@ -145,23 +144,6 @@ function HostCheck({
         </SettingsRow>
         {smoke === undefined ? null : (
           <>
-            <SettingsRow label="Doctor command">
-              <Value color={theme.colors.foregroundMuted} compact={compact}>
-                {smoke.doctorPassed ? "Passed" : "Failed"}
-              </Value>
-            </SettingsRow>
-            <SettingsRow
-              label="Authentication"
-              hint="This check does not verify credentials."
-            >
-              <Value color={theme.colors.foregroundMuted} compact={compact}>
-                {smoke.authentication === "present"
-                  ? "Detected"
-                  : smoke.authentication === "missing"
-                    ? "Missing"
-                    : "Not determined"}
-              </Value>
-            </SettingsRow>
             {smoke.error === undefined ? null : (
               <SettingsRow label="Error">
                 <Value color={theme.colors.statusDanger} compact={compact}>
@@ -173,7 +155,7 @@ function HostCheck({
         )}
       </SettingsCard>
       <SettingsAction
-        label="Bundled CLI"
+        label="stdio Server"
         actionLabel={busy ? "Checking…" : "Run host check"}
         disabled={busy}
         onPress={onRun}
