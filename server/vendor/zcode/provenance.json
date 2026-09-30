@@ -1,0 +1,381 @@
+{
+  "repository": "https://github.com/zai-org/ZCode",
+  "commit": "872ad960de7ec172591f7e1952f7849229f94521",
+  "entries": [
+    "packages/rpc/src/channelClient.ts",
+    "packages/rpc/src/channelServer.ts",
+    "packages/rpc/src/protocol.ts",
+    "packages/rpc/src/proxy-channel.ts",
+    "packages/shared/src/zcode-protocol-v4/apply.ts",
+    "packages/shared/src/zcode-protocol-v4/command.ts",
+    "packages/shared/src/zcode-protocol-v4/transport.ts",
+    "packages/shared/src/zcode-protocol-v4/wire.ts",
+    "packages/shared/src/zcode-protocol-v4/wire-assembler.ts"
+  ],
+  "modifications": [
+    "Resolve the private @zcode/model-option-map workspace import to its vendored relative path.",
+    "Select Visual Studio Code notice 9480271317925265e806a9a196aaa33410a962fa9d4d1e248a4a5187bc8c9df9 from THIRD-PARTY-NOTICES.md and add a scope explanation; sourceSha256 hashes the complete upstream file. LICENSE and NOTICE.md are unchanged."
+  ],
+  "files": {
+    "LICENSE": {
+      "sourceSha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
+      "vendoredSha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b"
+    },
+    "NOTICE.md": {
+      "sourceSha256": "cca8e323ad7f3b12167b58fba7d14faf18a2cdc4fa890818058872f6215912bf",
+      "vendoredSha256": "cca8e323ad7f3b12167b58fba7d14faf18a2cdc4fa890818058872f6215912bf"
+    },
+    "THIRD-PARTY-NOTICES.md": {
+      "sourceSha256": "05d366f61fe430c5a0c7ed6b27ac9bb6626591151331f2817cb9120649e4c67f",
+      "vendoredSha256": "bd07816c2c5caee244214cd296a94a2d94b98bcb876468998720f3b04648d225"
+    },
+    "packages/model-option-map/src/compiler.ts": {
+      "sourceSha256": "36f97b996d1bd5757eafcabd9660ff451e64a92d9fa632e8f7078719fe6fcb43",
+      "vendoredSha256": "36f97b996d1bd5757eafcabd9660ff451e64a92d9fa632e8f7078719fe6fcb43"
+    },
+    "packages/model-option-map/src/evaluator.ts": {
+      "sourceSha256": "522a3eaf968110c2caf79d9f2c4b19b9f71289e867789129af237ae841fe5ec7",
+      "vendoredSha256": "522a3eaf968110c2caf79d9f2c4b19b9f71289e867789129af237ae841fe5ec7"
+    },
+    "packages/model-option-map/src/index.ts": {
+      "sourceSha256": "e573a4696a4d6dae0ff4b281fe1f8975a2e395f6eaea76a2880158c81143ea33",
+      "vendoredSha256": "e573a4696a4d6dae0ff4b281fe1f8975a2e395f6eaea76a2880158c81143ea33"
+    },
+    "packages/model-option-map/src/merge-patch.ts": {
+      "sourceSha256": "31333e43e9f33d242addd7e3185ad5736312b2b79e17d3fbc7856df50df057ef",
+      "vendoredSha256": "31333e43e9f33d242addd7e3185ad5736312b2b79e17d3fbc7856df50df057ef"
+    },
+    "packages/model-option-map/src/option-maps.ts": {
+      "sourceSha256": "2bff6e281391b735cfc81b5e8ea016f56086a4088d0566da732b1acaf94b5547",
+      "vendoredSha256": "2bff6e281391b735cfc81b5e8ea016f56086a4088d0566da732b1acaf94b5547"
+    },
+    "packages/model-option-map/src/parser.ts": {
+      "sourceSha256": "4eeb09c63416b4b44069b24480026fb468553496206bf84ad44f6cb8d5686003",
+      "vendoredSha256": "4eeb09c63416b4b44069b24480026fb468553496206bf84ad44f6cb8d5686003"
+    },
+    "packages/model-option-map/src/tokenizer.ts": {
+      "sourceSha256": "8066cc35cb4062a7046beebc1b4e3c9e5f28f0ed64928a8f218b5429dcdcc042",
+      "vendoredSha256": "8066cc35cb4062a7046beebc1b4e3c9e5f28f0ed64928a8f218b5429dcdcc042"
+    },
+    "packages/model-option-map/src/types.ts": {
+      "sourceSha256": "6ff4a5db3e323eb887de390f8b0c6cc2af0a0cb052054be866a4e5876a1ca397",
+      "vendoredSha256": "6ff4a5db3e323eb887de390f8b0c6cc2af0a0cb052054be866a4e5876a1ca397"
+    },
+    "packages/rpc/src/buffer.ts": {
+      "sourceSha256": "6bc6a44e6abd088f72d57616d9556d78ce078b6f3813bf75402dde386781492c",
+      "vendoredSha256": "6bc6a44e6abd088f72d57616d9556d78ce078b6f3813bf75402dde386781492c"
+    },
+    "packages/rpc/src/channelClient.ts": {
+      "sourceSha256": "d2504929253ebb18f020e6f35e51a3741190558875d18a47192f9af78ca3f8ac",
+      "vendoredSha256": "d2504929253ebb18f020e6f35e51a3741190558875d18a47192f9af78ca3f8ac"
+    },
+    "packages/rpc/src/channelServer.ts": {
+      "sourceSha256": "b9c61bd3881fff11b38a93853c60fa5c2bc871bcbea5dad0e9be0a4674f6c9da",
+      "vendoredSha256": "b9c61bd3881fff11b38a93853c60fa5c2bc871bcbea5dad0e9be0a4674f6c9da"
+    },
+    "packages/rpc/src/channels.shared.ts": {
+      "sourceSha256": "e2d3ce17dfb23d53ea8fef6cd4dc87bef4558ff6e72b458e50fd456b0b2a6ae2",
+      "vendoredSha256": "e2d3ce17dfb23d53ea8fef6cd4dc87bef4558ff6e72b458e50fd456b0b2a6ae2"
+    },
+    "packages/rpc/src/channels.ts": {
+      "sourceSha256": "afaba1724055a3d2e6b8b379553569489b71ac6eb252f636ab91649657485209",
+      "vendoredSha256": "afaba1724055a3d2e6b8b379553569489b71ac6eb252f636ab91649657485209"
+    },
+    "packages/rpc/src/delayedChannel.ts": {
+      "sourceSha256": "e7607b7fe9f35c742db206df90852e2ccafb75abc088606cf1ddbae801574ecf",
+      "vendoredSha256": "e7607b7fe9f35c742db206df90852e2ccafb75abc088606cf1ddbae801574ecf"
+    },
+    "packages/rpc/src/foundation.ts": {
+      "sourceSha256": "b4874401965e7bad7e84245a2fc5960657a349b146f355ac7343562fa724da9f",
+      "vendoredSha256": "b4874401965e7bad7e84245a2fc5960657a349b146f355ac7343562fa724da9f"
+    },
+    "packages/rpc/src/protocol.ts": {
+      "sourceSha256": "aafc0c098c75fcba4519fad2ecbee7e025d5d8a27c15c87e5ccb4ca6ce554670",
+      "vendoredSha256": "aafc0c098c75fcba4519fad2ecbee7e025d5d8a27c15c87e5ccb4ca6ce554670"
+    },
+    "packages/rpc/src/proxy-channel.ts": {
+      "sourceSha256": "ec5b43e6a3a622a88a8aaa6af9cb37dbfe517932ee7f4a337019ec138bb2d513",
+      "vendoredSha256": "ec5b43e6a3a622a88a8aaa6af9cb37dbfe517932ee7f4a337019ec138bb2d513"
+    },
+    "packages/rpc/src/serialization.ts": {
+      "sourceSha256": "e949418e1cd17cc863c147fc8d1ff15237e1b5f0cb8e3344fd2a9ccfae9d54e7",
+      "vendoredSha256": "e949418e1cd17cc863c147fc8d1ff15237e1b5f0cb8e3344fd2a9ccfae9d54e7"
+    },
+    "packages/shared/src/account-provider-state.ts": {
+      "sourceSha256": "c81ac7579c053458c7fef4cd72b287be016ac43e30e2e107a7e29c22bf67a6ff",
+      "vendoredSha256": "c81ac7579c053458c7fef4cd72b287be016ac43e30e2e107a7e29c22bf67a6ff"
+    },
+    "packages/shared/src/background-bash-output.ts": {
+      "sourceSha256": "a3114a91e517f2a9b09fcb2815dd84a764c00d56bf735ad5e23a9c18a27ab5eb",
+      "vendoredSha256": "a3114a91e517f2a9b09fcb2815dd84a764c00d56bf735ad5e23a9c18a27ab5eb"
+    },
+    "packages/shared/src/background-task-controls.ts": {
+      "sourceSha256": "8f6f3ab37561a57184009d85ecf36ae3663bd4ba87c2b56782329b4f7b2b3295",
+      "vendoredSha256": "8f6f3ab37561a57184009d85ecf36ae3663bd4ba87c2b56782329b4f7b2b3295"
+    },
+    "packages/shared/src/bash-output-display.ts": {
+      "sourceSha256": "3dc88eb1f016259e220be9f02f07c344de51b4fed081a9cd59a40a5cd525cc0a",
+      "vendoredSha256": "3dc88eb1f016259e220be9f02f07c344de51b4fed081a9cd59a40a5cd525cc0a"
+    },
+    "packages/shared/src/browser-use/backend.ts": {
+      "sourceSha256": "8e205855dbef21727292730172dfda34deee0b8bdcd2937534f7aeb8b3cbaba7",
+      "vendoredSha256": "8e205855dbef21727292730172dfda34deee0b8bdcd2937534f7aeb8b3cbaba7"
+    },
+    "packages/shared/src/browser-use/command-metadata.ts": {
+      "sourceSha256": "37eb04347f44f01d1315811be00e131880eb6d1685399f68aab29239bbb7594f",
+      "vendoredSha256": "37eb04347f44f01d1315811be00e131880eb6d1685399f68aab29239bbb7594f"
+    },
+    "packages/shared/src/browser-use/commands.ts": {
+      "sourceSha256": "b832450b6c7c8510e266fc5d852596c88f8860746f62507760238429131484bf",
+      "vendoredSha256": "b832450b6c7c8510e266fc5d852596c88f8860746f62507760238429131484bf"
+    },
+    "packages/shared/src/browser-use/result.ts": {
+      "sourceSha256": "b1fd3bda2e8787c12ab6090c923dd8ac67b8f42b00d84d28e4f5db1e54374599",
+      "vendoredSha256": "b1fd3bda2e8787c12ab6090c923dd8ac67b8f42b00d84d28e4f5db1e54374599"
+    },
+    "packages/shared/src/browser-use/snapshot.ts": {
+      "sourceSha256": "b11568e155d1aabf9771d4a9e9df98dbd692add80b3adb4d193fb92fd1568168",
+      "vendoredSha256": "b11568e155d1aabf9771d4a9e9df98dbd692add80b3adb4d193fb92fd1568168"
+    },
+    "packages/shared/src/config-schema.ts": {
+      "sourceSha256": "6abe56703524faac950d25b8d77d904facd36d059e11ac7be83d282e2c9301d5",
+      "vendoredSha256": "6abe56703524faac950d25b8d77d904facd36d059e11ac7be83d282e2c9301d5"
+    },
+    "packages/shared/src/cuaAccessibilitySettings.ts": {
+      "sourceSha256": "55696dfbd8436fb862da644ee3fddcc6cc39146b12655fbaebc9c640e4eef0b4",
+      "vendoredSha256": "55696dfbd8436fb862da644ee3fddcc6cc39146b12655fbaebc9c640e4eef0b4"
+    },
+    "packages/shared/src/database-startup.ts": {
+      "sourceSha256": "ac7fb12cb5e902bfa5a733a1c989e7e094e686294236186dae62524a32004def",
+      "vendoredSha256": "ac7fb12cb5e902bfa5a733a1c989e7e094e686294236186dae62524a32004def"
+    },
+    "packages/shared/src/env.ts": {
+      "sourceSha256": "69c7f96325027d874be61367da3e80f92e751508070275305209ad739da65d2c",
+      "vendoredSha256": "69c7f96325027d874be61367da3e80f92e751508070275305209ad739da65d2c"
+    },
+    "packages/shared/src/execution-output-preview.ts": {
+      "sourceSha256": "49baa10419388ea695d87458f2c0fa614bdd7cfeb57543cc7f0437403b753282",
+      "vendoredSha256": "49baa10419388ea695d87458f2c0fa614bdd7cfeb57543cc7f0437403b753282"
+    },
+    "packages/shared/src/localTtft.ts": {
+      "sourceSha256": "b6f6963535fddb455bf6adcf1c82e08dd609fb2f8bf7b6398c16cd164b3b3597",
+      "vendoredSha256": "b6f6963535fddb455bf6adcf1c82e08dd609fb2f8bf7b6398c16cd164b3b3597"
+    },
+    "packages/shared/src/model-config.ts": {
+      "sourceSha256": "5d8f79c5add78054fad680493e530fa8ed01af99ffb907875a216cc462e6c0f0",
+      "vendoredSha256": "2dc054de2f412d9f7fa34877302d3a7c9e4fdce0725da33b61ef6fb837cbed00"
+    },
+    "packages/shared/src/model-execution.ts": {
+      "sourceSha256": "53f00f3b60bf00507c9ca5707da65537f343d9a4a62b5c85fe1e0a53aa5401e1",
+      "vendoredSha256": "53f00f3b60bf00507c9ca5707da65537f343d9a4a62b5c85fe1e0a53aa5401e1"
+    },
+    "packages/shared/src/model-provider-family.ts": {
+      "sourceSha256": "de6921dc0fce1e776a62010bfcf5488145ea4f4aa86cced5207cf6785f726e71",
+      "vendoredSha256": "de6921dc0fce1e776a62010bfcf5488145ea4f4aa86cced5207cf6785f726e71"
+    },
+    "packages/shared/src/model-provider-types.ts": {
+      "sourceSha256": "7136b3e33dc7274e747e14f6c66cb4acf908dc6f2d8cf2b28adfc569bee218e8",
+      "vendoredSha256": "7136b3e33dc7274e747e14f6c66cb4acf908dc6f2d8cf2b28adfc569bee218e8"
+    },
+    "packages/shared/src/model-selection.ts": {
+      "sourceSha256": "653a4671723d4a3302e84ba13f29d4d55a17e5e8082b44d54ba1f9087dbd3e44",
+      "vendoredSha256": "653a4671723d4a3302e84ba13f29d4d55a17e5e8082b44d54ba1f9087dbd3e44"
+    },
+    "packages/shared/src/oauth.ts": {
+      "sourceSha256": "426441fab7296a7a110523b455dbb3b8b86f291da5b6e3e0127058f63e26841b",
+      "vendoredSha256": "426441fab7296a7a110523b455dbb3b8b86f291da5b6e3e0127058f63e26841b"
+    },
+    "packages/shared/src/official-mcp-auth.ts": {
+      "sourceSha256": "b54f40f504fd2ba89e34953d93592d66712cff1e16ea5d7cb8c04f5bf6f94ae8",
+      "vendoredSha256": "b54f40f504fd2ba89e34953d93592d66712cff1e16ea5d7cb8c04f5bf6f94ae8"
+    },
+    "packages/shared/src/official-mcp-tool-error.ts": {
+      "sourceSha256": "74f966961b89565e035b50b93523cd643c9fe4f61cca4fab70e8c8759ef3fcc8",
+      "vendoredSha256": "74f966961b89565e035b50b93523cd643c9fe4f61cca4fab70e8c8759ef3fcc8"
+    },
+    "packages/shared/src/process-diagnostic.ts": {
+      "sourceSha256": "e6889f1d4d6c9829019dc07053872d15ae0af2a1d25aeb97d143dc857fc13c29",
+      "vendoredSha256": "e6889f1d4d6c9829019dc07053872d15ae0af2a1d25aeb97d143dc857fc13c29"
+    },
+    "packages/shared/src/protocol.ts": {
+      "sourceSha256": "8ca196294184cb0f41961bbc57360fbdccfe4ae41b95987286a47516411a6f9e",
+      "vendoredSha256": "8ca196294184cb0f41961bbc57360fbdccfe4ae41b95987286a47516411a6f9e"
+    },
+    "packages/shared/src/provider-family-connection-selection.ts": {
+      "sourceSha256": "6476dca87ec40391ba3545dae56c920f6d4785e08e28d49528458ebd46ad4600",
+      "vendoredSha256": "6476dca87ec40391ba3545dae56c920f6d4785e08e28d49528458ebd46ad4600"
+    },
+    "packages/shared/src/remoteAssetInstallMode.ts": {
+      "sourceSha256": "918dcc8a86921af3185e5af96d2b9a189899e58a0e86fb20de44c47934f6ff8c",
+      "vendoredSha256": "918dcc8a86921af3185e5af96d2b9a189899e58a0e86fb20de44c47934f6ff8c"
+    },
+    "packages/shared/src/remoteResourcePackages.ts": {
+      "sourceSha256": "8041390aafed41e42d272215b4c2485d027c00f9812df8307bf40d906b526e1f",
+      "vendoredSha256": "8041390aafed41e42d272215b4c2485d027c00f9812df8307bf40d906b526e1f"
+    },
+    "packages/shared/src/runtimeEnv.ts": {
+      "sourceSha256": "3e74414915d475ebf90ee68d2d2b25f0470aeb8692277e9555ed60d596a0f650",
+      "vendoredSha256": "3e74414915d475ebf90ee68d2d2b25f0470aeb8692277e9555ed60d596a0f650"
+    },
+    "packages/shared/src/usage-quota.ts": {
+      "sourceSha256": "d1d24da014972689fedbcb22fd97151ab46ed5462b60f7998e880546eba3fd5d",
+      "vendoredSha256": "d1d24da014972689fedbcb22fd97151ab46ed5462b60f7998e880546eba3fd5d"
+    },
+    "packages/shared/src/usage-stats.ts": {
+      "sourceSha256": "82851d43984eec4b589a6a1c36eb3fe4ee1127fde6b77ad0bbfb3b4ebaaa178b",
+      "vendoredSha256": "82851d43984eec4b589a6a1c36eb3fe4ee1127fde6b77ad0bbfb3b4ebaaa178b"
+    },
+    "packages/shared/src/validationAppSettings.ts": {
+      "sourceSha256": "5f5cb7f634e9b21063e27dfdd4b17995140ec26214794ff09c25b4241ac3bbdb",
+      "vendoredSha256": "5f5cb7f634e9b21063e27dfdd4b17995140ec26214794ff09c25b4241ac3bbdb"
+    },
+    "packages/shared/src/workspacePurpose.ts": {
+      "sourceSha256": "1673bb8e44793108bbf2165b23f0a7c5961bbebe892484db2d217cc525563050",
+      "vendoredSha256": "1673bb8e44793108bbf2165b23f0a7c5961bbebe892484db2d217cc525563050"
+    },
+    "packages/shared/src/wslUserValidation.ts": {
+      "sourceSha256": "96c18113f6273cc80bae560e04353cf3e991f4607ab6eb29d088954a8eec167c",
+      "vendoredSha256": "96c18113f6273cc80bae560e04353cf3e991f4607ab6eb29d088954a8eec167c"
+    },
+    "packages/shared/src/zcode-media-policy.ts": {
+      "sourceSha256": "47ccb08304cf2a24f4795dc6ded2ef5712d1ee1bad5c8bffb4d6081dc86dcde1",
+      "vendoredSha256": "47ccb08304cf2a24f4795dc6ded2ef5712d1ee1bad5c8bffb4d6081dc86dcde1"
+    },
+    "packages/shared/src/zcode-protocol-legacy-types.ts": {
+      "sourceSha256": "b8b8d025f8def7c5139146467993d89479d7d120abb98dc4eb7bba958e8a5e2d",
+      "vendoredSha256": "b8b8d025f8def7c5139146467993d89479d7d120abb98dc4eb7bba958e8a5e2d"
+    },
+    "packages/shared/src/zcode-protocol-v4/apply.ts": {
+      "sourceSha256": "9704d61c1380bccdacb75e4a53f912af40e0ae53a2e82e1e158574594842f04c",
+      "vendoredSha256": "9704d61c1380bccdacb75e4a53f912af40e0ae53a2e82e1e158574594842f04c"
+    },
+    "packages/shared/src/zcode-protocol-v4/attachment-ref.ts": {
+      "sourceSha256": "74caa91a266cc2a50a35f6c1a9bd14659918be878e8f92724887baf562ddd11c",
+      "vendoredSha256": "74caa91a266cc2a50a35f6c1a9bd14659918be878e8f92724887baf562ddd11c"
+    },
+    "packages/shared/src/zcode-protocol-v4/command.ts": {
+      "sourceSha256": "cf7e18505766141f05b5484788a9491a641d54d1a6639916e6abb50bcb28b2e7",
+      "vendoredSha256": "cf7e18505766141f05b5484788a9491a641d54d1a6639916e6abb50bcb28b2e7"
+    },
+    "packages/shared/src/zcode-protocol-v4/core.ts": {
+      "sourceSha256": "97750a7bab0a7580c1d27c8e0155981786fdbfa07373d46c77829f25eb407a39",
+      "vendoredSha256": "97750a7bab0a7580c1d27c8e0155981786fdbfa07373d46c77829f25eb407a39"
+    },
+    "packages/shared/src/zcode-protocol-v4/create-workflow-display.ts": {
+      "sourceSha256": "5e7cabfbb132d4755dbcfe0efd8d2ca8b839142660984095731dd74107ba7263",
+      "vendoredSha256": "5e7cabfbb132d4755dbcfe0efd8d2ca8b839142660984095731dd74107ba7263"
+    },
+    "packages/shared/src/zcode-protocol-v4/cuaPermission.ts": {
+      "sourceSha256": "b9e3f0aaad5b356f2add8461fe4b3b1813fc3ea7991499df593606429a062d99",
+      "vendoredSha256": "b9e3f0aaad5b356f2add8461fe4b3b1813fc3ea7991499df593606429a062d99"
+    },
+    "packages/shared/src/zcode-protocol-v4/delta.ts": {
+      "sourceSha256": "b06e4e4b3277a4ba2aad50b7a4a68a58653b07e3158cf1bb3e763215d8031ca1",
+      "vendoredSha256": "b06e4e4b3277a4ba2aad50b7a4a68a58653b07e3158cf1bb3e763215d8031ca1"
+    },
+    "packages/shared/src/zcode-protocol-v4/input-intent.ts": {
+      "sourceSha256": "b316dfb1bf89eebce5a69254c4245dc415a482382533547d31a7ef33afbaefa7",
+      "vendoredSha256": "b316dfb1bf89eebce5a69254c4245dc415a482382533547d31a7ef33afbaefa7"
+    },
+    "packages/shared/src/zcode-protocol-v4/rows.ts": {
+      "sourceSha256": "e7b7710ce778c2ff224b5e0ad81e412dd646b72b7fa48653a9d6d2344e9dac3e",
+      "vendoredSha256": "e7b7710ce778c2ff224b5e0ad81e412dd646b72b7fa48653a9d6d2344e9dac3e"
+    },
+    "packages/shared/src/zcode-protocol-v4/session-config.ts": {
+      "sourceSha256": "9a261de2b2c5bfc7d6cf8dd10598a9dc681bc54dbe1b46e753cf9909fd9b51a0",
+      "vendoredSha256": "9a261de2b2c5bfc7d6cf8dd10598a9dc681bc54dbe1b46e753cf9909fd9b51a0"
+    },
+    "packages/shared/src/zcode-protocol-v4/sessions-index-workflow-activity.ts": {
+      "sourceSha256": "2602d89235e78cbd145c8af1b0a06a59e97f0986242c28b94c7a6885d6aeadb4",
+      "vendoredSha256": "2602d89235e78cbd145c8af1b0a06a59e97f0986242c28b94c7a6885d6aeadb4"
+    },
+    "packages/shared/src/zcode-protocol-v4/sessions-index.ts": {
+      "sourceSha256": "494b2007dd8fc3c1f35098bc5778a8fa3d2f66d9183be340b3e21a5c59a86aa7",
+      "vendoredSha256": "494b2007dd8fc3c1f35098bc5778a8fa3d2f66d9183be340b3e21a5c59a86aa7"
+    },
+    "packages/shared/src/zcode-protocol-v4/shared-context-import.ts": {
+      "sourceSha256": "fcd422a4cb073af2ed2d4e74862e8360f14a7a94f58a736d7a3e09110f88f5de",
+      "vendoredSha256": "fcd422a4cb073af2ed2d4e74862e8360f14a7a94f58a736d7a3e09110f88f5de"
+    },
+    "packages/shared/src/zcode-protocol-v4/shared-context-ref.ts": {
+      "sourceSha256": "660f6beb529f853660994f22a56149761cb7c775abb3ea047b3fdd5518294c76",
+      "vendoredSha256": "660f6beb529f853660994f22a56149761cb7c775abb3ea047b3fdd5518294c76"
+    },
+    "packages/shared/src/zcode-protocol-v4/snapshot.ts": {
+      "sourceSha256": "6ab497d6b75eece5eadbfd60f43c721010d4b1a0ab74bcdce6ced5512226cf82",
+      "vendoredSha256": "6ab497d6b75eece5eadbfd60f43c721010d4b1a0ab74bcdce6ced5512226cf82"
+    },
+    "packages/shared/src/zcode-protocol-v4/submission.ts": {
+      "sourceSha256": "c27c61b36bb49b0c941a6502a788fe56d32730c3fd134c1acbc6ba28f5756e09",
+      "vendoredSha256": "c27c61b36bb49b0c941a6502a788fe56d32730c3fd134c1acbc6ba28f5756e09"
+    },
+    "packages/shared/src/zcode-protocol-v4/toolDisplay.ts": {
+      "sourceSha256": "010ec74ec908efe1c9ca276c4e3c883a8926747fda87e25c41bd393fbc7d705e",
+      "vendoredSha256": "010ec74ec908efe1c9ca276c4e3c883a8926747fda87e25c41bd393fbc7d705e"
+    },
+    "packages/shared/src/zcode-protocol-v4/transport.ts": {
+      "sourceSha256": "8963132de0cc9d77a927ced2651c236322b25b83a1ccfd0ed510e16ceed85630",
+      "vendoredSha256": "8963132de0cc9d77a927ced2651c236322b25b83a1ccfd0ed510e16ceed85630"
+    },
+    "packages/shared/src/zcode-protocol-v4/wire-assembler.ts": {
+      "sourceSha256": "c939e99f0ec4773efec91f3c9f9b1071a6a29326fa2e829f35bab523d529945a",
+      "vendoredSha256": "c939e99f0ec4773efec91f3c9f9b1071a6a29326fa2e829f35bab523d529945a"
+    },
+    "packages/shared/src/zcode-protocol-v4/wire-binary.ts": {
+      "sourceSha256": "28f287c5764d3d7afa56b6291e3cc67f4234ccb5749f365a66cc7260ddcfbfee",
+      "vendoredSha256": "28f287c5764d3d7afa56b6291e3cc67f4234ccb5749f365a66cc7260ddcfbfee"
+    },
+    "packages/shared/src/zcode-protocol-v4/wire-codec.ts": {
+      "sourceSha256": "ac2494a3acc795c809c94ee9393f50271a9c2a0fd33813459e5ab93842ceef75",
+      "vendoredSha256": "ac2494a3acc795c809c94ee9393f50271a9c2a0fd33813459e5ab93842ceef75"
+    },
+    "packages/shared/src/zcode-protocol-v4/wire.ts": {
+      "sourceSha256": "b7dbb4556fdf10a3e9cc1dfe81ffe5a74d7dc05904db71efe18ecc7e96ee489a",
+      "vendoredSha256": "b7dbb4556fdf10a3e9cc1dfe81ffe5a74d7dc05904db71efe18ecc7e96ee489a"
+    },
+    "packages/shared/src/zcode-protocol-v4/workflow-artifacts.ts": {
+      "sourceSha256": "97496947c0e043fcc3e5ca62acad5f75481f239b7c295100c57bc714b8fa270d",
+      "vendoredSha256": "97496947c0e043fcc3e5ca62acad5f75481f239b7c295100c57bc714b8fa270d"
+    },
+    "packages/shared/src/zcode-protocol-v4/workflow-observation-display.ts": {
+      "sourceSha256": "4b21c1e4cbd10ca616c6a590cf1a44dab773a4458a2ec3e8bafee43dbc3466f5",
+      "vendoredSha256": "4b21c1e4cbd10ca616c6a590cf1a44dab773a4458a2ec3e8bafee43dbc3466f5"
+    },
+    "packages/shared/src/zcode-protocol-v4/workflow-row-meta.ts": {
+      "sourceSha256": "2256ef46ccebcad46624040e5a683d8e837343ad9871779a3cba3f3427794c69",
+      "vendoredSha256": "2256ef46ccebcad46624040e5a683d8e837343ad9871779a3cba3f3427794c69"
+    },
+    "packages/shared/src/zcode-protocol-v4/workflow-run-settings-command.ts": {
+      "sourceSha256": "c6cd63608ae724e0d8dc216d306dac877ffd0074fd8d14414e82c991249f8285",
+      "vendoredSha256": "c6cd63608ae724e0d8dc216d306dac877ffd0074fd8d14414e82c991249f8285"
+    },
+    "packages/shared/src/zcode-protocol-v4/workflow-runs.ts": {
+      "sourceSha256": "db9aa7637c085937a625c57080c3c233d966f7da9db22c6064f0bb19b5a90229",
+      "vendoredSha256": "db9aa7637c085937a625c57080c3c233d966f7da9db22c6064f0bb19b5a90229"
+    },
+    "packages/shared/src/zcode-protocol-v4/workspace-config.ts": {
+      "sourceSha256": "18052d64bbdfe4d575f8997b0ed7b5dbefb4d6a73bdd2483f876ff5b67d200a7",
+      "vendoredSha256": "18052d64bbdfe4d575f8997b0ed7b5dbefb4d6a73bdd2483f876ff5b67d200a7"
+    },
+    "packages/shared/src/zcode-protocol-v4/workspace-hook-review.ts": {
+      "sourceSha256": "ff8b264a361862e5575145e635c0fa108a2ac7d82091764713e0a40b17a36ce7",
+      "vendoredSha256": "ff8b264a361862e5575145e635c0fa108a2ac7d82091764713e0a40b17a36ce7"
+    },
+    "packages/shared/src/zcode-protocol/index.ts": {
+      "sourceSha256": "cfab0a96e9044f5a8dc23d6be9c5d20b87fd867abac4e95168288f6727a9f154",
+      "vendoredSha256": "cfab0a96e9044f5a8dc23d6be9c5d20b87fd867abac4e95168288f6727a9f154"
+    },
+    "packages/shared/src/zcode-task-mode-schema.ts": {
+      "sourceSha256": "2fb40d1261b8421a4bcd757806f80f2898a934457a9c30a4224987bb13b39baa",
+      "vendoredSha256": "2fb40d1261b8421a4bcd757806f80f2898a934457a9c30a4224987bb13b39baa"
+    },
+    "packages/shared/src/zcode-task-types-core.ts": {
+      "sourceSha256": "e75cc0a5f7e6fcbe37acdab259fbc5a0448adcf9d69a5b1f3683b72eee5c75f0",
+      "vendoredSha256": "e75cc0a5f7e6fcbe37acdab259fbc5a0448adcf9d69a5b1f3683b72eee5c75f0"
+    },
+    "packages/shared/src/zcodeEndpoint.ts": {
+      "sourceSha256": "66166e1facae61f752b6d6c7a161b0712958e68144e769714a04983256091841",
+      "vendoredSha256": "66166e1facae61f752b6d6c7a161b0712958e68144e769714a04983256091841"
+    }
+  }
+}

@@ -1,45 +1,18 @@
 import type { ProviderTimelineItem } from "@getpaseo/plugin/server/provider";
 import type { NativeTimelineItem } from "./session-types.js";
+import { AdapterError } from "./errors.js";
 
+/** V4 rows already carry complete text and stable IDs, including on resume. */
 export class TimelineSnapshots {
-  boundary(): void {
-    this.lastTextKey = undefined;
-  }
-  private sequence = 0;
-  private readonly text = new Map<string, string>();
-  private lastTextKey?: string;
-  private lastTextId?: string;
-
   replay(item: NativeTimelineItem): ProviderTimelineItem {
-    return { ...item, id: `history:${this.sequence++}` };
+    if (!item.id)
+      throw new AdapterError(
+        "NATIVE_PROTOCOL_ERROR",
+        "ZCode timeline item has no stable row ID",
+      );
+    return { ...item, id: item.id };
   }
-
-  live(item: NativeTimelineItem, turnId?: string): ProviderTimelineItem {
-    if (item.type === "assistant_message" || item.type === "reasoning") {
-      const key = JSON.stringify([
-        turnId,
-        item.type,
-        item.type === "assistant_message" ? item.messageId : undefined,
-      ]);
-      if (key !== this.lastTextKey) {
-        this.lastTextId = `live:${this.sequence++}`;
-        this.lastTextKey = key;
-      }
-      const id = this.lastTextId!;
-      const text = (this.text.get(id) ?? "") + item.text;
-      this.text.set(id, text);
-      return { ...item, id, text };
-    }
-    // Tool boundaries delimit text without native message IDs; todo updates do not.
-    if (item.type !== "todo") this.lastTextKey = undefined;
-    return {
-      ...item,
-      id:
-        item.type === "tool_call"
-          ? `tool:${item.callId}`
-          : item.type === "todo"
-            ? "todos"
-            : `live:${this.sequence++}`,
-    };
+  live(item: NativeTimelineItem, _turnId?: string): ProviderTimelineItem {
+    return this.replay(item);
   }
 }

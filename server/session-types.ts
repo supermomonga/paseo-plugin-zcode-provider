@@ -7,21 +7,20 @@ import type {
 } from "@getpaseo/plugin/server/provider";
 
 export type NativePromptInput = string | ProviderContent[];
-type WithoutIdentity<T> = T extends ProviderTimelineItem
-  ? Omit<T, "id" | "revertToken">
-  : never;
-export type NativeTimelineItem = WithoutIdentity<ProviderTimelineItem>;
+export type NativeTimelineItem = ProviderTimelineItem;
+export interface NativeTimelineEntry {
+  item: NativeTimelineItem;
+  timestamp?: string;
+}
 
-// Native text fragments are assembled into complete ProviderTimelineItem snapshots at the connection boundary.
 export type NativeSessionEvent =
-  | { type: "timeline_boundary" }
   | {
       type: "prompt_accepted";
       clientMessageId: string;
       turnId: string;
       delivery: "turn" | "steer";
     }
-  | { type: "timeline"; item: NativeTimelineItem; turnId?: string }
+  | ({ type: "timeline"; turnId?: string } & NativeTimelineEntry)
   | { type: "usage_updated"; usage: ProviderUsage; turnId?: string }
   | {
       type: "turn_started" | "turn_completed" | "turn_canceled";

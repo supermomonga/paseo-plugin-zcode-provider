@@ -5,7 +5,7 @@ import {
   ModelSelectionViewSchema,
   type ModelSelection,
   type ModelSelectionView,
-} from "./protocol/v1/host-schemas.js";
+} from "./host/schemas.js";
 
 export async function readModelSelection(
   bridge: HostBridge,

@@ -43,24 +43,25 @@ const operations = new Set([
   "resumeSession",
   "listSessions",
   "readSession",
-  "readSessionMessages",
-  "readSessionEvents",
-  "sendPrompt",
   "closeSession",
-  "setModel",
-  "setThoughtLevel",
-  "setMode",
-  "getTaskTokenUsage",
-  "respondProviderRuntimeHeaders",
   "disposeWorkspace",
   "cancelGeneration",
   "respondStructuredInput",
   "respondPermission",
   "getEntitlementSnapshot",
   "getCodingPlanResetStatus",
-  "__call",
-  "__subscribe",
-  "__unsubscribe",
+  "helloConversationV4",
+  "initializeConversationV4",
+  "syncAppRuntimePreferences",
+  "sendConversationCommandV4",
+  "subscribeConversationV4",
+  "unsubscribeConversationV4",
+  "resyncConversationV4",
+  "conversationRowsRangeV4",
+  "attachmentBeginV4",
+  "attachmentChunkV4",
+  "attachmentCommitV4",
+  "attachmentAbortV4",
   "event",
   "catalog",
   "session.create",
@@ -123,9 +124,8 @@ export interface RuntimeDiagnostic {
   readonly stage?: (typeof stages)[number];
   readonly operation?: string;
   readonly check?: (typeof checks)[number];
-  readonly artifactMatch?: boolean;
-  readonly hostIndexSha256?: string;
-  readonly hostRpcModuleSha256?: string;
+  readonly serverSha256?: string;
+  readonly cliSha256?: string;
   readonly nativeCode?: number;
   readonly exitCode?: number;
   readonly validation?: readonly { path: string; code: string }[];
@@ -138,9 +138,8 @@ export function runtimeDiagnostic(
     appVersion: runtime.identity.appVersion,
     cliVersion: runtime.identity.cliVersion,
     platform: runtime.identity.platform,
-    artifactMatch: runtime.resolvedHost?.artifactMatch,
-    hostIndexSha256: runtime.resolvedHost?.hostIndexSha256,
-    hostRpcModuleSha256: runtime.resolvedHost?.hostRpcModuleSha256,
+    serverSha256: runtime.identity.serverSha256,
+    cliSha256: runtime.identity.cliSha256,
   };
 }
 
@@ -199,9 +198,7 @@ export function formatDiagnostic(error: unknown): string {
       result.check = context.check;
     if (context.operation && operations.has(context.operation))
       result.operation = context.operation;
-    if (typeof context.artifactMatch === "boolean")
-      result.artifactMatch = context.artifactMatch;
-    for (const key of ["hostIndexSha256", "hostRpcModuleSha256"] as const) {
+    for (const key of ["serverSha256", "cliSha256"] as const) {
       if (/^[a-f0-9]{64}$/u.test(context[key] ?? ""))
         result[key] = context[key];
     }

@@ -1,4 +1,3 @@
-import { snapshot } from "../test/fake-host.js";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,23 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   catalogModels,
-  catalogThinkingOptions,
   requireMode,
   decodeModel,
   encodeModel,
-  historyTimeline,
   mapMcpServers,
   mapPrompt,
-  mapQuestionRequest,
-  permissionActions,
   planMarkdown,
-  questionContent,
 } from "./mapping.js";
-import type {
-  PermissionRequest,
-  SessionSettings,
-  UserInputRequest,
-} from "./protocol/v1/host-schemas.js";
+import type { SessionSettings } from "./host/schemas.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -111,78 +101,6 @@ describe("ZCode catalog mapping", () => {
     value.model.available.pop();
     value.mode.current = "future";
     expect(() => requireMode(value.mode.current)).toThrow(/unknown mode/u);
-  });
-
-  it("rejects an enabled thought-level catalog without a valid default", () => {
-    const value = settings();
-    value.thoughtLevel.current = undefined;
-    value.thoughtLevel.defaultLevel = "future";
-    expect(() => catalogThinkingOptions(value)).toThrow(
-      /default thinking option/u,
-    );
-  });
-});
-
-describe("ZCode persisted history", () => {
-  it("maps content in order and ignores only known host bookkeeping parts", () => {
-    const timeline = historyTimeline({
-      session: {
-        sessionId: "session-1",
-        status: "idle",
-        workspace: { workspacePath: "/workspace" },
-      },
-      settings: settings(),
-      messages: [
-        {
-          info: { messageId: "assistant-meta", role: "assistant" },
-          parts: [{ type: "timeline", timelineType: "session_started" }],
-        },
-        {
-          info: { messageId: "user-1", role: "user" },
-          parts: [{ type: "text", text: "question" }],
-        },
-        {
-          info: { messageId: "assistant-1", role: "assistant" },
-          parts: [
-            { type: "step-start" },
-            { type: "reasoning", text: "thinking" },
-            { type: "text", text: "answer" },
-            { type: "step-finish", reason: "stop" },
-          ],
-        },
-      ],
-      runtime: {},
-      todos: [],
-      slashCommands: [],
-    });
-    expect(timeline).toEqual([
-      { type: "user_message", text: "question", messageId: "user-1" },
-      { type: "reasoning", text: "thinking" },
-      { type: "assistant_message", text: "answer", messageId: "assistant-1" },
-      { type: "todo", items: [] },
-    ]);
-  });
-
-  it("still fails closed for unknown persisted content", () => {
-    const value = {
-      session: {
-        sessionId: "session-1",
-        status: "idle",
-        workspace: { workspacePath: "/workspace" },
-      },
-      settings: settings(),
-      messages: [
-        {
-          info: { messageId: "assistant-1", role: "assistant" as const },
-          parts: [{ type: "future-part" }],
-        },
-      ],
-      runtime: {},
-      slashCommands: [],
-    };
-    expect(() => historyTimeline(value)).toThrow(
-      /Unsupported persisted message part/u,
-    );
   });
 });
 
@@ -278,112 +196,6 @@ describe("ZCode prompt and MCP mapping", () => {
       }),
     ).toThrow(/alwaysLoad/u);
   });
-});
-
-describe("ZCode interactions", () => {
-  it("round-trips displayed question labels to native values", () => {
-    const request = {
-      requestId: "q1",
-      sessionId: "s1",
-      prompt: "Choose",
-      questions: [
-        {
-          question: "Which mode?",
-          header: "Mode",
-          options: [
-            { value: "fast", label: "Fast" },
-            { value: "safe", label: "Safe" },
-          ],
-        },
-        {
-          question: "Features?",
-          header: "Features",
-          multiSelect: true,
-          options: [
-            { value: "tools", label: "Tools" },
-            { value: "todos", label: "Todos" },
-          ],
-        },
-      ],
-    } satisfies UserInputRequest;
-    const mapped = mapQuestionRequest(request, "question:q1");
-    expect(mapped.request.kind).toBe("question");
-    expect(
-      questionContent(mapped.fields, {
-        Mode: "Fast",
-        Features: "Tools, Todos",
-      }),
-    ).toEqual({
-      answer_0: "fast",
-      answer_1: ["tools", "todos"],
-      answer: "fast",
-      answers: {
-        "Which mode?": ["fast"],
-        "Features?": ["tools", "todos"],
-      },
-    });
-    expect(() => questionContent(mapped.fields, { Mode: "Unknown" })).toThrow(
-      /unknown option/u,
-    );
-  });
-
-  it("keeps native permission option IDs and requires plan allow and deny", () => {
-    const request = {
-      requestId: "p1",
-      sessionId: "s1",
-      toolCallId: "t1",
-      toolName: "ExitPlanMode",
-      reason: "Review",
-      riskLevel: "low",
-      input: { plan: "# Plan" },
-      options: [
-        {
-          optionId: "approve-native",
-          kind: "allow_once",
-          name: "Approve",
-          response: { decision: "allow" },
-        },
-        {
-          optionId: "dismiss-native",
-          kind: "deny_once",
-          name: "Dismiss",
-          response: { decision: "deny" },
-        },
-      ],
-    } satisfies PermissionRequest;
-    expect(permissionActions(request, true).map((action) => action.id)).toEqual(
-      ["approve-native", "dismiss-native"],
-    );
-    expect(planMarkdown(request.input)).toBe("# Plan");
-    expect(() =>
-      permissionActions(
-        { ...request, options: request.options.slice(0, 1) },
-        true,
-      ),
-    ).toThrow(/allow and deny/u);
-  });
-});
-
-it("restores text and attachments as one native user message", () => {
-  const value = snapshot("/workspace");
-  value.messages = [
-    {
-      info: { role: "user", messageId: "queued-input" },
-      parts: [
-        { type: "text", text: "Read attachment" },
-        { type: "file", url: "artifact://attachment", filename: "input.txt" },
-      ],
-    },
-  ];
-  expect(
-    historyTimeline(value).filter((item) => item.type === "user_message"),
-  ).toEqual([
-    {
-      type: "user_message",
-      messageId: "queued-input",
-      text: "Read attachment\n\n[input.txt](artifact://attachment)",
-    },
-  ]);
 });
 
 it("rejects variant IDs instead of converting them to reasoning levels", () => {

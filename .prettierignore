@@ -1,3 +1,5 @@
 vendor/
 docs/adr/0001-record-architecture-decisions.md
 docs/adr/README.md
+
+server/vendor/

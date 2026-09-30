@@ -1,3 +1,105 @@
+# 公開ソース・stdio / V4 移行の検証（2026-09-21）
+
+接続方式と会話処理を置換し、通常テスト、実モデル E2E、隔離 daemon の実 Web UI 検証は成功した。固定した ZCode ソースには設定省略時の実行状態復元不具合がある。ユーザー承認と ADR 14 により、**mode / Plan の復元保証は Paseo が保存した両設定を再適用する経路に限定**した。設定省略時の不具合は保証対象外として追跡し、その修正自体を公開条件にはしない。以下の成功・失敗・未検証範囲を分けて扱う。
+
+## 対象と成果物
+
+| 項目                        | 実測値                                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| ZCode source                | `872ad960de7ec172591f7e1952f7849229f94521`                                                                                              |
+| ビルド                      | source の git archive を一時領域へ展開。pnpm 10.33.2、Node 24.20.0、公式 `build-zcode.mjs`。元の clone は変更なし                       |
+| ビルド前提                  | `pnpm exec tsc -b packages/shared` で公式 tsconfig の dist を生成。これがないと配布作成が `Missing @zcode/shared dist files` で停止する |
+| 実行配置                    | tar.gz を checkout 外へ展開。Server と Agent とも明示した普通の Node 24.20.0 で実行                                                     |
+| OS/CPU                      | macOS arm64                                                                                                                             |
+| Server / Agent              | 3.14.0 / 0.16.9                                                                                                                         |
+| 配布 tar.gz SHA-256         | `744e54e52437d62f2750ff9f96da9c7934c0db06b76fc157732f622848220f70`                                                                      |
+| Server SHA-256              | `159c561495363afaa858bfd821b18e5a45cbb72353422daa0774e6082df73246`                                                                      |
+| Agent SHA-256               | `b6d714bed80a2bbd260684ce5d63551913e7978ff0322876c838f33a468d417d`                                                                      |
+| Plugin runtime / SDK        | Node 22.23.0 / `@getpaseo/plugin` 0.9.0-beta.1                                                                                          |
+| Paseo 実 compiler / adapter | 0.9.0-beta.1 (`7c1958f5b0a4ae9f2cb12f77b0a754a644cd0081`) と最低対応 0.8.0 (`b8e24677e12b226c7c38c1c3a40649daa9f1152f`)                 |
+
+この成果物は開発者が上記ソースから構築したものであり、公開済み CLI リリースの取得結果ではない。版番号から source SHA を推定していない。Node の最小境界は契約試験で確認し、実行に使った Node は 24.20.0 である。
+
+## 成功した検証
+
+- `npm run typecheck`、`npm test`（15 ファイル、128 tests）、`npm run build`。通常テストには課金 API 呼び出しを含めない。UI 検証で見つけた投稿時刻の回帰テストと、Paseo の保存設定を再開完了前に適用する build/edit/yolo × Plan true/false の 6 通りを含む。Unix socket を使う既存の 2 テストは sandbox 内では EPERM となり、通常環境で全件成功した。
+- 固定 source SHA に対する vendored 91 ファイルの内容・出典ハッシュ照合。Apache-2.0 LICENSE、上流 NOTICE、該当する VS Code MIT 通知を保持し、ビルド出力にも配置。
+- 公式 RPC のプロセス試験：hello / V4 negotiation、3-byte 分割フレーム、質問自動終了無効化、不正 handshake、RPC timeout、Server 異常終了、購読中の EOF close。
+- V4 契約試験：重複、seq 欠落後の resync、壊れたフレーム、430 行のページング、異なる revision の拒否、新 epoch の履歴を揃えてから通知、購読解除後の通知無視。
+- Provider 試験：ACK 前の row、guide 集約、キュー消失だけでは消費としない、受付不明時の再送禁止、対象 ID を付けた停止、失敗時の待機キュー取消、v1/v2 handle 拒否、mapping 破損・書込失敗、累積 usage、background continuation、複数質問・空回答・解決済み質問への遅延回答・拒否/取消・full access の意味分離、出力切詰め表示、v3 一覧、モデルを呼ばない `/plan`。
+- Paseo 0.9.0-beta.1 と 0.8.0：実 compiler / adapter、`NODE_ENV` 未設定と production の Git preparation、server/client 登録、V4 本文差分、guide、添付 queue 集約、完了一回、provider replacement、履歴/設定の再開、停止。最低版は一時コピーの SDK 三パッケージだけを 0.8.0 に替えて検証し、作業ツリーの依存は変えていない。
+- 公式 Server / Agent + ローカル模擬モデル：初期化、モデル一覧、draft、Bash の `printf`、受付/完了一回、履歴、AskUserQuestion、Write 承認、stop、stop 後の新規入力、`/plan`、v3 一覧、EOF cleanup。所有する Server を SIGKILL した場合も、事前に公式 API で取得した Agent PID が終了したことを確認。ツール/MCP の全異常終了形を確認したという意味ではない。
+- `npm run test:e2e`：既存 GLM_API_KEY と公式 Z.ai Coding Plan endpoint、GLM-5.3-Flash / GLM-5.3。モデル変更、広告された推論選択肢、独立 Plan と build/edit/yolo、各 mode の Plan 承認、edit の却下、Paseo 明示設定による復元、実モデル guide・添付 queue・一完了・停止・再開・取消入力の非再生が成功。
+
+実ランタイム試験は HOME、provider configuration、SQLite DB、socket temp、workspace、Provider mapping を隔離した。元の ZCode clone・ユーザーの実データ・稼働中の Paseo プラグインは変更していない。キー値・native stderr・実モデルの会話は検証文書へ記録しない。
+
+## 実 Web UI・起動形態の追加検証
+
+Paseo CLI の実行制限解除後、macOS arm64 / Paseo 0.9.0-beta.2 の別 daemon で確認した。`--home` は一時ディレクトリ、listen は loopback、relay/MCP injection は無効、Web UI と plugins は有効。現在の worktree を `zcode-provider-ui` としてディレクトリ導入した。ZCode のソース・成果物・Node 24.20.0 は上記と同一で、認証は隔離した provider configuration の既存 Z.ai Coding Plan API キーを使用した。
+
+- **Desktop 同梱 CLI の起動形態:** daemon は `/Applications/Paseo.app/Contents/Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper`、公式 Server は指定した通常の Node 24.20.0、その子に Agent が起動した。利用中の Desktop 管理 daemon は変更していない。
+- **通常 Node の起動形態:** 前の daemon を正常停止し、公式 npm `@getpaseo/cli@0.9.0-beta.2` を Node 22.23.0 で起動。同じ一時ホームから同じ会話を復元し、実 Web UI の送信ボタンから継続入力して実モデルの応答・idle を確認した。
+- **診断・選択:** Settings → Plugins → Diagnostics に Server/Agent 版、ハッシュ、明示 Node、v3 保存先を表示。Run host check は Passed。モデル選択には隔離設定の 2 モデルが表示され、GLM-5.3-Flash / Low / Ask before changes で会話を作成できた。
+- **質問・承認:** 実 Agent の AskUserQuestion が選択フォームになり、回答後に Write の Allow once / Always allow in this project / Deny が表示された。承認前は対象ファイルが存在せず、Allow once 後に選択値と一致する内容が作成され、応答完了後は idle となった。
+- **停止・再開:** Bash の待機コマンドを UI の停止ボタンで中断。Edit automatically と独立 Plan を指定した後、一時 daemon を `paseo daemon restart --home <isolated-home>` で再起動して画面も reload した。履歴を再表示でき、再入力への応答が以前の選択を保持していた。確認した SQLite の会話は 1 件で、`runtime/execution_state` は `edit / planEnabled:true`。Paseo が明示設定を再適用する経路の成功であり、下記 native-only restore の不具合解消を意味しない。
+- **表示:** 1280px と 420px の画面で会話を確認した。質問・承認待ち、完了、再開後の本文・ツール表示を目視確認。Web UI の console に Provider 由来のエラーはなく、Web 版の通知・animation に関する警告のみだった。
+
+最初の画面再読み込みでは過去の投稿時刻が復元時刻になった。V4 row の `createdAt` が `timeline.item.timestamp` へ渡らず、Paseo が受信時刻を採用していたためである。行とその元の時刻を一緒に保持し、履歴・ライブ差分・再開のいずれでも ISO 8601 の時刻を渡すよう修正した。修正前に回帰テストの失敗を確認し、修正後はテスト、実 compiler/adapter、実 UI で元の投稿時刻の表示が成功した。Paseo の Worked for 表示を ZCode の `activeMs` と完全一致させる保証は含まない。
+
+検証終了後、一時 daemon を強制終了なしで停止し、検証用ブラウザタブを閉じ、認証を含む一時ホーム・DB・会話・ワークスペースを削除した。
+
+## 必須 CI の復元条件の修正
+
+[修正前の GitHub Actions](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/35573383559)（Provider `320adff4b28224edfe64bba6856d92ff9191a74f`）を確認した。通常テスト・型検査・ビルド・ソース照合・実 Paseo 結合試験は成功。Ubuntu 24.04 / Linux x64 / Node 24.14.0 の公式ランタイム試験も、設定省略時の復元を除く項目は成功した。この復元失敗だけで runtime ジョブが失敗し、依存する実モデル E2E は未実行となっていた。Linux の Server / Agent ハッシュは上記 macOS のものと一致したが、配布全体や OS の検証範囲が同じという意味ではない。
+
+ユーザーの選択に従い、`test:stdio-runtime` は Paseo が保存した `mode` と `settings.plan_mode` を別プロセスでの再開時に渡す契約を必須とした。閉じる前の通知から両設定を取得し、再開完了より前の設定通知がすべて `edit / Plan有効` であること、履歴が復元されることを検証する。この修正後のコマンドは上記 macOS arm64 の無改変ランタイムで **exit 0** となった。
+
+修正後に型検査、ビルド、全体の整形検査、Paseo 0.9.0-beta.1 の実 compiler / adapter 結合試験を再実行して成功した。隔離した実モデル E2E も再実行し、モデル・推論設定、3 モードの Plan 承認、edit の却下、保存設定による復元、追加指示・添付キュー、完了一回、停止・再開、取消入力の非再生と正常終了がすべて成功した。追加した 6 ケースを含む通常テストは 15 ファイル・128 件成功。Paseo と ZCode の参照 checkout に変更はない。
+
+設定省略時の厳密な検証は `test:native-restore` へ分離し、同じランタイムで **exit 1**、期待値 `edit / true` に対して実際は `yolo / false` となることを確認した。必須 CI に `continue-on-error` 等は追加していない。設定再適用、起動、ツール、質問、停止、終了処理など、保証対象の失敗は引き続き必須 CI を失敗させる。変更後の GitHub Actions は未 push のため未実行であり、ローカル成功とは区別する。
+
+## 設定省略時の native Plan / mode 復元不具合（保証対象外）
+
+`npm run test:native-restore` は **exit 1**。必須 CI とは別の検証として、native-only restore の不一致を assertion で検出する。公式ランタイムの更新時に再実行する。
+
+再現手順は同スクリプト内に固定した。
+
+1. 新しい会話を yolo で作成して一度実行する。
+2. Plan を有効にし、通常 mode を edit に変更する。V4 が `edit / planEnabled:true` を通知したことを確認する。
+3. `session.close` と Server 終了を行い、別 Server から同じ handle を再開する。mode / Plan は明示指定しない。
+4. 再開は `yolo / planEnabled:false` となる。
+
+隔離 DB の `session_entry` に `runtime/execution_state` = `{"mode":"edit","planEnabled":true}` が存在することも確認した。保存漏れではない。
+
+原因の追跡：
+
+- [server-operations.ts:1459](https://github.com/zai-org/ZCode/blob/872ad960de7ec172591f7e1952f7849229f94521/apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-operations.ts#L1459) は古い messages から mode を導出し、materialize の引数へ渡す。
+- [create-app.ts:490](https://github.com/zai-org/ZCode/blob/872ad960de7ec172591f7e1952f7849229f94521/apps/zcode-cli/packages/bootstrap/src/app/create-app.ts#L490) はそれを `modeOverride` として Core へ渡す。
+- [resume.ts:213](https://github.com/zai-org/ZCode/blob/872ad960de7ec172591f7e1952f7849229f94521/apps/zcode-cli/packages/core/src/runtime/methods/resume.ts#L213) は `modeOverride !== undefined` の場合、保存した実行状態を適用しない。
+
+この経路が新しい保存状態より古い message mode を優先する。Paseo が明示した mode / Plan を適用する E2E は成功しており、native-only restore の成功を示すものではない。Provider に別の Plan 保存や自動復元を加えて隠していない。Paseo・ZCode 本体は改変不可のため、独自パッチによる解消は対応範囲外とする。設定省略時は ZCode が返した状態を使うため、復元を保証しない。この範囲の保証を追加する場合は、公式の無改変のソース・成果物で再検証し、別途判断する。
+
+## 配布の node-pty 問題
+
+公式 remote Server の terminal.create は native module を `server/remote/prebuilds/...` または build/Release から探すが、統合 CLI 配布は node-pty の prebuild を `node_modules/node-pty/prebuilds` に配置するため、端末作成が失敗した。参照は `packages/server/build-remote.ts`、`scripts/zcode-distribution/assets.mjs`、`packages/services/src/terminal/terminalService.ts`。
+
+Provider はこの terminal API を使用しない。別経路の Agent Bash は実際のコマンド出力まで成功したため、stdio Provider の検証は継続できた。native バイナリのコピーや Desktop への切替は追加していない。
+
+## 未検証と環境による制限
+
+- 公式アカウントログイン/期限切れ/未認証、公式 TUI と複数プロセスの共有データ同時利用。独自 API キー設定の実モデル試験とは別。
+- 修正後 CI の Linux x64 での保存設定による復元・実モデル E2E。修正前 CI の非課金項目は設定省略時の復元を除き成功した。Windows、macOS x64 は未検証。
+- Desktop ネイティブ画面とモバイル実機での操作。今回操作したのは Desktop 内ブラウザの実 Web UI であり、Desktop 同梱 Electron Helper と通常 Node の両 daemon 起動を確認した。
+- native の長大履歴、世代変更、子からの承認、background continuation は契約試験中心。全 OS での強制終了、長時間ツール/MCP 子プロセスを含む回収は未検証。
+
+ADR 13 は Accepted。ADR 3/6 を Superseded とし、2/7/9/11/12 に双方向の Amends リンクを設定した。今回の ADR 14 は Accepted とし、ADR 13 の復元保証と公開条件を Amends で変更した。管理対象 TOC を CLI で更新。`adrs doctor` は 0 errors、既存 ADR 1 の 1 warning / 1 info のみ。設計の採用と、未検証項目の完了を区別する。
+
+---
+
+# 旧 Desktop Host 構成の過去記録
+
+以下は旧構成の履歴であり、上記 stdio / V4 構成の動作保証には使用しない。
+
 # 検証記録
 
 ## 2026-09-18: 実モデル E2E と PR CI

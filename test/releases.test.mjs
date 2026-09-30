@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { VERIFIED_ZCODE_ARTIFACT } from "../server/discovery/manifest.ts";
+import { LAST_REVIEWED_ZCODE_RELEASE } from "../server/discovery/manifest.ts";
 import {
   buildIssueDraft,
   cliOptions,
@@ -66,9 +66,7 @@ function options(html, client, extra = {}) {
 
 describe("release parsing and versions", () => {
   test("reads comparison baselines directly from the manifest and dependency", async () => {
-    expect(await currentZCodeVersion()).toBe(
-      VERIFIED_ZCODE_ARTIFACT.appVersion,
-    );
+    expect(await currentZCodeVersion()).toBe(LAST_REVIEWED_ZCODE_RELEASE);
     expect(await currentPaseoVersion()).toBe(
       pkg.devDependencies["@getpaseo/plugin"],
     );

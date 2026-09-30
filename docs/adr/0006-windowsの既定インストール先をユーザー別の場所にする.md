@@ -1,11 +1,13 @@
 ---
 number: 6
 title: Windowsの既定インストール先をユーザー別の場所にする
-status: accepted
+status: superseded
 date: 2026-09-09
 links:
   - target: 3
     kind: amends
+  - target: 13
+    kind: supersededby
 ---
 
 # Windowsの既定インストール先をユーザー別の場所にする

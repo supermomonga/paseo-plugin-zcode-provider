@@ -1,165 +1,149 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { Conversation } from "./conversation.js";
-
-function snapshot() {
-  return {
+import { FakeBridge, snapshot } from "../test/fake-host.js";
+import { TopicWireFrameAssembler } from "./vendor/zcode/packages/shared/src/zcode-protocol-v4/wire-assembler.js";
+import { conversationTopicFrameSchema } from "./vendor/zcode/packages/shared/src/zcode-protocol-v4/transport.js";
+async function fixture() {
+  const host = new FakeBridge(snapshot("/workspace"));
+  const errors: unknown[] = [];
+  const conversation = new Conversation(host, "/workspace", "session-1", (e) =>
+    errors.push(e),
+  );
+  await conversation.open();
+  return { host, conversation, errors };
+}
+it("uses official row delta semantics and ignores duplicate physical frames", async () => {
+  const f = await fixture();
+  await f.host.append({
+    ...f.host.rowBase(),
+    kind: "assistantText",
+    text: "hello",
+    state: "streaming",
+  });
+  const wire = f.host.wire(
+    {
+      kind: "deltas",
+      deltas: [{ op: "row.delta", rowId: 1, path: "text", append: " world" }],
+    },
+    "online",
+    f.host.state.seq,
+  );
+  (wire.frame as any).toSeq = f.host.state.seq + 1;
+  f.conversation.accept(wire);
+  f.conversation.accept(wire);
+  expect(f.conversation.state?.rows.window[0]).toMatchObject({
+    text: "hello world",
+  });
+  await f.conversation.close();
+});
+it("recovers a sequence gap through the official resync API", async () => {
+  const f = await fixture();
+  const wire = f.host.wire({ kind: "deltas", deltas: [] }, "online", 20);
+  (wire.frame as any).toSeq = 21;
+  f.conversation.accept(wire);
+  await f.conversation.waitFor(() => f.conversation.idle);
+  expect(f.host.calls.some((c) => c.method === "resyncConversationV4")).toBe(
+    true,
+  );
+  expect(f.errors).toEqual([]);
+  await f.conversation.close();
+});
+it("loads more than the snapshot tail by paging with coherent revision", async () => {
+  const f = await fixture();
+  for (let i = 0; i < 430; i++) {
+    const row = {
+      ...f.host.rowBase(),
+      kind: "assistantText" as const,
+      text: String(i),
+      state: "complete" as const,
+    };
+    f.host.state.rows.window.push(row);
+  }
+  f.host.state.rows.totalCount = 430;
+  await f.conversation.loadHistory();
+  expect(f.conversation.state?.rows.window).toHaveLength(430);
+  expect(
+    f.host.calls.filter((c) => c.method === "conversationRowsRangeV4"),
+  ).toHaveLength(4);
+  await f.conversation.close();
+});
+it("ignores notifications after unsubscribe", async () => {
+  const f = await fixture();
+  const state = f.conversation.state;
+  await f.conversation.close();
+  f.conversation.accept(f.host.wire({ kind: "snapshot", snapshot: {} }));
+  expect(f.conversation.state).toBe(state);
+});
+it("official assembler rejects corrupt fragments and releases their memory", () => {
+  const assembler = new TopicWireFrameAssembler(conversationTopicFrameSchema);
+  const events = assembler.accept({
     wireVersion: 3,
-    kind: "complete",
-    deliveryKind: "initial",
-    logicalFrameId: "f1",
+    kind: "fragment",
+    logicalFrameId: "f",
     logicalFrameOrdinal: 1,
     topic: "conversation/s",
     subscriptionId: "sub",
-    frame: {
-      topic: "conversation/s",
-      subscriptionId: "sub",
-      fromSeq: 0,
-      toSeq: 0,
-      sentAt: 1,
-      payload: {
-        kind: "snapshot",
-        snapshot: {
-          sessionId: "s",
-          logEpoch: "epoch",
-          seq: 0,
-          revision: 0,
-          control: { phase: "draft", canStop: false },
-          queue: { autoDrain: true, items: [] },
-          config: { mode: "build", planEnabled: false },
-        },
-      },
-    },
-  };
-}
-function delta() {
-  const initial = snapshot();
-  return {
-    ...initial,
-    logicalFrameId: "f2",
-    logicalFrameOrdinal: 2,
     deliveryKind: "online",
-    frame: {
-      ...initial.frame,
-      fromSeq: 0,
-      toSeq: 5,
-      payload: {
-        kind: "deltas",
-        deltas: [
-          {
-            op: "state.updated",
-            patch: {
-              revision: 2,
-              control: { phase: "running", canStop: true },
-            },
-          },
-          {
-            op: "row.appended",
-            row: { kind: "assistantText", rowId: 1, text: "hi" },
-          },
-          { op: "row.delta", rowId: 1, path: "text", append: "there" },
-        ],
-      },
-    },
-  };
-}
-it("applies V4 exclusive fromSeq ranges and queue/control projections", () => {
-  const conversation = new Conversation("s");
-  expect(conversation.idle).toBe(false);
-  conversation.accept(snapshot());
-  expect(conversation.idle).toBe(true);
-  conversation.accept(delta());
-  expect(conversation.state).toMatchObject({
-    seq: 5,
-    revision: 2,
-    control: { phase: "running" },
+    fragmentIndex: 0,
+    fragmentCount: 1,
+    logicalBytes: 2,
+    checksum: { algorithm: "crc32", value: "00000000" },
+    dataBase64: "e30=",
   });
-  expect(conversation.idle).toBe(false);
+  expect(events[0]?.kind).toBe("fault");
+  expect(assembler.getStats().stagedDecodedBytes).toBe(0);
 });
-it.each([
-  "session",
-  "subscription",
-  "sequence",
-  "duplicate",
-  "control",
-  "queue",
-])("rejects invalid %s state", (what) => {
-  const conversation = new Conversation("s");
-  conversation.accept(snapshot());
-  const frame = delta();
-  if (what === "session") frame.topic = "conversation/other";
-  if (what === "subscription") frame.subscriptionId = "other";
-  if (what === "sequence") frame.frame.fromSeq = 7;
-  if (what === "duplicate") frame.logicalFrameOrdinal = 1;
-  if (what === "control")
-    frame.frame.payload.deltas[0]!.patch!.control!.phase = "unknown";
-  if (what === "queue")
-    Object.assign(frame.frame.payload.deltas[0]!.patch!, {
-      queue: { autoDrain: true, items: [{ sourceCommandId: "unknown" }] },
-    });
-  expect(() => conversation.accept(frame)).toThrow();
-});
-function fragments() {
-  const initial = snapshot();
-  const bytes = Buffer.from(JSON.stringify(initial.frame));
-  // Independently calculated standard CRC32 test fixture.
-  let crc = -1;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let i = 0; i < 8; i++)
-      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
-  }
-  const checksum = ((crc ^ -1) >>> 0).toString(16).padStart(8, "0");
-  return [bytes.subarray(0, 31), bytes.subarray(31)].map(
-    (part, fragmentIndex) => ({
-      ...initial,
-      frame: undefined,
-      kind: "fragment",
-      fragmentIndex,
-      fragmentCount: 2,
-      logicalBytes: bytes.length,
-      checksum: { algorithm: "crc32", value: checksum },
-      dataBase64: part.toString("base64"),
-    }),
+it("never publishes a mixed history revision", async () => {
+  const f = await fixture(),
+    request = f.host.request.bind(f.host);
+  f.host.request = async (method, params, schema) => {
+    const result = await request(method, params, schema);
+    if (method === "conversationRowsRangeV4")
+      return { ...(result as Record<string, unknown>), atRevision: 999 } as any;
+    return result;
+  };
+  const before = f.conversation.state;
+  await expect(f.conversation.loadHistory()).rejects.toThrow(
+    "no mixed history",
   );
-}
-it("reassembles fragments before applying the native snapshot", () => {
-  const conversation = new Conversation("s");
-  const parts = fragments();
-  expect(conversation.accept(parts[0])).toBe(false);
-  expect(conversation.state).toBeUndefined();
-  expect(conversation.accept(parts[1])).toBe(true);
-  expect(conversation.idle).toBe(true);
+  expect(f.conversation.state).toBe(before);
+  await f.conversation.close();
 });
-describe("fragment corruption", () => {
-  it.each(["order", "checksum", "size", "interleaved"])(
-    "rejects %s",
-    (kind) => {
-      const conversation = new Conversation("s");
-      const parts = fragments();
-      conversation.accept(parts[0]);
-      if (kind === "order") parts[1]!.fragmentIndex = 0;
-      if (kind === "checksum")
-        parts[1]!.dataBase64 = Buffer.alloc(
-          Buffer.from(parts[1]!.dataBase64, "base64").length,
-        ).toString("base64");
-      if (kind === "size") parts[1]!.logicalBytes++;
-      expect(() =>
-        conversation.accept(kind === "interleaved" ? snapshot() : parts[1]),
-      ).toThrow();
-    },
+it("hydrates a new epoch before notifying observers", async () => {
+  const f = await fixture(),
+    seen: number[] = [];
+  f.conversation.subscribe(() =>
+    seen.push(f.conversation.state!.rows.window.length),
   );
+  const rows = Array.from({ length: 210 }, (_, i) => ({
+    ...f.host.rowBase(),
+    kind: "assistantText" as const,
+    text: String(i),
+    state: "complete" as const,
+  }));
+  f.host.state.logEpoch = "replacement";
+  f.host.state.rows.window = rows;
+  f.host.state.rows.totalCount = rows.length;
+  const request = f.host.request.bind(f.host);
+  f.host.request = async (method, params, schema) => {
+    if (method === "resyncConversationV4") {
+      const complete = f.host.state.rows.window;
+      f.host.state.rows.window = complete.slice(-60);
+      await f.host.emitSnapshot("recovery");
+      f.host.state.rows.window = complete;
+      return schema.parse({
+        ack: {
+          subscriptionId: "sub",
+          mode: "snapshot",
+          logEpoch: "replacement",
+        },
+      });
+    }
+    return request(method, params, schema);
+  };
+  await f.host.emitSnapshot();
+  await f.conversation.waitFor(() => f.conversation.idle);
+  expect(seen).toEqual([210]);
+  expect(f.errors).toEqual([]);
+  await f.conversation.close();
 });
-
-it.each(["missing", "legacy-mode"])(
-  "rejects a snapshot without the independent plan contract: %s",
-  (what) => {
-    const frame = snapshot();
-    if (what === "missing")
-      Reflect.deleteProperty(
-        frame.frame.payload.snapshot.config,
-        "planEnabled",
-      );
-    else frame.frame.payload.snapshot.config.mode = "plan";
-    expect(() => new Conversation("s").accept(frame)).toThrow();
-  },
-);
