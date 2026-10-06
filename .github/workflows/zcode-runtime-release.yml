@@ -1,0 +1,179 @@
+name: ZCode Runtime Release
+
+# Builds the integrated ZCode CLI from the pinned, unmodified public source,
+# adds upstream license material, verifies it on every managed platform and
+# publishes it only for zcode-runtime-v<version> tags (ADR 15).
+on:
+  push:
+    tags: ["zcode-runtime-v*"]
+  pull_request:
+    paths:
+      - .github/workflows/zcode-runtime-release.yml
+      - scripts/package-zcode-runtime.mjs
+      - scripts/zcode-manifest.mjs
+      - scripts/check-stdio-runtime.mjs
+      - server/discovery/manifest.ts
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zcode-runtime-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # The same Node.js builds the archive and runs Server/Agent in verification.
+  NODE_VERSION: "24.21.0"
+
+jobs:
+  build:
+    name: Build runtime archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      commit: ${{ steps.package.outputs.commit }}
+      asset: ${{ steps.package.outputs.asset }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+      size: ${{ steps.package.outputs.size }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: plugin
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install plugin dependencies
+        working-directory: plugin
+        run: npm ci --include=dev
+      - name: Resolve pinned ZCode source
+        id: source
+        working-directory: plugin
+        run: echo "commit=$(node scripts/package-zcode-runtime.mjs commit)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v6
+        with:
+          repository: zai-org/ZCode
+          ref: ${{ steps.source.outputs.commit }}
+          path: zcode-source
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.33.2"
+      - name: Build the official integrated CLI
+        working-directory: zcode-source
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec tsc -b packages/shared
+          node scripts/build-zcode.mjs --base-url https://example.invalid/zcode/
+      - name: Add upstream notices and build provenance
+        id: package
+        working-directory: plugin
+        env:
+          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: node scripts/package-zcode-runtime.mjs package --source ../zcode-source --out ../runtime-release ${TAG:+--tag "$TAG"}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zcode-runtime
+          path: runtime-release/
+          if-no-files-found: error
+
+  verify:
+    name: Verify ${{ matrix.target }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: win-x64
+            runner: windows-2025
+          - target: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: zcode-runtime
+          path: runtime-archive
+      - name: Check the archive and extract it outside the checkout
+        env:
+          ASSET: ${{ needs.build.outputs.asset }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          actual=$(node -e "const c=require('node:crypto').createHash('sha256');c.update(require('node:fs').readFileSync(process.argv[1]));console.log(c.digest('hex'))" "runtime-archive/$ASSET")
+          test "$actual" = "$SHA256"
+          mkdir ../zcode-runtime
+          tar -xzf "runtime-archive/$ASSET" -C ../zcode-runtime
+          for file in LICENSE NOTICE.md THIRD-PARTY-NOTICES.md BUILD-INFO.json; do
+            test -f "../zcode-runtime/zcode/$file"
+          done
+          echo "PASEO_ZCODE_RUNTIME=$(node -p "require('node:path').resolve('../zcode-runtime/zcode')")" >> "$GITHUB_ENV"
+          echo "PASEO_ZCODE_NODE=$(node -p process.execPath)" >> "$GITHUB_ENV"
+      - name: Install plugin dependencies
+        run: npm ci --include=dev
+      - name: Verify Provider behavior on the runtime
+        # Resume uses Paseo's saved mode and Plan settings (ADR 14).
+        run: npm run test:stdio-runtime
+
+  publish:
+    name: Publish runtime release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/zcode-runtime-v')
+    needs: [build, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: zcode-runtime
+          path: release
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: release/${{ needs.build.outputs.asset }}
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+          COMMIT: ${{ needs.build.outputs.commit }}
+          ASSET: ${{ needs.build.outputs.asset }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          cat > notes.md <<EOF
+          Unofficial build of the ZCode integrated CLI distribution for paseo-plugin-zcode-provider's managed setup. It is not endorsed or maintained by ZCode or Z.ai.
+
+          - Source: https://github.com/zai-org/ZCode/tree/$COMMIT (ZCode $VERSION, unmodified)
+          - Asset: \`$ASSET\`
+          - SHA-256: \`$SHA256\`
+          - Built and verified by: $RUN_URL
+
+          ZCode first-party code is licensed under Apache-2.0. Third-party components keep their own terms. The archive contains the upstream LICENSE, NOTICE.md and THIRD-PARTY-NOTICES.md.
+          EOF
+          gh release create "$TAG" "release/$ASSET" release/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --latest=false \
+            --title "ZCode runtime $VERSION (unofficial build)" \
+            --notes-file notes.md
