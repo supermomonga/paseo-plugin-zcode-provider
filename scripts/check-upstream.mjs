@@ -8,6 +8,7 @@ import {
   realpath,
   rm,
   symlink,
+  writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -57,6 +58,7 @@ try {
       upstream,
       "packages/server/src/server/plugins/preparation.ts",
     ),
+    icon: join(upstream, "packages/server/src/server/plugins/provider-icon.ts"),
     adapter: join(
       upstream,
       "packages/server/src/server/agent/plugin-provider.ts",
@@ -77,17 +79,18 @@ try {
   const { compilePlugin } = await load("compiler");
   const { readPluginManifest } = await load("manifest");
   const { runPluginBuild } = await load("preparation");
+  const { readPluginProviderIcon } = await load("icon");
+  const plugin = {
+    compilePlugin,
+    readPluginManifest,
+    readPluginProviderIcon,
+    runPluginBuild,
+  };
   const gitPreparation = [];
   for (const nodeEnv of [undefined, "production"]) {
-    gitPreparation.push(
-      await checkGitPreparation({
-        compilePlugin,
-        readPluginManifest,
-        runPluginBuild,
-        nodeEnv,
-      }),
-    );
+    gitPreparation.push(await checkGitPreparation({ ...plugin, nodeEnv }));
   }
+  const npmInstallation = await checkNpmInstallation(plugin);
 
   const { PluginAgentClientRegistry } = await load("adapter");
   const { createZCodeProvider } = await load("provider");
@@ -235,6 +238,7 @@ try {
             encoding: "utf8",
           }).trim(),
           gitPreparation,
+          npmInstallation,
           coreAdapter: "passed",
           V4Timeline: "passed",
           textSteering: "passed",
@@ -260,6 +264,7 @@ try {
 async function checkGitPreparation({
   compilePlugin,
   readPluginManifest,
+  readPluginProviderIcon,
   runPluginBuild,
   nodeEnv,
 }) {
@@ -269,26 +274,7 @@ async function checkGitPreparation({
     await mkdtemp(join(tmpdir(), "zcode-git-preparation-")),
   );
   try {
-    const files = execFileSync(
-      "git",
-      ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-      {
-        cwd: root,
-        encoding: "utf8",
-      },
-    )
-      .split("\0")
-      .filter(Boolean);
-    // Copy working-tree contents so local, uncommitted fixes are tested too.
-    for (const file of files) {
-      const destination = join(candidate, file);
-      await mkdir(dirname(destination), { recursive: true });
-      try {
-        await copyFile(join(root, file), destination);
-      } catch (error) {
-        if (error.code !== "ENOENT") throw error;
-      }
-    }
+    await copyWorkingTree(candidate);
     const nodeRequire = createRequire(join(candidate, "package.json"));
     await assert.rejects(access(join(candidate, "node_modules")), {
       code: "ENOENT",
@@ -306,9 +292,7 @@ async function checkGitPreparation({
       if (nodeEnv === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = nodeEnv;
       await runPluginBuild(candidate, manifest.build, {
-        info(fields, message) {
-          console.log(message, fields.output ?? fields.command);
-        },
+        info: logPreparation,
       });
     } finally {
       if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
@@ -322,74 +306,189 @@ async function checkGitPreparation({
       ),
       "Resolve the schema validator from the prepared candidate's own dependencies",
     );
-    const { serverBundle, clientBundle } = await compilePlugin({
-      server: join(candidate, "index.server.ts"),
-      client: join(candidate, "index.client.tsx"),
-    });
-    assert.ok(clientBundle, "The client entry must compile");
-    assert.ok(
-      serverBundle.includes('require("@getpaseo/plugin/server/provider")'),
-    );
-    const contribution = runInThisContext(serverBundle)((name) =>
-      name === "@getpaseo/plugin/server/provider" ? sdk : nodeRequire(name),
-    );
-    let registered;
-    const dispose = contribution.default({
-      registerProvider(provider) {
-        registered = provider;
-      },
-      handle() {},
-    });
-    assert.equal(registered.id, "zcode");
-    assert.equal(typeof dispose, "function");
-    await dispose();
-
-    const clientContribution = runInThisContext(clientBundle)((name) => {
-      if (name === "react")
-        return {
-          useCallback: (callback) => callback,
-          useEffect() {},
-          useState: () => [null, () => {}],
-        };
-      if (name === "react/jsx-runtime")
-        return { jsx: () => null, jsxs: () => null };
-      if (name === "react-native")
-        return { Text: () => null, View: () => null };
-      if (name === "@getpaseo/plugin/client")
-        return { useRpc: () => async () => ({}) };
-      if (name === "@getpaseo/plugin/client/ui")
-        return {
-          SettingsAction: () => null,
-          SettingsCard: () => null,
-          SettingsRow: () => null,
-          SettingsSection: () => null,
-        };
-      return nodeRequire(name);
-    });
-    // Like Paseo's client runtime, each registration returns its own cleanup.
-    const screens = new Map();
-    const disposeClient = clientContribution.default({
-      addSettingsScreen(screen) {
-        screens.set(screen.id, screen);
-        return () => screens.delete(screen.id);
-      },
-    });
-    assert.deepEqual([...screens.keys()], ["setup", "diagnostics"]);
-    for (const screen of screens.values())
-      assert.equal(typeof screen.Component, "function");
-    assert.equal(typeof disposeClient, "function");
-    await disposeClient();
-    assert.equal(screens.size, 0);
     return {
       nodeEnv: nodeEnv ?? "unset",
-      compiledBytes: Buffer.byteLength(serverBundle),
-      clientCompiledBytes: Buffer.byteLength(clientBundle),
-      registration: "passed",
-      clientRegistration: "passed",
+      ...(await checkContributions({
+        compilePlugin,
+        readPluginProviderIcon,
+        candidate,
+        requireModule: nodeRequire,
+      })),
     };
   } finally {
     await rm(candidate, { recursive: true, force: true });
   }
+}
+
+async function checkNpmInstallation({
+  compilePlugin,
+  readPluginManifest,
+  readPluginProviderIcon,
+  runPluginBuild,
+}) {
+  console.log("Checking npm installation");
+  const workspace = await realpath(
+    await mkdtemp(join(tmpdir(), "zcode-npm-installation-")),
+  );
+  try {
+    // Pack a copy so the pack scripts never touch the working tree.
+    const checkout = join(workspace, "checkout");
+    await copyWorkingTree(checkout);
+    const [{ name, filename, files }] = JSON.parse(
+      execFileSync("npm", ["pack", "--json", "--pack-destination", workspace], {
+        cwd: checkout,
+        encoding: "utf8",
+      }),
+    );
+    assert.ok(
+      !files.some(({ path }) => path.endsWith(".test.ts")),
+      "Keep tests out of the package",
+    );
+    const installation = join(workspace, "installation");
+    await mkdir(installation);
+    await writeFile(
+      join(installation, "package.json"),
+      JSON.stringify({
+        name: "paseo-plugin-installation",
+        version: "1.0.0",
+        private: true,
+        dependencies: { [name]: `file:${join(workspace, filename)}` },
+      }),
+    );
+    // The options of Paseo's npm acquisition (managed-source/npm.ts).
+    execFileSync(
+      "npm",
+      [
+        "install",
+        "--ignore-scripts",
+        "--legacy-peer-deps",
+        "--no-audit",
+        "--no-fund",
+        "--package-lock=true",
+        "--lockfile-version=3",
+        "--include=prod",
+        "--omit=dev",
+        "--global=false",
+        "--workspaces=false",
+      ],
+      { cwd: installation, stdio: "inherit" },
+    );
+    const candidate = join(installation, "node_modules", name);
+    const manifest = await readPluginManifest(candidate);
+    await runPluginBuild(candidate, manifest.build, { info: logPreparation });
+    return {
+      package: filename,
+      // Development dependencies are not installed: Paseo supplies the SDK and zod.
+      ...(await checkContributions({
+        compilePlugin,
+        readPluginProviderIcon,
+        candidate,
+        requireModule: createRequire(join(root, "package.json")),
+      })),
+    };
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+}
+
+// Copy working-tree contents so local, uncommitted fixes are tested too.
+async function copyWorkingTree(destination) {
+  const files = execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    {
+      cwd: root,
+      encoding: "utf8",
+    },
+  )
+    .split("\0")
+    .filter(Boolean);
+  for (const file of files) {
+    const target = join(destination, file);
+    await mkdir(dirname(target), { recursive: true });
+    try {
+      await copyFile(join(root, file), target);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+}
+
+function logPreparation(fields, message) {
+  console.log(message, fields.output ?? fields.command);
+}
+
+// Compiles both entries with Paseo's compiler and registers them like Paseo.
+async function checkContributions({
+  compilePlugin,
+  readPluginProviderIcon,
+  candidate,
+  requireModule,
+}) {
+  const { serverBundle, clientBundle } = await compilePlugin({
+    server: join(candidate, "index.server.ts"),
+    client: join(candidate, "index.client.tsx"),
+  });
+  assert.ok(clientBundle, "The client entry must compile");
+  assert.ok(
+    serverBundle.includes('require("@getpaseo/plugin/server/provider")'),
+  );
+  const contribution = runInThisContext(serverBundle)((name) =>
+    name === "@getpaseo/plugin/server/provider" ? sdk : requireModule(name),
+  );
+  let registered;
+  const dispose = contribution.default({
+    registerProvider(provider) {
+      registered = provider;
+    },
+    handle() {},
+  });
+  assert.equal(registered.id, "zcode");
+  await readPluginProviderIcon(candidate, registered.icon);
+  assert.equal(typeof dispose, "function");
+  await dispose();
+
+  const clientContribution = runInThisContext(clientBundle)((name) => {
+    if (name === "react")
+      return {
+        useCallback: (callback) => callback,
+        useEffect() {},
+        useState: () => [null, () => {}],
+      };
+    if (name === "react/jsx-runtime")
+      return { jsx: () => null, jsxs: () => null };
+    if (name === "react-native") return { Text: () => null, View: () => null };
+    if (name === "@getpaseo/plugin/client")
+      return { useRpc: () => async () => ({}) };
+    if (name === "@getpaseo/plugin/client/ui")
+      return {
+        SettingsAction: () => null,
+        SettingsCard: () => null,
+        SettingsRow: () => null,
+        SettingsSection: () => null,
+      };
+    return requireModule(name);
+  });
+  // Like Paseo's client runtime, each registration returns its own cleanup.
+  const screens = new Map();
+  const disposeClient = clientContribution.default({
+    addSettingsScreen(screen) {
+      screens.set(screen.id, screen);
+      return () => screens.delete(screen.id);
+    },
+  });
+  assert.deepEqual([...screens.keys()], ["setup", "diagnostics"]);
+  for (const screen of screens.values())
+    assert.equal(typeof screen.Component, "function");
+  assert.equal(typeof disposeClient, "function");
+  await disposeClient();
+  assert.equal(screens.size, 0);
+  return {
+    compiledBytes: Buffer.byteLength(serverBundle),
+    clientCompiledBytes: Buffer.byteLength(clientBundle),
+    registration: "passed",
+    clientRegistration: "passed",
+  };
 }
 
 function waitForCompletion(session, turnId) {

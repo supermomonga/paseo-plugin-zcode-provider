@@ -17,14 +17,16 @@ This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai.
 
 ## Installation
 
-Enable **Settings → Plugins → Enable plugins** for the target daemon, then install and inspect:
+Enable **Settings → Plugins → Enable plugins** for the target daemon, then install the [npm package](https://www.npmjs.com/package/paseo-plugin-zcode-provider) and inspect:
 
 ```bash
-paseo plugin add supermomonga/paseo-plugin-zcode-provider
+paseo plugin add npm:paseo-plugin-zcode-provider
 paseo plugin ls
 ```
 
-Paseo prepares the Git checkout and compiles the plugin. Update with `paseo plugin update zcode-provider`. Plugins execute with the daemon user's permissions.
+You can also paste `npm:paseo-plugin-zcode-provider` into **Settings → Plugins → Plugin source**. npm packages require Paseo 0.9.0 or later and npm on the daemon host. Paseo installs the released version and compiles the plugin. Update with `paseo plugin update zcode-provider`. Plugins execute with the daemon user's permissions.
+
+To follow the `main` branch instead, install the Git repository with `paseo plugin add supermomonga/paseo-plugin-zcode-provider`. Paseo prepares the checkout with `npm ci`.
 
 ## Setup
 
