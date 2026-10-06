@@ -27,6 +27,7 @@ import {
   runRuntimeSmoke,
 } from "./discovery/discover.js";
 import { ZCodeHostBridge, type HostBridge } from "./host/bridge.js";
+import { createRuntimeStatus } from "./provider-status.js";
 import { logger } from "./logger.js";
 import { MINIMUM_ZCODE_VERSION } from "./discovery/manifest.js";
 import {
@@ -114,6 +115,7 @@ interface SessionEntry {
 export function createZCodeProvider(
   bridgeFactory: BridgeFactory = createHost,
   persistenceStore = new SessionPersistenceStore(),
+  status: ProviderRegistration["status"] = createRuntimeStatus(),
 ): ProviderRegistration {
   return {
     id: "zcode",
@@ -121,6 +123,9 @@ export function createZCodeProvider(
     description:
       "ZCode workspace agent with native planning, tools, and model selection",
     icon: "icon.svg",
+    // No `command`: Paseo would look it up on PATH, but the runtime is the
+    // plugin's managed installation or the PASEO_ZCODE_* override.
+    status,
     async connect(request) {
       if (!request.versions.includes(PROVIDER_PROTOCOL_VERSION))
         throw new Error("ZCode requires provider protocol version 1");

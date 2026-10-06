@@ -49,6 +49,8 @@ const nativeConfigSchema = z.object({
       apiKey: z.string().nullish(),
       apiKeyManagementUrl: z.string().nullish(),
       mode: z.string().nullish(),
+      accountType: z.string().nullish(),
+      entitled: z.boolean().nullish(),
     })
     .nullish(),
   api: z
@@ -96,7 +98,7 @@ const nativeProviderSchema = z.object({
     }),
   ),
 });
-const nativeViewSchema = z.object({
+export const nativeViewSchema = z.object({
   providerTemplates: z.array(
     z.object({
       templateId: z.string(),
@@ -106,13 +108,15 @@ const nativeViewSchema = z.object({
   ),
   providers: z.array(nativeProviderSchema),
 });
-type NativeView = z.output<typeof nativeViewSchema>;
-type NativeProvider = z.output<typeof nativeProviderSchema>;
+export type NativeView = z.output<typeof nativeViewSchema>;
+export type NativeProvider = z.output<typeof nativeProviderSchema>;
 
-const sessionStateSchema = z.discriminatedUnion("status", [
+export const sessionStateSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("authenticated"),
     userInfo: z.object({
+      /** The account's backend user ID ("unknown" when ZCode has none). */
+      id: z.string().optional(),
       username: z.string().optional(),
       displayName: z.string().optional(),
     }),
@@ -120,8 +124,8 @@ const sessionStateSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("signed-out") }),
   z.object({ status: z.literal("reauthentication-required") }),
 ]);
-const familySchema = z.enum(["zai", "bigmodel"]).nullable();
-const accountSettingsSchema = z.object({
+export const familySchema = z.enum(["zai", "bigmodel"]).nullable();
+export const accountSettingsSchema = z.object({
   providerFamilyDomain: z.string().optional(),
   providerFamilyConnectionSelections: record.optional(),
 });
@@ -259,6 +263,7 @@ export class AccountService {
   private signIn: SignIn = { state: "idle" };
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
+  private readonly listeners = new Set<() => void>();
   private readonly idleMs: number;
   private readonly pollMs: number;
   private readonly now: () => number;
@@ -279,9 +284,31 @@ export class AccountService {
   async change(input: AccountChange): Promise<AccountView> {
     const change = accountChangeSchema.parse(input);
     return this.run(async (host) => {
-      await this.apply(host, change);
+      try {
+        await this.apply(host, change);
+      } finally {
+        this.changed();
+      }
       return this.read(host);
     });
+  }
+
+  /**
+   * Runs a read on the shared Server, after any pending account request.
+   * Rejects when the Server cannot start.
+   */
+  use<T>(operation: (host: SettingsHost) => Promise<T>): Promise<T> {
+    return this.enqueue(async () => operation(await this.acquire()));
+  }
+
+  /** Called after sign-in, sign-out and provider edits. */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) listener();
   }
 
   async close(): Promise<void> {
@@ -298,27 +325,33 @@ export class AccountService {
   private run(
     operation: (host: SettingsHost) => Promise<AccountView>,
   ): Promise<AccountView> {
-    const result = this.queue.then(async (): Promise<AccountView> => {
+    return this.enqueue(async (): Promise<AccountView> => {
+      let host: SettingsHost;
+      try {
+        host = await this.acquire();
+      } catch (error) {
+        logger.error("zcode.account.host.failed", error);
+        return {
+          status: "unavailable",
+          code: error instanceof AdapterError ? error.code : "HOST_FAILED",
+          message:
+            error instanceof AdapterError
+              ? error.message
+              : "ZCode Server could not be started",
+        };
+      }
+      return operation(host);
+    });
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(async (): Promise<T> => {
       if (this.closed)
         throw new AdapterError("NATIVE_EXITED", "ZCode settings are closed");
       this.active += 1;
       clearTimeout(this.idleTimer);
       try {
-        let host: SettingsHost;
-        try {
-          host = await this.acquire();
-        } catch (error) {
-          logger.error("zcode.account.host.failed", error);
-          return {
-            status: "unavailable",
-            code: error instanceof AdapterError ? error.code : "HOST_FAILED",
-            message:
-              error instanceof AdapterError
-                ? error.message
-                : "ZCode Server could not be started",
-          };
-        }
-        return await operation(host);
+        return await operation();
       } finally {
         this.active -= 1;
         this.scheduleIdle();
@@ -695,6 +728,7 @@ export class AccountService {
     if (result?.kind === "session" || result?.kind === "duplicate") {
       try {
         await this.completeSignIn(host, pending.family);
+        this.changed();
       } catch (error) {
         logger.error("zcode.account.signin.settings.failed", error);
         return fail("Signed in, but ZCode could not switch to the account.");

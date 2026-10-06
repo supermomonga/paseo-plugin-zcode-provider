@@ -5,6 +5,7 @@ import { createHost, createZCodeProvider } from "./server/provider.js";
 import { ManagedRuntimeInstaller } from "./server/runtime/managed.js";
 import { createRuntimeSetupHandlers } from "./server/runtime-setup.js";
 import { createDiagnosticsHandler } from "./server/status.js";
+import { createUsageSource } from "./server/usage.js";
 import { zcodeAccountChange, zcodeAccountView } from "./shared/account.js";
 import { zcodeDiagnostics } from "./shared/diagnostics.js";
 import {
@@ -26,7 +27,12 @@ export default function contribute(server: PluginServerContext): () => void {
   );
   server.handle(zcodeAccountView, () => account.view());
   server.handle(zcodeAccountChange, (input) => account.change(input));
+  // Usage sources arrived in Paseo 0.11; older daemons do not offer them.
+  const usage = createUsageSource(account);
+  if (typeof server.registerUsageSource === "function")
+    server.registerUsageSource(usage.source);
   return () => {
+    usage.dispose();
     abort.abort();
     void account.close();
   };

@@ -57,6 +57,10 @@ The **Account** tab uses ZCode's own account and provider services, the same one
 
 API keys are sent to ZCode, which stores them as Desktop does, and are never shown again. The plugin itself stores no credentials. Afterwards, choose **ZCode** when creating an agent; the model list is refreshed after each change on Paseo 0.9 or later.
 
+### Coding Plan usage
+
+On Paseo 0.11 and later, Paseo's **Usage** screen and sidebar usage summary show a **ZCode** card for the signed-in account's Individual Coding Plan (Z.ai or BigModel). It lists the 5-hour, weekly, monthly tool-call and ZCode MCP quotas with their reset times, as ZCode Desktop does. The plugin asks ZCode's official usage service for this plan only, on the same ZCode Server as the Account tab. The service never uses an API key from the environment. Team Plan and Start Plan are not shown. Paseo 0.11.0-beta.5 does not yet show usage in a ZCode agent's popover.
+
 ### Using your own runtime
 
 Set both variables in the daemon's environment and restart the daemon to bypass the managed runtime:
@@ -94,7 +98,7 @@ New conversations support listing, resume and paged V4 history. Mode/Plan restor
 
 ## Diagnostics
 
-**Settings → Plugins → zcode-provider → Diagnostics** shows whether the managed runtime or the environment override is in use, the runtime and Node.js paths and versions, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds. Paseo 0.11 and later also show a provider status in their standard diagnostics. The plugin does not report its own status there, so ZCode appears available even when the runtime is not set up; use this screen instead.
+**Settings → Plugins → zcode-provider → Diagnostics** shows whether the managed runtime or the environment override is in use, the runtime and Node.js paths and versions, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds. On Paseo 0.11 and later, **Settings → Providers** also shows ZCode as not installed until the runtime is set up and supported. Its diagnostic lists the runtime source, Server, Agent and Node.js versions and platform, or the reason the runtime cannot be used. This check reuses its result for 30 seconds and does not start ZCode, so sign-in problems still appear when a session starts.
 
 ```bash
 paseo plugin logs zcode-provider

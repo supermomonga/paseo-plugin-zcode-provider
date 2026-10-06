@@ -78,6 +78,7 @@ const operations = new Set([
   "provider-settings.addPersonalModel",
   "provider-settings.deletePersonalModel",
   "provider-settings.setPersonalModelEnabled",
+  "usage-stats.getEntitlementSnapshot",
   "event",
   "catalog",
   "session.create",
