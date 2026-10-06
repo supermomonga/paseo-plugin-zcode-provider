@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, realpath, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -17,7 +18,11 @@ const root = resolve(import.meta.dirname, "..");
 const runtime = process.env.PASEO_ZCODE_RUNTIME,
   node = process.env.PASEO_ZCODE_NODE;
 assert.ok(runtime && node, "Set PASEO_ZCODE_RUNTIME and PASEO_ZCODE_NODE");
-const directory = await realpath(await mkdtemp("/tmp/zcode-contract-"));
+const windows = process.platform === "win32";
+// POSIX keeps /tmp so ZCode's Unix socket paths stay below the platform length limit.
+const directory = await realpath(
+  await mkdtemp(join(windows ? tmpdir() : "/tmp", "zcode-contract-")),
+);
 let connection,
   scenario = "bash",
   modelCalls = 0;
@@ -102,7 +107,12 @@ const cleanup = async () => {
 };
 const removeSignalHandlers = cleanupOnSignal(cleanup);
 try {
-  for (const part of ["workspace", ".zcode/v2", "tmp"])
+  for (const part of [
+    "workspace",
+    ".zcode/v2",
+    "tmp",
+    ...(windows ? ["AppData/Roaming", "AppData/Local"] : []),
+  ])
     await mkdir(join(directory, part), { recursive: true });
   await new Promise((r) => modelServer.listen(0, "127.0.0.1", r));
   const config = e2eProviderConfig("local-fixture-not-a-secret");
@@ -113,13 +123,24 @@ try {
     { mode: 0o600 },
   );
   // This script owns its process environment; no real user configuration is read.
+  // Windows processes also need their system locations; profile paths are isolated below.
+  const inherited = windows
+    ? ["PATH", "PATHEXT", "SystemRoot", "SystemDrive", "windir", "ComSpec"]
+    : ["PATH", "SHELL", "LANG"];
   const env = Object.fromEntries(
-    ["PATH", "SHELL", "LANG"]
-      .filter((k) => process.env[k])
-      .map((k) => [k, process.env[k]]),
+    inherited.filter((k) => process.env[k]).map((k) => [k, process.env[k]]),
   );
   for (const key of Object.keys(process.env)) delete process.env[key];
   Object.assign(process.env, env, {
+    ...(windows
+      ? {
+          USERPROFILE: directory,
+          APPDATA: join(directory, "AppData", "Roaming"),
+          LOCALAPPDATA: join(directory, "AppData", "Local"),
+          TEMP: join(directory, "tmp"),
+          TMP: join(directory, "tmp"),
+        }
+      : {}),
     HOME: directory,
     ZCODE_DATA_BASE_DIR: directory,
     ZCODE_STORAGE_DIR: join(directory, ".zcode"),
