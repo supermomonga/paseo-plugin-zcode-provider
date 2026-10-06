@@ -1,9 +1,34 @@
 {
   "name": "paseo-plugin-zcode-provider",
   "version": "0.1.0",
-  "private": true,
+  "description": "Unofficial Paseo provider plugin for ZCode, using the official stdio Services Server of the integrated ZCode CLI.",
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "zcode",
+    "z.ai",
+    "glm"
+  ],
+  "homepage": "https://github.com/supermomonga/paseo-plugin-zcode-provider#readme",
+  "bugs": "https://github.com/supermomonga/paseo-plugin-zcode-provider/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/supermomonga/paseo-plugin-zcode-provider.git"
+  },
   "license": "MIT",
   "type": "module",
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "index.server.ts",
+    "icon.svg",
+    "client/",
+    "server/",
+    "shared/",
+    "NOTICE.md",
+    "vendor/",
+    "!**/*.test.ts"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
@@ -25,7 +50,12 @@
     "check:zcode-source": "node scripts/sync-zcode-source.mjs",
     "test:stdio-runtime": "node scripts/check-stdio-runtime.mjs",
     "test:native-restore": "node scripts/check-stdio-runtime.mjs --check-native-restore",
-    "setup:managed-runtime": "node scripts/install-managed-runtime.mjs"
+    "setup:managed-runtime": "node scripts/install-managed-runtime.mjs",
+    "prepack": "node scripts/pack-manifest.mjs prepack",
+    "postpack": "node scripts/pack-manifest.mjs postpack"
+  },
+  "dependencies": {
+    "semver": "7.8.5"
   },
   "devDependencies": {
     "@getpaseo/client": "0.9.0-beta.1",
@@ -39,7 +69,6 @@
     "prettier": "3.6.2",
     "react": "19.1.0",
     "react-native": "0.81.5",
-    "semver": "7.8.5",
     "turndown": "7.2.4",
     "typescript": "5.9.2",
     "vitest": "3.2.7",

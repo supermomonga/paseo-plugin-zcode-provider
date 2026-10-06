@@ -55,7 +55,7 @@ jobs:
         run: npm test
       - name: Build plugin
         run: npm run build
-      - name: Check Git preparation and upstream integration
+      - name: Check Git and npm installation and upstream integration
         run: npm run test:upstream -- "$GITHUB_WORKSPACE/paseo"
 
   runtime:

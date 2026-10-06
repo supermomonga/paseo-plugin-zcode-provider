@@ -12,7 +12,7 @@ npm run check:zcode-source -- ~/ghq/github.com/zai-org/ZCode
 npm run test:upstream -- /absolute/path/to/paseo
 ```
 
-`test:upstream` uses Paseo's actual plugin compiler, Git preparation and Provider adapter. Use commit `7c1958f5b0a4ae9f2cb12f77b0a754a644cd0081` (0.9.0-beta.1), matching the installed development SDK. It checks clean npm preparation both with `NODE_ENV` unset and `production`, server/client registration, V4 timeline, guidance, attachment queue aggregation, stop, provider replacement, history and Plan configuration on resume. The adapter fixture uses the official V4 schemas and delta application; it does not prove native behavior.
+`test:upstream` uses Paseo's actual plugin compiler, Git preparation and Provider adapter. Use commit `7c1958f5b0a4ae9f2cb12f77b0a754a644cd0081` (0.9.0-beta.1), matching the installed development SDK. It checks clean npm preparation of a Git checkout both with `NODE_ENV` unset and `production`, installation of the `npm pack` tarball with Paseo's npm acquisition options, server/client registration and the provider icon of both, V4 timeline, guidance, attachment queue aggregation, stop, provider replacement, history and Plan configuration on resume. The adapter fixture uses the official V4 schemas and delta application; it does not prove native behavior.
 
 ## Source of truth
 
@@ -77,6 +77,14 @@ npm run test:e2e
 Set both runtime variables, or `XDG_DATA_HOME` containing a managed runtime, first. The runner writes a private, temporary official provider configuration using the existing key, isolates HOME/configuration/SQLite/temp sockets, and passes no unrelated credentials to child processes. It runs model/reasoning, independent Plan transitions and approval/decline, followed by real guidance, attachment queue, stop and resume checks. Its mode/Plan restoration supplies both saved Paseo settings, matching `test:stdio-runtime`. Test data is removed even after failures.
 
 CI runs ordinary non-billable tests, actual Paseo integration and vendored-source verification on Node 22. A matrix job installs the pinned managed runtime with the plugin's installer on darwin-arm64, linux-x64, linux-arm64, win-x64 and win-arm64 runners (plugin on Node 22, ZCode on the managed Node.js) and executes the non-billable Provider contract check. Eligible non-fork PRs and pushes additionally run isolated real-model E2E with `GLM_API_KEY` on the managed runtime; no Desktop/deb installation is used. Failures of the supported contract or E2E block release. Actual OS coverage is recorded only after execution, not inferred from workflow configuration.
+
+## Plugin releases
+
+The plugin is published to npm as `paseo-plugin-zcode-provider` (ADR 16). Run the **Version Bump** workflow from `main` with patch, minor or major, or an explicit `MAJOR.MINOR.PATCH` version. It bumps `package.json` and `package-lock.json` with `npm version`, opens a `release/v<version>` pull request and dispatches CI on it. Merging the pull request makes the **Release** workflow tag `v<version>`, run `npm publish` with npm trusted publishing (provenance included, no token) and create a GitHub release with generated notes. A failed publish after tagging needs a manual `npm publish` from the tag or a new patch release; the workflow acts only when the version changes.
+
+`npm pack` and `npm publish` ship the files listed in `package.json` without tests, and `prepack` removes the Git-only `build` commands from the packed `paseo-plugin.json`: Paseo runs them for npm installations too, where `npm ci` fails without a lockfile. `postpack` restores the manifest; after an interrupted pack, restore `paseo-plugin.json.git` as the message says. Runtime libraries other than Paseo's host modules (`@getpaseo/plugin/*`, `zod`) belong in `dependencies`, because npm installation omits development dependencies.
+
+The first version is published by hand from `main`, because a trusted publisher can only be configured for an existing package: `npm publish`, then tag `v<version>` and create its GitHub release. Then register the trusted publisher with `npm trust github paseo-plugin-zcode-provider --file release.yml --repo supermomonga/paseo-plugin-zcode-provider --allow-publish` (or in the package settings on npmjs.com, allowing `npm publish`). Publishing access can then require two-factor authentication and disallow tokens. The repository setting that allows GitHub Actions to create pull requests must stay enabled for the Version Bump workflow.
 
 ## Architecture
 
