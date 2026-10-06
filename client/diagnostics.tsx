@@ -35,7 +35,14 @@ function Installation({ result, theme, compact }: SectionProps) {
   return (
     <SettingsSection title="ZCode installation">
       <SettingsCard>
-        <SettingsRow label="Install root" hint="PASEO_ZCODE_RUNTIME">
+        <SettingsRow
+          label="Install root"
+          hint={
+            result.source === "managed"
+              ? "Managed runtime installed from the Setup screen"
+              : "PASEO_ZCODE_RUNTIME"
+          }
+        >
           <Value color={theme.colors.foreground} compact={compact}>
             {result.installRoot}
           </Value>
@@ -85,7 +92,12 @@ function Compatibility({ result, theme, compact }: SectionProps) {
             {result.compatibilityReason}
           </Value>
         </SettingsRow>
-        <SettingsRow label="Node.js" hint="PASEO_ZCODE_NODE">
+        <SettingsRow
+          label="Node.js"
+          hint={
+            result.source === "managed" ? "Managed Node.js" : "PASEO_ZCODE_NODE"
+          }
+        >
           <Value color={theme.colors.foregroundMuted} compact={compact}>
             {`${result.nodeExecutable} (${result.nodeVersion})`}
           </Value>

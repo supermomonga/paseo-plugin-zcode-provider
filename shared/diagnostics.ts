@@ -14,6 +14,7 @@ export const diagnosticsResultSchema = z.discriminatedUnion("status", [
     .object({
       status: z.literal("ready"),
       providerVersion: z.string(),
+      source: z.enum(["managed", "environment"]),
       installRoot: z.string(),
       nodeExecutable: z.string(),
       nodeVersion: z.string(),
@@ -42,7 +43,7 @@ export const diagnosticsResultSchema = z.discriminatedUnion("status", [
 
 export type DiagnosticsResult = z.output<typeof diagnosticsResultSchema>;
 
-// Read-only status report for the Settings screen. The handler sanitizes every
+// Status report for the Diagnostics screen. The handler sanitizes every
 // field; no credentials, conversation text, or raw native output cross this RPC.
 export const zcodeDiagnostics = defineRpc({
   name: "zcode.diagnostics",

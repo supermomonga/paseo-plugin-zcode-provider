@@ -22,6 +22,7 @@ const runtime: DiscoveredRuntime = {
   compatibility: "supported",
   compatibilityReason: "Minimum version met; runtime checked during use",
   writableInstallRoot: false,
+  source: "environment",
 };
 it("reports explicit paths and hashes separately without claiming source equality", async () => {
   const smoke = vi.fn();

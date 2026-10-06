@@ -108,6 +108,8 @@ export async function runE2E({
         "LC_ALL",
         "PASEO_ZCODE_RUNTIME",
         "PASEO_ZCODE_NODE",
+        // Locates a managed runtime; HOME below is replaced.
+        "XDG_DATA_HOME",
       ]
         .filter((key) => environment[key] !== undefined)
         .map((key) => [key, environment[key]]),

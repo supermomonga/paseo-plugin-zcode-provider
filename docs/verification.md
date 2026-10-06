@@ -1,3 +1,47 @@
+# プラグイン管理ランタイムの検証（2026-10-06）
+
+ADR 15 の管理下セットアップを、公開した成果物そのもので検証した。
+
+| 項目                    | 実測値                                                                                                                                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ZCode ランタイム        | [`zcode-runtime-v3.14.3`](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.14.3)、`zcode-runtime-3.14.3.tar.gz`、79,887,659 bytes                            |
+| 成果物 SHA-256          | `a2af414592362d226f92c105d91211e5c4f138cf985b0c86da0eb9163cb9aee7`。`gh attestation verify` で、タグ `zcode-runtime-v3.14.3`（コミット `2372c9f`）の release ワークフローによる署名を確認             |
+| 成果物の Server / Agent | Server `f5b1d561277062ea1158074ca9240f020aa9d274aa32eebd01bcb838a0910187`（下記ローカルビルドと一致）、Agent `93e4555343aacdef7dfc24ca87572eb3a939ae2f1acf52d77d4bfdead9da6d22`（ビルドごとに異なる） |
+| Node.js                 | 24.21.0。`SHASUMS256.txt` の署名を一時 `GNUPGHOME` と nodejs/release-keys の現役鍵で検証（Antoine du Hamel 鍵）                                                                                       |
+
+- **Release ワークフロー**: [タグの run](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/37410109547) でビルド、darwin-arm64・linux-x64・linux-arm64・win-x64・win-arm64 の `test:stdio-runtime`、attestation、Release 作成が成功。PR 上の同ワークフローも 5 ターゲットで成功した。
+- **CI**: [run 37410854307](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/37410854307) で、プラグインのインストーラーが固定 URL・ハッシュから導入した管理下ランタイムに対し、5 ターゲットの `test:stdio-runtime`（プラグインは Node 22、ZCode は Node 24.21.0）と実モデル E2E が成功。同 run の `test` ジョブは `check-upstream.mjs` のスタブが設定画面の後始末関数を返さないため失敗した。Paseo 0.9.0-beta.1 と最新版の `addSettingsScreen` はどちらも後始末関数を返すため、スタブを実装に合わせて修正し、ローカルの実 compiler / adapter 試験で成功を確認した。
+- **macOS arm64 ローカル**: `XDG_DATA_HOME` を一時ディレクトリにして `npm run setup:managed-runtime` が実ダウンロード込みで 12.6 秒で完了。続く `test:stdio-runtime` は `source: "managed"` で exit 0。
+- **実 UI**: Paseo 0.9.0-beta.2 の一時 daemon（一時ホーム、loopback、relay と MCP 注入は無効、plugins と Web UI は有効、HOME・XDG・ZCode データも一時ディレクトリ）に現在の worktree を導入し、ヘッドレス Chrome で確認した。Setup 画面で取得元・サイズ・SHA-256・ライセンスの表示、ボタンからの導入、進捗（ダウンロード率・展開・検証）、完了後のログインコマンド、Diagnostics の「Managed runtime」表示、削除と削除後の未導入表示を確認した。幅 1280px と 420px で表示を確認し、長い値がラベル列を狭める 2 か所を検証中に修正した。
+- **実モデル**: 同 daemon で隔離した provider configuration の既存 Z.ai Coding Plan キーを使い、`paseo run --provider zcode` が管理下ランタイム経由で `MANAGED_RUNTIME_OK` を返した。削除後の新規作成は「ZCode runtime is not set up. Open Settings → Plugins → zcode-provider to set it up.」で失敗し、案内どおりの表示になった。
+- **ログインコマンド**: 表示されたパスで `--version` が `3.14.3` を返し、`login [zai|bigmodel]` サブコマンドがあることを確認した。実アカウントでのブラウザ認証と、その認証を管理下 Server が使えることは未確認。
+
+未検証：Windows と Linux arm64 で Paseo daemon を動かした場合の画面からの導入（CI は daemon を介さずインストーラーと契約試験を実行）、プロキシ環境、Desktop とモバイルのクライアント、実アカウントのログイン。検証後に一時 daemon を停止し、プロセスが残っていないことを確認した。
+
+# ZCode v3.14.3 へのソース基準更新（2026-10-06）
+
+公開タグ `v3.14.3` のソースへ基準を更新した。上流の公開タグは `v3.14.3` だけで、変更履歴にある 3.14.4 のソースは未公開のため対象外とした。下記 2026-09-21 の記録は旧基準 `872ad960` の結果として残す。
+
+| 項目                 | 実測値                                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| ZCode source         | `29628c9acdb81b703bbd4080c207a0e7ce5e276e`（タグ `v3.14.3`）                                                    |
+| ビルド               | git archive を一時領域へ展開。pnpm 10.33.2、Node 24.20.0、`tsc -b packages/shared` の後に公式 `build-zcode.mjs` |
+| OS/CPU               | macOS arm64                                                                                                     |
+| Server / Agent       | 3.14.3 / 0.16.9                                                                                                 |
+| 配布 tar.gz SHA-256  | `e13020f331298f1d0af53e1691910bed6e06556031319c28808bf925b7eb4612`                                              |
+| Server SHA-256       | `f5b1d561277062ea1158074ca9240f020aa9d274aa32eebd01bcb838a0910187`                                              |
+| Agent SHA-256        | `c6abd0cdf4ca1d7aa2089a9bdc71ccdc24b364b7aa548d84dcce070d4e34866a`                                              |
+| Plugin runtime / SDK | Node 22.23.2 / `@getpaseo/plugin` 0.9.0-beta.1                                                                  |
+
+vendored ファイルは 91 から 97 に増えた。V4 の変更は後方互換の追加である。Host と clientHello に任意の `workflowRunDeltas` capability が加わり、`workflowRun.updated` / `workflowRun.removed` 差分はクライアントがこの capability を宣言した接続にだけ送られる。Provider は宣言しないため、従来どおり `state.updated` を受け取る。コマンドの `botDeliveryTarget` は Host が注入する任意項目である。
+
+- `npm run typecheck`、`npm test`（15 ファイル、128 tests）、`npm run build`、`npm run format:check`、`npm run check:zcode-source`（97 ファイル）が成功。
+- `npm run test:stdio-runtime` は **exit 0**。catalog、draft、Bash、ACK/完了一回、保存設定による cold resume、履歴、質問、承認、停止と再開、slash command、v3 一覧、EOF cleanup、Server SIGKILL 後の Agent 終了を確認した。
+- `npm run test:native-restore` は **exit 1**。期待値 `edit / true` に対して実際は `yolo / false` で、設定省略時の復元不具合は v3.14.3 でも残る。保証対象外（ADR 14）。
+- 確認済みリリースを 3.12.3 から 3.14.3 へ更新した（Issue #23、#25）。3.14.4（#32）はソース公開後に扱う。
+
+未実行：Paseo 実 compiler / adapter 結合試験、実モデル E2E、Linux x64 の runtime 試験。いずれも CI で実行する。
+
 # 公開ソース・stdio / V4 移行の検証（2026-09-21）
 
 接続方式と会話処理を置換し、通常テスト、実モデル E2E、隔離 daemon の実 Web UI 検証は成功した。固定した ZCode ソースには設定省略時の実行状態復元不具合がある。ユーザー承認と ADR 14 により、**mode / Plan の復元保証は Paseo が保存した両設定を再適用する経路に限定**した。設定省略時の不具合は保証対象外として追跡し、その修正自体を公開条件にはしない。以下の成功・失敗・未検証範囲を分けて扱う。

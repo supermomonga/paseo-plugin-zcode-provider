@@ -1,6 +1,4 @@
 import { load } from "cheerio";
-import { build } from "esbuild";
-import { fileURLToPath } from "node:url";
 import {
   cliOptions,
   collectRelease,
@@ -11,6 +9,7 @@ import {
   runReleaseCheck,
   validateVersion,
 } from "./releases/common.mjs";
+import { loadZCodeManifest } from "./zcode-manifest.mjs";
 
 export const ZCODE_CHANGELOG_URL = "https://zcode.z.ai/en/changelog";
 
@@ -56,20 +55,7 @@ export async function fetchNewZCodeReleases(currentVersion, fetchImpl = fetch) {
 }
 
 export async function currentZCodeVersion() {
-  const result = await build({
-    entryPoints: [
-      fileURLToPath(
-        new URL("../server/discovery/manifest.ts", import.meta.url),
-      ),
-    ],
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    write: false,
-  });
-  const manifest = await import(
-    `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`
-  );
+  const manifest = await loadZCodeManifest();
   return validateVersion(manifest.LAST_REVIEWED_ZCODE_RELEASE);
 }
 

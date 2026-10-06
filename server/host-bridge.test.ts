@@ -38,6 +38,7 @@ beforeAll(async () => {
     compatibility: "supported",
     compatibilityReason: "test fixture",
     writableInstallRoot: true,
+    source: "environment",
   };
 });
 afterAll(async () => {

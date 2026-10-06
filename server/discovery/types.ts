@@ -15,6 +15,8 @@ export interface RuntimeIdentity {
   readonly serverSha256: string;
 }
 export interface DiscoveredRuntime {
+  /** "managed" is the pinned plugin-installed runtime; "environment" is an override. */
+  readonly source: "managed" | "environment";
   readonly paths: RuntimePaths;
   readonly identity: RuntimeIdentity;
   readonly compatibility: "supported" | "unsupported";
