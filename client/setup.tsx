@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Platform, Text, View } from "react-native";
 import { type PluginSurfaceProps, useRpc } from "@getpaseo/plugin/client";
 import {
   SettingsAction,
@@ -184,15 +184,27 @@ export function SetupScreen({ theme, layout }: PluginSurfaceProps) {
     <View style={{ gap: compact ? 16 : 24 }}>
       <SettingsSection title="ZCode runtime setup">
         <SettingsCard>
+          <SettingsRow label="Downloads from">
+            <Value color={theme.colors.foreground} compact={compact}>
+              nodejs.org and this plugin's GitHub releases
+            </Value>
+          </SettingsRow>
           <SettingsRow
-            label="What this does"
-            hint="Runs on the machine hosting the Paseo daemon, with the daemon user's permissions."
+            label="ZCode build"
+            hint="ZCode does not publish its CLI; CI builds the unmodified source."
           >
             <Value color={theme.colors.foreground} compact={compact}>
-              Downloads Node.js from nodejs.org and an unofficial build of the
-              ZCode CLI from this plugin's GitHub releases, verifies their
-              SHA-256 and extracts them. PATH and other installations are not
-              changed. The ZCode build is not endorsed by ZCode or Z.ai.
+              Unofficial, not endorsed by ZCode or Z.ai
+            </Value>
+          </SettingsRow>
+          <SettingsRow label="Runs as">
+            <Value color={theme.colors.foreground} compact={compact}>
+              The daemon user, on the daemon machine
+            </Value>
+          </SettingsRow>
+          <SettingsRow label="Changes">
+            <Value color={theme.colors.foreground} compact={compact}>
+              Only the destination below; PATH is untouched
             </Value>
           </SettingsRow>
           <SettingsRow label="Destination">
@@ -261,14 +273,33 @@ export function SetupScreen({ theme, layout }: PluginSurfaceProps) {
       {status.loginCommand === undefined ? null : (
         <SettingsSection title="Sign in to ZCode">
           <SettingsCard>
-            <SettingsRow
-              label="Login command"
-              hint="Run in a terminal on the daemon machine. It opens browser authorization; add --no-browser to print the URL instead."
-            >
+            <SettingsRow label="Run it">
               <Value color={theme.colors.foreground} compact={compact}>
-                {status.loginCommand}
+                In a terminal on the daemon machine
               </Value>
             </SettingsRow>
+            <SettingsRow label="Authorization">
+              <Value color={theme.colors.foreground} compact={compact}>
+                Opens a browser; add --no-browser to print the URL
+              </Value>
+            </SettingsRow>
+            {/* A full-width block: a row value would squeeze the label column. */}
+            <View style={{ padding: compact ? 12 : 16 }}>
+              <Text
+                selectable
+                style={{
+                  color: theme.colors.foreground,
+                  fontFamily: Platform.select({
+                    ios: "Menlo",
+                    default: "monospace",
+                  }),
+                  fontSize: compact ? 12 : 13,
+                  lineHeight: 20,
+                }}
+              >
+                {status.loginCommand}
+              </Text>
+            </View>
           </SettingsCard>
         </SettingsSection>
       )}
