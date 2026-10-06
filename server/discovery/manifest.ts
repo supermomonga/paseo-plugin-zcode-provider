@@ -33,4 +33,4 @@ export function assessCompatibility(identity: RuntimeIdentity): {
 }
 
 // Last reviewed public changelog release; source versions are not releases.
-export const LAST_REVIEWED_ZCODE_RELEASE = "3.14.3";
+export const LAST_REVIEWED_ZCODE_RELEASE = "3.14.4";

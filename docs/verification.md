@@ -1,3 +1,14 @@
+# ZCode 3.14.4 の確認（2026-10-06）
+
+変更履歴の 3.14.4 は「Disabled CAPTCHA verification for model requests to further improve the free tier experience.」の 1 項目だけだった。確認済みリリースを 3.14.4 に更新し、ソース基準と管理下ランタイムは 3.14.3 のまま据え置いた（Issue #32）。
+
+- **公開ソース**: `zai-org/ZCode` のタグは `v3.14.3` だけで、`main` も `29628c9`（v3.14.3）のまま。`feat/ui-plugin`（`662c30b`）の `package.json` も 3.14.3 だった。3.14.4 はビルドできない。
+- **CAPTCHA の所在**: `v3.14.3` のソースにモデル要求の CAPTCHA 処理はない。`ticket` / `randstr` を送るのは Coding Plan 購入の試算 API（`packages/services/src/coding-plan-subscription/bigmodelCodingPlanSubscriptionProvider.ts`）だけで、プラグインはこの API を呼ばない。Provider が使う stdio Server・V4・モデル選択の契約に変更はない。
+- **3.14.0（Issue #22）**: 既存の基準で対応済み。最低版を Server 3.14.0 / Agent 0.16.9 とし（PR #24）、ソース基準を v3.14.3 に更新した（PR #39）。
+- 更新後の `node scripts/check-zcode-releases.mjs --dry-run` は新しいリリース候補を出さなかった。
+
+未検証：3.14.4 の実行（統合 CLI は配布されず、ソースも未公開）。CAPTCHA の無効化がサーバー側の変更かどうか、無料枠（Start Plan）でのモデル要求は確認していない。
+
 # 設定画面のタブ化とアカウント・プロバイダー管理の検証（2026-10-06）
 
 ADR 17 の Account タブを、管理下ランタイム 3.14.3（darwin-arm64）と隔離したデータで検証した。

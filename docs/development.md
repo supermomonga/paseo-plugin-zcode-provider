@@ -22,7 +22,7 @@ Inspect `~/ghq/github.com/zai-org/ZCode`, not extracted Electron/deb bundles. Th
 
 Verify the files with `npm run check:zcode-source`. To deliberately resynchronize the fixed SHA, run `node scripts/sync-zcode-source.mjs /absolute/ZCode --write`; changing the SHA requires reviewing contract changes, the minimum versions and runtime evidence together. The sync script reads `git show <SHA>:<path>`, not possibly modified checkout files. Do not format vendored source. Unexpected vendored files fail verification.
 
-`download:zcodecjs` and deb extraction tests have been removed. Release monitoring still uses the official changelog and its separately recorded last reviewed release (3.14.3), which matches the pinned v3.14.3 source tag. A changelog release without public source (such as 3.14.4) is not a baseline. Associate GitHub tags/releases when available; do not create an Issue for every main commit.
+`download:zcodecjs` and deb extraction tests have been removed. Release monitoring still uses the official changelog and its separately recorded last reviewed release (3.14.4). A changelog release without public source is reviewed from its notes but is not a baseline: 3.14.4 has no public source, so the source baseline and managed runtime stay at v3.14.3. A source tag published later for an already reviewed release does not open an Issue, so check the upstream tags at each release review. Associate GitHub tags/releases when available; do not create an Issue for every main commit.
 
 ## Managed runtime and its releases
 
