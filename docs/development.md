@@ -16,7 +16,7 @@ npm run test:upstream -- /absolute/path/to/paseo
 
 ## Source of truth
 
-Inspect `~/ghq/github.com/zai-org/ZCode`, not extracted Electron/deb bundles. The current baseline is `872ad960de7ec172591f7e1952f7849229f94521`. Record that SHA and source paths in investigations. Source version, release version and artifact identity are separate facts.
+Inspect `~/ghq/github.com/zai-org/ZCode`, not extracted Electron/deb bundles. The current baseline is `29628c9acdb81b703bbd4080c207a0e7ce5e276e`. Record that SHA and source paths in investigations. Source version, release version and artifact identity are separate facts.
 
 `server/vendor/zcode` contains the needed official RPC modules, V4 contracts, wire assembler and pure delta application with their transitive schema dependencies. It contains no Agent engine, authentication implementation, tools or storage engine. Paseo's compiler requires executable plugin modules to live under `server/`, `client/` or `shared/`, hence this location. `provenance.json` records entrypoints, original/modified hashes and the only import rewrite (a private workspace alias to its relative source). The upstream Apache-2.0 LICENSE and full NOTICE are retained, along with the relevant Visual Studio Code MIT notice extracted from THIRD-PARTY-NOTICES.md. The extraction and full original file hash are recorded. `npm run build` also copies these notices to `dist/licenses/zcode`.
 
@@ -38,7 +38,7 @@ node scripts/build-zcode.mjs --base-url https://example.invalid/zcode/
 
 The explicit shared-package TypeScript build supplies `packages/shared/dist`; the packaging script requires it but the baseline does not otherwise generate it. This uses the official tsconfig without patching source. The URL is build metadata for this development artifact, not a download source.
 
-Extract `dist/zcode/releases/3.14.0/zcode-3.14.0.tar.gz` **outside the checkout**, and configure `PASEO_ZCODE_RUNTIME` to the extracted `zcode` directory and `PASEO_ZCODE_NODE` to the explicit Node binary. Record the archive SHA-256, Server/Agent hashes, source SHA, OS/CPU and Node version independently. Do not infer a source SHA from matching version strings.
+Extract `dist/zcode/releases/3.14.3/zcode-3.14.3.tar.gz` **outside the checkout**, and configure `PASEO_ZCODE_RUNTIME` to the extracted `zcode` directory and `PASEO_ZCODE_NODE` to the explicit Node binary. Record the archive SHA-256, Server/Agent hashes, source SHA, OS/CPU and Node version independently. Do not infer a source SHA from matching version strings.
 
 The baseline's remote terminal service cannot locate the integrated distribution's `node-pty` prebuild. The Agent's Bash tool uses a different path and passes actual execution tests. Do not copy native binaries into guessed paths; see [verification](verification.md).
 

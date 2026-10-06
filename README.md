@@ -27,7 +27,7 @@ Set these in the daemon's environment, then restart the daemon. A terminal expor
 
 You install and update the CLI and its Node.js runtime. Set up authentication and models using the official CLI/TUI. The plugin neither decrypts nor copies credentials. Session environment variables are forwarded, subject to ZCode's own proxy, certificate and runtime environment handling.
 
-The source baseline is `872ad960de7ec172591f7e1952f7849229f94521`. Its version strings do not prove that a public CLI artifact has been released or verified. [Build and validation instructions](docs/development.md) distinguish source, distribution hashes and actual runtime results. Newer stable versions are allowed, including major versions; passing the minimum check does not certify compatibility. macOS arm64 has been exercised locally; Linux x64 runtime checks ran in CI, with the settings-free restoration failure recorded separately. See the verification record for the exact coverage. Other OS/CPU combinations remain unverified.
+The source baseline is `29628c9acdb81b703bbd4080c207a0e7ce5e276e`. Its version strings do not prove that a public CLI artifact has been released or verified. [Build and validation instructions](docs/development.md) distinguish source, distribution hashes and actual runtime results. Newer stable versions are allowed, including major versions; passing the minimum check does not certify compatibility. macOS arm64 has been exercised locally; Linux x64 runtime checks ran in CI, with the settings-free restoration failure recorded separately. See the verification record for the exact coverage. Other OS/CPU combinations remain unverified.
 
 ## Installation
 

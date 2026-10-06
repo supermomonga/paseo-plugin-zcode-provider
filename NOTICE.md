@@ -10,7 +10,7 @@
 
 ZCode の Agent・認証・ツール・保存エンジン、認証情報、モデル設定は同梱しません。利用者が導入した公式統合 CLI の stdio Services Server を実行します。
 
-`server/vendor/zcode` は [zai-org/ZCode](https://github.com/zai-org/ZCode/tree/872ad960de7ec172591f7e1952f7849229f94521) の RPC、V4 契約、wire 組み立てと純粋な差分適用、および必要なスキーマ依存を含みます。第一者コードは [上流 LICENSE](server/vendor/zcode/LICENSE) の Apache-2.0、RPC と wire codec の VS Code 由来部分は [MIT の通知](server/vendor/zcode/THIRD-PARTY-NOTICES.md) の条件を保持します。[上流 NOTICE](server/vendor/zcode/NOTICE.md) は全文を保持しており、上流製品全体の説明です。そこに記載された全機能・依存がプラグインへ同梱されることを意味しません。
+`server/vendor/zcode` は [zai-org/ZCode](https://github.com/zai-org/ZCode/tree/29628c9acdb81b703bbd4080c207a0e7ce5e276e) の RPC、V4 契約、wire 組み立てと純粋な差分適用、および必要なスキーマ依存を含みます。第一者コードは [上流 LICENSE](server/vendor/zcode/LICENSE) の Apache-2.0、RPC と wire codec の VS Code 由来部分は [MIT の通知](server/vendor/zcode/THIRD-PARTY-NOTICES.md) の条件を保持します。[上流 NOTICE](server/vendor/zcode/NOTICE.md) は全文を保持しており、上流製品全体の説明です。そこに記載された全機能・依存がプラグインへ同梱されることを意味しません。
 
 ファイルごとの出典・SHA-256、private workspace import の変更、第三者通知の抽出範囲を [provenance.json](server/vendor/zcode/provenance.json) に記録しています。取得・照合は `scripts/sync-zcode-source.mjs` で行います。`npm run build` はこれらのライセンス・通知を `dist/licenses/zcode` にも配置します。
 

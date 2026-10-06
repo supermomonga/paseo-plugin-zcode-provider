@@ -1,7 +1,7 @@
 import { gte, parse } from "semver";
 import type { RuntimeIdentity } from "./types.js";
 
-export const ZCODE_SOURCE_COMMIT = "872ad960de7ec172591f7e1952f7849229f94521";
+export const ZCODE_SOURCE_COMMIT = "29628c9acdb81b703bbd4080c207a0e7ce5e276e";
 export const MINIMUM_ZCODE_VERSION = { app: "3.14.0", cli: "0.16.9" } as const;
 export const MINIMUM_NODE_VERSION = "24.14.0";
 

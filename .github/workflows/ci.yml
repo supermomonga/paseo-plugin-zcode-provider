@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: zai-org/ZCode
-          ref: 872ad960de7ec172591f7e1952f7849229f94521
+          ref: 29628c9acdb81b703bbd4080c207a0e7ce5e276e
           path: zcode-source
           persist-credentials: false
       - uses: actions/setup-node@v6
@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: zai-org/ZCode
-          ref: 872ad960de7ec172591f7e1952f7849229f94521
+          ref: 29628c9acdb81b703bbd4080c207a0e7ce5e276e
           path: zcode-source
           persist-credentials: false
       - uses: actions/setup-node@v6
@@ -88,14 +88,14 @@ jobs:
       - name: Extract outside the source checkout
         run: |
           mkdir "$RUNNER_TEMP/zcode-runtime"
-          sha256sum zcode-source/dist/zcode/releases/3.14.0/zcode-3.14.0.tar.gz
-          tar -xzf zcode-source/dist/zcode/releases/3.14.0/zcode-3.14.0.tar.gz -C "$RUNNER_TEMP/zcode-runtime"
+          sha256sum zcode-source/dist/zcode/releases/3.14.3/zcode-3.14.3.tar.gz
+          tar -xzf zcode-source/dist/zcode/releases/3.14.3/zcode-3.14.3.tar.gz -C "$RUNNER_TEMP/zcode-runtime"
           echo "PASEO_ZCODE_RUNTIME=$RUNNER_TEMP/zcode-runtime/zcode" >> "$GITHUB_ENV"
           echo "PASEO_ZCODE_NODE=$(command -v node)" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
           name: zcode-runtime-linux-x64
-          path: zcode-source/dist/zcode/releases/3.14.0/zcode-3.14.0.tar.gz
+          path: zcode-source/dist/zcode/releases/3.14.3/zcode-3.14.3.tar.gz
       - name: Install plugin dependencies
         working-directory: plugin
         run: npm ci --include=dev
@@ -129,7 +129,7 @@ jobs:
       - name: Configure official runtime
         run: |
           mkdir "$RUNNER_TEMP/zcode-runtime"
-          tar -xzf runtime-archive/zcode-3.14.0.tar.gz -C "$RUNNER_TEMP/zcode-runtime"
+          tar -xzf runtime-archive/zcode-3.14.3.tar.gz -C "$RUNNER_TEMP/zcode-runtime"
           echo "PASEO_ZCODE_RUNTIME=$RUNNER_TEMP/zcode-runtime/zcode" >> "$GITHUB_ENV"
           echo "PASEO_ZCODE_NODE=$(command -v node)" >> "$GITHUB_ENV"
       - name: Install dependencies
