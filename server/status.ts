@@ -31,7 +31,7 @@ function smokeResult(result: RuntimeSmokeResult) {
   };
 }
 
-// Read-only report for the Settings screen. Detection runs on demand; the
+// Read-only report for the Diagnostics screen. Detection runs on demand; the
 // optional smoke check spawns the bundled CLI. Nothing here is persisted.
 export function createDiagnosticsHandler(
   dependencies: DiagnosticsDependencies = {},
@@ -54,6 +54,7 @@ export function createDiagnosticsHandler(
       return {
         status: "ready",
         providerVersion,
+        source: runtime.source,
         installRoot: runtime.paths.installRoot,
         nodeExecutable: runtime.paths.executable,
         nodeVersion: runtime.identity.nodeVersion,

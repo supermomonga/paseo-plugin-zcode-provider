@@ -1,21 +1,31 @@
 import { expect, it, vi, afterEach } from "vitest";
-import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverRuntime, runtimeEnvironment } from "./discovery/discover.js";
+import { managedLayout } from "./runtime/managed.js";
+import { managedPlatform } from "./runtime/pins.js";
 const dirs: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
 });
 it.each([
-  {},
   { PASEO_ZCODE_RUNTIME: "relative", PASEO_ZCODE_NODE: "/node" },
   { PASEO_ZCODE_RUNTIME: "/runtime", PASEO_ZCODE_NODE: "relative" },
-])("requires both explicit absolute paths", async (environment) => {
+  { PASEO_ZCODE_RUNTIME: "/runtime" },
+  { PASEO_ZCODE_NODE: "/node" },
+])("requires both override paths to be absolute: %j", async (environment) => {
   await expect(discoverRuntime({ environment })).rejects.toMatchObject({
     code: "RUNTIME_DISCOVERY_FAILED",
   });
+});
+it("asks for setup when neither override nor a managed runtime exists", async () => {
+  const data = await mkdtemp(join(tmpdir(), "zcode-managed-empty-"));
+  dirs.push(data);
+  await expect(
+    discoverRuntime({ environment: { XDG_DATA_HOME: data } }),
+  ).rejects.toMatchObject({ code: "RUNTIME_SETUP_REQUIRED" });
 });
 it("rejects missing files without discovering Desktop", async () => {
   const root = await mkdtemp(join(tmpdir(), "zcode-discovery-"));
@@ -79,3 +89,32 @@ it("validates the integrated layout and hashes its Server and Agent independentl
     await realpath(f.environment.PASEO_ZCODE_NODE),
   );
 });
+
+it.runIf(managedPlatform() !== undefined)(
+  "uses the installed managed runtime when no override is set",
+  async () => {
+    const data = await mkdtemp(join(tmpdir(), "zcode-managed-data-"));
+    dirs.push(data);
+    const environment = { XDG_DATA_HOME: data };
+    const layout = managedLayout(environment)!;
+    const f = await executableFixture({ node: "24.21.0" });
+    await mkdir(layout.root, { recursive: true });
+    await cp(f.root, layout.zcode.directory, { recursive: true });
+    await mkdir(join(layout.node.executable, ".."), { recursive: true });
+    await cp(f.environment.PASEO_ZCODE_NODE, layout.node.executable);
+    for (const component of [layout.node, layout.zcode])
+      await writeFile(
+        join(component.directory, ".paseo-managed.json"),
+        JSON.stringify({
+          version: component.version,
+          archiveSha256: component.archive.sha256,
+        }),
+      );
+    const found = await discoverRuntime({ environment });
+    expect(found.source).toBe("managed");
+    expect(found.paths.installRoot).toBe(
+      await realpath(layout.zcode.directory),
+    );
+    expect(found.paths.executable).toBe(await realpath(layout.node.executable));
+  },
+);

@@ -5,6 +5,7 @@ import { isAbsolute, join } from "node:path";
 import { gte, valid } from "semver";
 import { z } from "zod";
 import { AdapterError } from "../errors.js";
+import { resolveManagedRuntime } from "../runtime/managed.js";
 import { assessCompatibility, MINIMUM_NODE_VERSION } from "./manifest.js";
 import type { DiscoveredRuntime, RuntimeSmokeResult } from "./types.js";
 
@@ -49,21 +50,43 @@ async function run(
     );
   });
 }
+// Both variables override the managed runtime (ADR 15); setting only one is a
+// configuration error rather than a silent fallback.
+async function configuredPaths(environment: NodeJS.ProcessEnv): Promise<{
+  installRoot: string;
+  executable: string;
+  source: DiscoveredRuntime["source"];
+}> {
+  const names = ["PASEO_ZCODE_RUNTIME", "PASEO_ZCODE_NODE"] as const;
+  if (names.some((name) => environment[name])) {
+    for (const name of names)
+      if (!environment[name] || !isAbsolute(environment[name]!))
+        throw new AdapterError(
+          "RUNTIME_DISCOVERY_FAILED",
+          `${name} must be an absolute path; set both variables or neither`,
+        );
+    return {
+      installRoot: environment.PASEO_ZCODE_RUNTIME!,
+      executable: environment.PASEO_ZCODE_NODE!,
+      source: "environment",
+    };
+  }
+  const managed = await resolveManagedRuntime(environment);
+  if (managed === undefined)
+    throw new AdapterError(
+      "RUNTIME_SETUP_REQUIRED",
+      "ZCode runtime is not set up. Open Settings → Plugins → zcode-provider to set it up.",
+    );
+  return { ...managed, source: "managed" };
+}
 export async function discoverRuntime({
   environment = process.env,
   signal,
 }: DiscoveryOptions = {}): Promise<DiscoveredRuntime> {
-  const configured = ["PASEO_ZCODE_RUNTIME", "PASEO_ZCODE_NODE"] as const;
-  for (const name of configured) {
-    if (!environment[name] || !isAbsolute(environment[name]!))
-      throw new AdapterError(
-        "RUNTIME_DISCOVERY_FAILED",
-        `${name} must be an absolute path`,
-      );
-  }
+  const configured = await configuredPaths(environment);
   try {
-    const installRoot = await realpath(environment.PASEO_ZCODE_RUNTIME!);
-    const executable = await realpath(environment.PASEO_ZCODE_NODE!);
+    const installRoot = await realpath(configured.installRoot);
+    const executable = await realpath(configured.executable);
     if (
       !(await stat(installRoot)).isDirectory() ||
       !(await stat(executable)).isFile()
@@ -154,6 +177,7 @@ export async function discoverRuntime({
     };
     const compatibility = assessCompatibility(identity);
     return {
+      source: configured.source,
       paths,
       identity,
       compatibility: compatibility.status,

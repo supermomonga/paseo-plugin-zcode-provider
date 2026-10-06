@@ -811,6 +811,8 @@ function publicError(error: unknown): ProviderError {
     UNSUPPORTED_ZCODE: `ZCode requires stable app >=${MINIMUM_ZCODE_VERSION.app} and bundled CLI >=${MINIMUM_ZCODE_VERSION.cli}.`,
     RUNTIME_DISCOVERY_FAILED:
       "ZCode installation or required host structure could not be inspected. See the diagnostic for the failure stage.",
+    RUNTIME_SETUP_REQUIRED:
+      "ZCode runtime is not set up. Open Settings → Plugins → zcode-provider to set it up.",
     PERSISTENCE_VERSION_UNSUPPORTED:
       "ZCode persistence version is unsupported. Create a new Paseo ZCode session.",
     PERSISTENCE_INVALID:
