@@ -366,16 +366,20 @@ async function checkGitPreparation({
         };
       return nodeRequire(name);
     });
-    let screen;
+    // Like Paseo's client runtime, each registration returns its own cleanup.
+    const screens = new Map();
     const disposeClient = clientContribution.default({
-      addSettingsScreen(screen_) {
-        screen = screen_;
+      addSettingsScreen(screen) {
+        screens.set(screen.id, screen);
+        return () => screens.delete(screen.id);
       },
     });
-    assert.equal(screen.id, "diagnostics");
-    assert.equal(typeof screen.Component, "function");
+    assert.deepEqual([...screens.keys()], ["setup", "diagnostics"]);
+    for (const screen of screens.values())
+      assert.equal(typeof screen.Component, "function");
     assert.equal(typeof disposeClient, "function");
     await disposeClient();
+    assert.equal(screens.size, 0);
     return {
       nodeEnv: nodeEnv ?? "unset",
       compiledBytes: Buffer.byteLength(serverBundle),
