@@ -24,9 +24,24 @@ Verify the files with `npm run check:zcode-source`. To deliberately resynchroniz
 
 `download:zcodecjs` and deb extraction tests have been removed. Release monitoring still uses the official changelog and its separately recorded last reviewed release (3.14.3), which matches the pinned v3.14.3 source tag. A changelog release without public source (such as 3.14.4) is not a baseline. Associate GitHub tags/releases when available; do not create an Issue for every main commit.
 
+## Managed runtime and its releases
+
+Users install the runtime from the Setup screen (ADR 15). `server/runtime/pins.ts` pins Node.js archives from nodejs.org and the `zcode-runtime-v<version>` release of this repository by URL, SHA-256 and size. The installer downloads to a staging directory under `runtimes/`, checks the size limit and SHA-256, extracts with the system `tar` (Windows uses `%SystemRoot%\System32\tar.exe`, which also reads zip), verifies Node's version and the runtime layout, writes a marker and renames the result into place. A lock directory with the owner PID prevents concurrent setup; a lock from a dead process is reclaimed.
+
+To use it locally without touching your real data directory:
+
+```bash
+XDG_DATA_HOME=/tmp/zcode-data npm run setup:managed-runtime
+XDG_DATA_HOME=/tmp/zcode-data npm run test:stdio-runtime
+```
+
+To pin a new Node.js version, take the five archive checksums from `SHASUMS256.txt`, verify its signature against the [nodejs/release-keys](https://github.com/nodejs/release-keys) active keyring in a temporary `GNUPGHOME`, and record the sizes.
+
+To publish a ZCode runtime, update the source baseline first, then push an annotated `zcode-runtime-v<version>` tag on a commit containing it. `.github/workflows/zcode-runtime-release.yml` builds the official distribution, adds the upstream notices and `BUILD-INFO.json` with `scripts/package-zcode-runtime.mjs`, runs `test:stdio-runtime` on all five managed platforms, attests the archive and creates a non-latest release. Rebuilds are not byte-identical, so pin the published asset's SHA-256 and size, never a local build. Pull requests that touch the packaging run the same build and verification without publishing.
+
 ## Build an isolated integrated CLI
 
-CLI installation is a user responsibility. For development/CI, build the official distribution from an isolated checkout/archive of the pinned source. Do not change the reference clone or a user's installed runtime.
+For investigation, build the official distribution from an isolated checkout/archive of the pinned source. Do not change the reference clone or a user's installed runtime.
 
 With ordinary Node.js 24.14.0+ and the repository's pnpm version (10.33.2) on PATH, in that isolated ZCode checkout:
 
@@ -59,14 +74,14 @@ The baseline's remote terminal service cannot locate the integrated distribution
 npm run test:e2e
 ```
 
-Set both runtime variables first. The runner writes a private, temporary official provider configuration using the existing key, isolates HOME/configuration/SQLite/temp sockets, and passes no unrelated credentials to child processes. It runs model/reasoning, independent Plan transitions and approval/decline, followed by real guidance, attachment queue, stop and resume checks. Its mode/Plan restoration supplies both saved Paseo settings, matching `test:stdio-runtime`. Test data is removed even after failures.
+Set both runtime variables, or `XDG_DATA_HOME` containing a managed runtime, first. The runner writes a private, temporary official provider configuration using the existing key, isolates HOME/configuration/SQLite/temp sockets, and passes no unrelated credentials to child processes. It runs model/reasoning, independent Plan transitions and approval/decline, followed by real guidance, attachment queue, stop and resume checks. Its mode/Plan restoration supplies both saved Paseo settings, matching `test:stdio-runtime`. Test data is removed even after failures.
 
-CI runs ordinary non-billable tests, actual Paseo integration and vendored-source verification on Node 22. A separate Node 24 job builds the pinned official distribution and executes the non-billable Provider contract check on that real runtime. Eligible non-fork PRs and pushes additionally run isolated real-model E2E with `GLM_API_KEY`; no Desktop/deb installation is used. Failures of the supported contract or E2E block release. Actual OS coverage is recorded only after execution, not inferred from workflow configuration.
+CI runs ordinary non-billable tests, actual Paseo integration and vendored-source verification on Node 22. A matrix job installs the pinned managed runtime with the plugin's installer on darwin-arm64, linux-x64, linux-arm64, win-x64 and win-arm64 runners (plugin on Node 22, ZCode on the managed Node.js) and executes the non-billable Provider contract check. Eligible non-fork PRs and pushes additionally run isolated real-model E2E with `GLM_API_KEY` on the managed runtime; no Desktop/deb installation is used. Failures of the supported contract or E2E block release. Actual OS coverage is recorded only after execution, not inferred from workflow configuration.
 
 ## Architecture
 
 Paseo and ZCode themselves must remain unmodified. Changes belong to this Provider plugin; a fork, source patch or patched upstream runtime is not an implementation option. Official configuration and protocol operations remain available. For mode/Plan resume, the plugin reapplies both settings when Paseo supplies them and waits for native confirmation before accepting prompts. This is the supported restoration contract. Omitted values use the state returned by ZCode and are not guaranteed to match the state before shutdown. Keep that upstream defect documented and reproducible with `test:native-restore` until an unmodified official version resolves it.
 
-`discovery/` validates the explicitly configured runtime. `host/bridge.ts` owns hello/ack, official binary framing, RPC, process preferences and process shutdown. `conversation.ts` owns one V4 state, wire assembly, sequencing, resync and coherent history paging. `session.ts` coordinates admissions, public execution IDs, stop and native configuration. `presentation.ts` translates rows and interactions to Paseo. `persistence.ts` stores only the pre-send logical/native identity mapping. Authentication remains in Services Host.
+`discovery/` validates the environment override or, without one, the installed managed runtime. `runtime/` holds the pins and the installer behind the Setup screen. `host/bridge.ts` owns hello/ack, official binary framing, RPC, process preferences and process shutdown. `conversation.ts` owns one V4 state, wire assembly, sequencing, resync and coherent history paging. `session.ts` coordinates admissions, public execution IDs, stop and native configuration. `presentation.ts` translates rows and interactions to Paseo. `persistence.ts` stores only the pre-send logical/native identity mapping. Authentication remains in Services Host.
 
 Model admission is never retried after an unknown outcome. Only a stale conditional control command, which confirms no mutation occurred, may be retried with the returned revision. Recovery must not mix history epochs/revisions or publish a partial recovery window as complete history. Foreground execution and background continuation are distinct. Product turn IDs, row IDs and source command IDs have different meanings.

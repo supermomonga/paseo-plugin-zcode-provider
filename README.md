@@ -1,33 +1,19 @@
 # ZCode Provider for Paseo
 
-Use ZCode models, tools and conversations through Paseo's public Provider API. The plugin launches the **official stdio Services Server from the integrated ZCode CLI distribution**. Authentication, models, tools and conversation storage remain owned by ZCode. ZCode Desktop is not required.
+Use ZCode models, tools and conversations through Paseo's public Provider API. The plugin launches the **official stdio Services Server from the integrated ZCode CLI distribution**, which it can set up for you. Authentication, models, tools and conversation storage remain owned by ZCode. ZCode Desktop is not required.
 
 > Mode/Plan restoration is guaranteed when Paseo supplies both saved settings on resume. Without them, the pinned ZCode source can restore an older editing mode and drop Plan. That upstream defect remains unresolved and is outside the supported restoration contract. See [verification and remaining checks](docs/verification.md).
 
 This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai. The official RPC/V4 implementation is public source, but it is not a stable third-party SDK.
 
-## Requirements and configuration
+## Requirements
 
-Configure the machine running the Paseo daemon:
-
-| Setting               | Requirement                                                                                                                                                                   |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Paseo                 | 0.8.0 or later; development SDK 0.9.0-beta.1                                                                                                                                  |
-| Plugin Node.js        | 22.12.0 or later                                                                                                                                                              |
-| `PASEO_ZCODE_RUNTIME` | Absolute path to an extracted **integrated CLI distribution**, containing `server/remote/zcode-server.cjs`, `agent/zcode.cjs`, its provider configuration, and `package.json` |
-| `PASEO_ZCODE_NODE`    | Absolute path to **ordinary Node.js 24.14.0 or later**, used for both Server and Agent                                                                                        |
-| ZCode                 | Stable Server 3.14.0+ / Agent 0.16.9+; necessary files and runtime contracts are checked                                                                                      |
-
-```bash
-export PASEO_ZCODE_RUNTIME=/absolute/path/to/zcode
-export PASEO_ZCODE_NODE=/absolute/path/to/node
-```
-
-Set these in the daemon's environment, then restart the daemon. A terminal export does not change an already running Desktop application. Electron, `process.execPath`, Desktop discovery and `PASEO_ZCODE_INSTALL` are not alternative launch paths. Missing or invalid settings fail explicitly.
-
-You install and update the CLI and its Node.js runtime. Set up authentication and models using the official CLI/TUI. The plugin neither decrypts nor copies credentials. Session environment variables are forwarded, subject to ZCode's own proxy, certificate and runtime environment handling.
-
-The source baseline is `29628c9acdb81b703bbd4080c207a0e7ce5e276e`. Its version strings do not prove that a public CLI artifact has been released or verified. [Build and validation instructions](docs/development.md) distinguish source, distribution hashes and actual runtime results. Newer stable versions are allowed, including major versions; passing the minimum check does not certify compatibility. macOS arm64 has been exercised locally; Linux x64 runtime checks ran in CI, with the settings-free restoration failure recorded separately. See the verification record for the exact coverage. Other OS/CPU combinations remain unverified.
+| Setting        | Requirement                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------ |
+| Paseo          | 0.8.0 or later; development SDK 0.9.0-beta.1                                                                 |
+| Plugin Node.js | 22.12.0 or later (the Paseo daemon's runtime)                                                                |
+| Managed setup  | darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64                                                     |
+| ZCode          | Managed: 3.14.3 with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
 
 ## Installation
 
@@ -38,7 +24,35 @@ paseo plugin add supermomonga/paseo-plugin-zcode-provider
 paseo plugin ls
 ```
 
-Paseo prepares the Git checkout and compiles the plugin. Choose **ZCode** when creating an agent. Update with `paseo plugin update zcode-provider`. Plugins execute with the daemon user's permissions.
+Paseo prepares the Git checkout and compiles the plugin. Update with `paseo plugin update zcode-provider`. Plugins execute with the daemon user's permissions.
+
+## Setup
+
+Open **Settings → Plugins → zcode-provider → Setup** and choose **Download and install**. The screen lists every download, its SHA-256, size and license before you start. Setup runs on the machine hosting the daemon:
+
+- Node.js 24.21.0 from nodejs.org.
+- The ZCode runtime 3.14.3 from this repository's [releases](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.14.3). ZCode does not publish its integrated CLI, so this is an **unofficial build** of the unmodified public source, made and verified by CI. It is not endorsed or maintained by ZCode or Z.ai.
+
+Both archives are verified against SHA-256 values pinned in the plugin and extracted to `$XDG_DATA_HOME/paseo-plugin-zcode-provider/runtimes`, or `~/.local/share/paseo-plugin-zcode-provider/runtimes`. `PATH` and other installations are not changed. The plugin never installs anything until you start setup.
+
+After setup, the screen shows a login command. Run it in a terminal on the daemon machine to sign in through ZCode's browser authorization (`--no-browser` prints the URL). Then choose **ZCode** when creating an agent. The plugin neither decrypts nor copies credentials.
+
+**Remove** on the same screen deletes the managed runtime; `paseo plugin remove` does not. ZCode settings, logins and conversations are kept.
+
+### Using your own runtime
+
+Set both variables in the daemon's environment and restart the daemon to bypass the managed runtime:
+
+```bash
+export PASEO_ZCODE_RUNTIME=/absolute/path/to/zcode   # extracted integrated CLI distribution
+export PASEO_ZCODE_NODE=/absolute/path/to/node       # ordinary Node.js 24.14.0 or later
+```
+
+`PASEO_ZCODE_RUNTIME` must contain `server/remote/zcode-server.cjs`, `agent/zcode.cjs`, its provider configuration, and `package.json`. Setting only one variable is an error. Newer stable versions are allowed, including major versions; passing the minimum check does not certify compatibility. A terminal export does not change an already running Desktop application. Electron, `process.execPath` and Desktop discovery are never used.
+
+Session environment variables are forwarded, subject to ZCode's own proxy, certificate and runtime environment handling.
+
+The source baseline is `29628c9acdb81b703bbd4080c207a0e7ce5e276e` (ZCode `v3.14.3`). The managed runtime passed the stdio runtime contract on all five managed platforms in CI. See the [verification record](docs/verification.md) for exact coverage.
 
 ## Behavior
 
@@ -61,7 +75,7 @@ New conversations support listing, resume and paged V4 history. Mode/Plan restor
 
 ## Diagnostics
 
-**Settings → Plugins → zcode-provider → Diagnostics** shows the configured runtime, explicit Node.js executable/version, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds.
+**Settings → Plugins → zcode-provider → Diagnostics** shows whether the managed runtime or the environment override is in use, the runtime and Node.js paths and versions, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds.
 
 ```bash
 paseo plugin logs zcode-provider
@@ -71,6 +85,6 @@ For failures, report the operation, error code, structured diagnostic and versio
 
 ## Development and license
 
-See [development](docs/development.md), [verification](docs/verification.md), [remaining work](docs/todo.md) and [ADR 13](docs/adr/0013-公開ソースの公式stdio-serverとv4会話状態を採用する.md).
+See [development](docs/development.md), [verification](docs/verification.md), [remaining work](docs/todo.md), [ADR 13](docs/adr/0013-公開ソースの公式stdio-serverとv4会話状態を採用する.md) and [ADR 15](docs/adr/0015-プラグイン管理のzcodeランタイムとnode-jsを設定画面から導入する.md).
 
-Original code is [MIT](LICENSE). Vendored ZCode RPC/contracts retain their upstream license and provenance. The icon retains Apache-2.0 attribution; the historical screenshot includes third-party UI and branding. See [NOTICE](NOTICE.md).
+Original code is [MIT](LICENSE). Vendored ZCode RPC/contracts retain their upstream license and provenance. The ZCode runtime releases are Apache-2.0 builds of unmodified upstream source and include ZCode's LICENSE, NOTICE.md and THIRD-PARTY-NOTICES.md; third-party components keep their own terms. Node.js is downloaded from nodejs.org, not redistributed. The icon retains Apache-2.0 attribution; the historical screenshot includes third-party UI and branding. See [NOTICE](NOTICE.md).

@@ -12,9 +12,11 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 
 ## 検証の残項目
 
-- 公式アカウントログイン・期限切れ・未認証、公式 TUI と複数 Server の共有データ同時利用。
+- 公式アカウントログイン・期限切れ・未認証、公式 TUI と複数 Server の共有データ同時利用。設定画面に表示する `zcode.mjs login` で取得した認証を管理下の Server が使えることも、実アカウントで未確認。
+- 管理下セットアップの実 UI（Desktop・Web・モバイルからの開始、進捗表示、削除）と、Paseo daemon を Windows / Linux arm64 で動かした場合の導入。CI の 5 プラットフォーム契約試験は daemon を介さない。
+- プロキシや社内ミラーのみの環境での取得。現状は nodejs.org と GitHub への直接接続が必要で、失敗時は環境変数の上書きで回避する。
 - Desktop ネイティブ画面とモバイル実機での操作。Electron Helper / 通常 Node の両 daemon 起動と、実 Web UI の入力・質問・承認・停止・再起動復元は確認済み（[検証記録](verification.md)）。
-- 修正後 CI の Linux x64 での保存設定による復元と実モデル E2E。修正前 CI の非課金 runtime 項目は設定省略時の復元を除き成功。Windows/macOS x64、長時間ツール/MCP 子プロセスを含む異常終了時の回収は未検証。
+- macOS x64（管理下セットアップの対象外）、長時間ツール/MCP 子プロセスを含む異常終了時の回収は未検証。
 - native の長い会話・世代変更・background continuation・子エージェントからの権限要求。現在の契約試験の結果と実行確認を混同しない。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 

@@ -8,7 +8,13 @@
 
 `server/discovery`、`server/host`、`server/protocol`、マッピングとセッション処理、および対応テストは、同じ所有者の [paseo-zcode-patcher](https://github.com/supermomonga/paseo-zcode-patcher/tree/572100368774df7632728a72568466ac3632d458) の `patches/paseo-v0.7.2-zcode.patch` に含まれる ZCode 実装を基にしています。Paseo の内部 AgentClient 依存を除去し、公開 Provider API、JSON 検証、接続の終了処理を追加・変更しています。
 
-ZCode の Agent・認証・ツール・保存エンジン、認証情報、モデル設定は同梱しません。利用者が導入した公式統合 CLI の stdio Services Server を実行します。
+プラグイン本体には ZCode の Agent・認証・ツール・保存エンジン、認証情報、モデル設定を同梱しません。統合 CLI の stdio Services Server は、利用者が設定画面でセットアップを開始したときに取得します。
+
+# ZCode ランタイムの配布
+
+ZCode は統合 CLI を配布していないため、このリポジトリは `zcode-runtime-v<version>` タグの GitHub Release で、統合 CLI 配布物の非公式ビルドを配布します（ADR 15）。CI が公開タグの無改変ソースを公式 `scripts/build-zcode.mjs` でビルドし、上流の `LICENSE`（Apache-2.0）、`NOTICE.md`、`THIRD-PARTY-NOTICES.md` と、出典・ビルド記録の `BUILD-INFO.json` を配布物に加えます。ソースは改変しません。第三者コンポーネントはそれぞれのライセンスに従い、上流が `third-party/inventory.json` で確認中とする項目もそのまま引き継ぎます。このビルドは ZCode・Z.ai の承認や保守を受けたものではなく、ZCode・Z.ai の商標の使用許諾も含みません。
+
+Node.js は利用者のマシンが nodejs.org の公式成果物を直接取得します。このリポジトリは Node.js を再配布しません。
 
 `server/vendor/zcode` は [zai-org/ZCode](https://github.com/zai-org/ZCode/tree/29628c9acdb81b703bbd4080c207a0e7ce5e276e) の RPC、V4 契約、wire 組み立てと純粋な差分適用、および必要なスキーマ依存を含みます。第一者コードは [上流 LICENSE](server/vendor/zcode/LICENSE) の Apache-2.0、RPC と wire codec の VS Code 由来部分は [MIT の通知](server/vendor/zcode/THIRD-PARTY-NOTICES.md) の条件を保持します。[上流 NOTICE](server/vendor/zcode/NOTICE.md) は全文を保持しており、上流製品全体の説明です。そこに記載された全機能・依存がプラグインへ同梱されることを意味しません。
 
