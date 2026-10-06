@@ -6,6 +6,8 @@ date: 2026-10-06
 links:
   - target: 15
     kind: amends
+  - target: 18
+    kind: amendedby
 ---
 
 # 設定画面のサインインとモデルプロバイダー管理をZCode公式サービスで行う

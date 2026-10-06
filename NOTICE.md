@@ -20,7 +20,7 @@ Node.js は利用者のマシンが nodejs.org の公式成果物を直接取得
 
 ファイルごとの出典・SHA-256、private workspace import の変更、第三者通知の抽出範囲を [provenance.json](server/vendor/zcode/provenance.json) に記録しています。取得・照合は `scripts/sync-zcode-source.mjs` で行います。`npm run build` はこれらのライセンス・通知を `dist/licenses/zcode` にも配置します。
 
-開発 SDK は `@getpaseo/plugin@0.9.0-beta.1` です。ビルドは `@getpaseo/plugin/server/provider` と `zod` を外部モジュールとして維持し、Paseo に解決させます。
+開発 SDK は `@getpaseo/plugin@0.11.0-beta.5` です。ビルドは `@getpaseo/plugin/server/provider` と `zod` を外部モジュールとして維持し、Paseo に解決させます。
 
 `icon.svg` は [Paseo main c424f829 の glm-acp-agent.svg](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/app/src/assets/acp-provider-icons/glm-acp-agent.svg) のコピーです。この SVG は [ACP Registry の glm-acp-agent/icon.svg](https://github.com/agentclientprotocol/registry/blob/f3826ddd6e35951ea9b7fd0cf43c35a30c3c64cd/glm-acp-agent/icon.svg) とバイト単位で一致します。ACP Registry は Apache-2.0 で配布されており、その [LICENSE](vendor/acp-registry/LICENSE) を保持しています。アイコンは変更していません。商標への権利や公式の承認を示すものではありません。
 

@@ -25,3 +25,13 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 Browser/Computer Use、一般的な rewind、独立した Paseo 子エージェント管理、Hook 信頼レビュー画面、Goal/Workflow 操作 UI、カスタム system prompt、非永続会話、モデルへの JSON Schema 出力制約。通常の ZCode tools / skills / MCP は native に委ねる。
 
 Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグイン API の範囲でのみ対応する。本体変更や別の表示への置き換えは提案・実装しない。新しい公開 API が導入された時に契約と実 UI の両方を再評価する。
+
+## Paseo 0.11 の公開 API の採用（ADR 18）
+
+`ProviderRegistration.status()` と usage source を採用した（[ADR 18](adr/0018-paseo-0-11のprovider-statusとusage-sourceでランタイムの可用性とcoding-planの利用量を表示する.md)）。残る項目は次のとおり。
+
+- **ZCode エージェント単位の利用量**：0.11.0-beta.5 の Paseo はプラグイン Provider のセッションでアカウントを探索しないため、エージェントのポップオーバーに利用量が出ない。プラグインはセッションの範囲の探索に対応済みなので、Paseo が探索するようになったら表示を確認する。
+- **Team Plan と Start Plan の利用量**：Desktop は Team Plan に組織とプロジェクトを含む動的なアカウントアクセスを渡し、Start Plan は残高として別に表示する。同じ経路を公式サービスで再現できるか確認してから対応する。
+- **usage source の契約**：0.11 の beta ごとに変わっている（beta.3 で `discover()` / `fetch()`、beta.4 で `discover(scope)`）。0.11.0 正式版で再確認する。
+- **サインイン状態の可用性**：`status()` はランタイムだけを検査する。未サインインやモデルが無い状態は、Server を起動しないと分からないため、従来どおりセッション作成時に知らせる。
+- **初期 usage**：0.10.3 と 0.11.0-beta.5 でも、`session.ready` 前に送った使用量は購読者へ再通知されない。0.11.0-beta.4 の変更（getpaseo/paseo#6089）は、初回ターン前のメーターをアプリ側で空表示にするものである。制約は残る。

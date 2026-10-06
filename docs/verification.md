@@ -1,3 +1,35 @@
+# Paseo 0.11.0-beta.5 への追従（2026-10-06）
+
+Paseo の追従 Issue 13 件（#21、#26〜#31、#33〜#38。0.9.0-beta.2〜0.11.0-beta.5）をまとめて扱った。0.11.0-beta.4 は変更履歴に単独の節がなく Issue も無いが、beta.5 の確認に含まれる。開発用 SDK 3 パッケージ（`@getpaseo/plugin`・`client`・`protocol`）を `0.11.0-beta.5` に固定し、CI の上流 checkout を同タグの `15d774d4a17c69bc0f8a62a85842764fab3c038d` に更新した。lockfile では推移依存の `@getpaseo/relay` と `ws`（8.21.3 → 8.22.0）も変わった。Provider 実装・保存形式・manifest の最低要件 `>=0.8.0` は変えていない。
+
+上流の差分は `git diff v0.9.0-beta.1 v0.11.0-beta.5` の `packages/plugin` と `packages/server/src/server/agent/plugin-provider.ts`、`plugins/` を読んで確認した。
+
+- **プラグインが使う API**：`registerProvider`、`addSettingsScreen`、`getPaseoClient(...).providers.refresh` は 0.10.3 と 0.11.0-beta.5 のどちらでも残っている。`addSurface` / `addSidebarItem` は非推奨になったが、このプラグインは使っていない。Provider のイベントと入力のスキーマは実質的に変わっていない。
+- **`command` / `status()` / `launch`（0.11.0-beta.1、#5707）**：`command` を宣言しない Provider には `launch` が渡らない（`plugin-provider.ts` の `resolveLaunch`）。`status()` が無い場合は `connect()` の成否で可用性を判定する。このプラグインの `connect()` はランタイムを検査しないため、常に available になっていた（下記の `status()` で解消）。`config.json` の `agents.providers.zcode` は `options`・`models`・`enabled` などが効き、`command` と `env` は適用されない。0.10 以前では、この ID の設定は検証か登録で失敗していた。
+- **`providerOptions`（0.11.0-beta.1、#5780）**：利用者が設定しない限り `undefined` のまま渡る。スケジュール・Hub・インポートが既定のキーを足すことはない。SDK の型は `JsonValue` から `unknown` に変わったが、`z.object({}).strict()` の検証はそのまま型検査を通る。設定した場合は従来どおり `INVALID_CONFIGURATION` になる（README に追記）。
+- **再開時の mode（0.11.0-beta.4、#5140）**：Paseo は再開時に、セッション中に変更した最後の mode を渡すようになった。0.10.3 以前は作成時の mode を渡す。ADR 14 の保証は Paseo が渡した値を再適用するもので、プラグイン側の変更は無い。
+- **再読み込みと終了（0.9.2 の #5231・#5298、0.11.0-beta.1 の #5579）**：`close()` を待ってから IPC を切り、要求の失敗で daemon が落ちなくなった。0.11 ではプラグインの再読み込み時に、実行中のセッションだけが失敗扱いになる。どちらもプラグインの対応は要らない。
+- **初期 usage**：0.10.3 と 0.11.0-beta.5 の AgentManager も、`session.ready` 前の使用量を購読者へ反映しない。既存の制約は残る。
+- **新 API の採用**：Provider の `status()` と usage source を実装した（[ADR 18](adr/0018-paseo-0-11のprovider-statusとusage-sourceでランタイムの可用性とcoding-planの利用量を表示する.md)）。結果は下の節に記録する。
+- **自動試験（macOS arm64、Node.js 22）**：`npm ci --include=dev`、`npm ls`（SDK 3 パッケージがすべて 0.11.0-beta.5）、`npm run typecheck`、`npm test`、`npm run build`、`npm run format:check`、`git diff --check` が成功した。`npm run check:paseo-releases -- --dry-run` は `No Paseo release newer than 0.11.0-beta.5` を返した。
+- **Paseo の実 compiler / adapter**：0.11.0-beta.5 の adapter は、プロバイダーのコマンド解決に使う `which` を `createRequire` で読み込む。ハーネスは adapter を Paseo のワークスペース外でバンドルするため解決できず、CI の `test:upstream` が `Cannot find module 'which'` で失敗した。Paseo の server パッケージと同じ `which@5.0.0` を開発依存に加えた。ローカルの `test:upstream` は作業環境の権限設定で実行できなかったため、CI で確認した。[run 37455092554](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/37455092554) で、Git 準備（`NODE_ENV` 未設定 / production）、npm インストール、登録、V4 タイムライン、ステアリング、添付キュー、Provider 差し替え、再開、Plan 設定の再開、停止、下記の `status()` と usage source の登録がすべて passed だった。同 run の 5 プラットフォームの管理下ランタイム契約試験と実モデル E2E も成功した。
+
+未検証：0.10.3 と最低要件 0.8.0 に対する `test:upstream`。0.8〜0.10 の daemon が `registerUsageSource` の無いコンテキストでも登録できることは、ハーネスの模擬コンテキストだけで確かめた。
+
+# Paseo 0.11 の Provider status と usage source（2026-10-06）
+
+[ADR 18](adr/0018-paseo-0-11のprovider-statusとusage-sourceでランタイムの可用性とcoding-planの利用量を表示する.md) の実装を、単体試験、Paseo 0.11.0-beta.5 の実 adapter、実アカウントと実 UI で確認した。
+
+- **単体試験**：`server/provider-status.test.ts`（6 tests）で、診断文の形式と `ProviderStatusSchema` への適合、パスを出さないこと、未導入・非対応・予期しない例外、30 秒の再利用と同時呼び出しの集約を確認した。`server/usage.test.ts`（18 tests）で、Desktop と同じ `getEntitlementSnapshot` の要求、4 つの窓、`CREDIT_LIMIT`、Paseo の `UsageReportSchema` への適合、キーに ID やメールを含めないこと、探索結果の再利用とアカウント変更での破棄、ランタイムが無いときの空の結果と再試行、セッション範囲の絞り込み、未サインイン・サインイン切れ・権利の無いプランで利用枠を問い合わせないこと、例外メッセージを返さないことを確認した。全体は 21 ファイル、194 tests。
+- **実 adapter（CI の `test:upstream`）**：0.11.0-beta.5 の `PluginAgentClientRegistry` が登録の `status()` で `isAvailable()` と `getDiagnostic()` に答えること、`available:false` で利用不可になることを確認した。コンパイル済みのプラグインは、`registerUsageSource` の無いコンテキスト（0.8〜0.10 相当）でも登録でき、ある場合は ID `zcode` と Paseo のアイコン検証を通る source を登録した。
+- **実アカウント（`npm run test:usage-runtime`）**：利用者の実データ（Z.ai、Individual Coding Plan）と管理下ランタイム 3.14.3 で、`status()` は available、`discover()` はアカウント 1 件（`zai.individual.<hash>`、`account:zai-individual-coding-plan`）を返した。`fetch()` は `planLabel: "GLM Coding Max"` と、5-hour・Weekly・Tool calls・ZCode MCP の 4 窓（使用率とリセット時刻あり）を返し、両方とも Paseo のスキーマを通った。
+- **実 UI**：`@getpaseo/cli@0.11.0-beta.5` の一時 daemon（`--home` は一時ディレクトリ、loopback、relay・ブラウザツール・MCP 注入は無効、Web UI と plugins は有効）に現在の worktree を導入し、ヘッドレス Chrome で確認した。ZCode の利用データと管理下ランタイムは実環境のものを読んだ（`HOME` と `XDG_DATA_HOME` は実環境、`XDG_STATE_HOME` は一時ディレクトリ）。サインイン・プロバイダー編集・セッション作成は行っていない。
+  - Usage 画面に「ZCode」カードが出た。プランのバッジは「GLM Coding Max」で、5-hour 1%（2h 後にリセット）、Weekly 1%（2d）、Tool calls 1%（13d）、ZCode MCP 0%（4h）だった。フッターは「Z.ai (表示名)」。幅 420px でも省略なく表示された。サイドバーの利用量表示を有効にすると、5-hour と Weekly が既定で固定された。
+  - Settings → Providers の ZCode 行は「Available · 4 models」。診断シートと `paseo provider diagnostic zcode` は「ZCode / Runtime: managed, Server 3.14.3, Agent 0.16.9 / Node.js: 24.21.0 / Platform: darwin-arm64」に続けて Paseo の「Models: 4 / Status: Ready」を表示した。
+  - `paseo plugin logs zcode-provider` と daemon のログにエラーは無く、表示名はカードのフッター以外に出なかった。検証後に一時 daemon を停止し、起動したプロセスが残っていないことを確かめて、一時ディレクトリを削除した。
+
+未検証：実 UI でのランタイム未導入時の「Not installed」と診断文（単体試験と実 adapter で確認）、BigModel アカウント、サインイン切れ・プラン無しのカードの表示、Paseo 0.11.0 正式版。0.11.0-beta.5 の Paseo はプラグイン Provider のセッションでアカウントを探索しないため、エージェント単位の表示は確認できない。
+
 # ZCode 3.14.4 の確認（2026-10-06）
 
 変更履歴の 3.14.4 は「Disabled CAPTCHA verification for model requests to further improve the free tier experience.」の 1 項目だけだった。確認済みリリースを 3.14.4 に更新し、ソース基準と管理下ランタイムは 3.14.3 のまま据え置いた（Issue #32）。

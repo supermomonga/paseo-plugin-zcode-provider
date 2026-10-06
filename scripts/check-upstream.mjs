@@ -104,7 +104,11 @@ try {
       warnings.push(args);
     },
   });
-  const registration = () =>
+  const available = {
+    available: true,
+    diagnostic: "ZCode\n  Runtime: test",
+  };
+  const registration = (status = async () => available) =>
     createZCodeProvider(
       async () => {
         const host = new FakeBridge(snapshot(directory));
@@ -119,10 +123,35 @@ try {
         return host;
       },
       new SessionPersistenceStore(join(directory, "provider-state")),
+      status,
     );
   registry.replace([registration()]);
   try {
     const client = registry.clients().zcode;
+    // Paseo 0.11 asks the registration's status() instead of connecting.
+    assert.equal(await client.isAvailable(), true);
+    assert.deepEqual(await client.getDiagnostic(), {
+      diagnostic: available.diagnostic,
+    });
+    const unavailableRegistry = new PluginAgentClientRegistry({
+      warn(...args) {
+        warnings.push(args);
+      },
+    });
+    unavailableRegistry.replace([
+      registration(async () => ({
+        available: false,
+        diagnostic: "ZCode\n  Error: ZCode runtime is not set up.",
+      })),
+    ]);
+    try {
+      assert.equal(
+        await unavailableRegistry.clients().zcode.isAvailable(),
+        false,
+      );
+    } finally {
+      await unavailableRegistry.shutdown();
+    }
     const catalog = await client.fetchCatalog({
       scope: "workspace",
       cwd: directory,
@@ -248,6 +277,7 @@ try {
           persistenceResume: "passed",
           planSettingsResume: "passed",
           targetedStop: "passed",
+          providerStatus: "passed",
         },
         null,
         2,
@@ -436,6 +466,7 @@ async function checkContributions({
   const contribution = runInThisContext(serverBundle)((name) =>
     name === "@getpaseo/plugin/server/provider" ? sdk : requireModule(name),
   );
+  // Paseo 0.8–0.10 offer no registerUsageSource; the plugin must still load.
   let registered;
   const dispose = contribution.default({
     registerProvider(provider) {
@@ -444,9 +475,28 @@ async function checkContributions({
     handle() {},
   });
   assert.equal(registered.id, "zcode");
+  assert.equal(typeof registered.status, "function");
   await readPluginProviderIcon(candidate, registered.icon);
   assert.equal(typeof dispose, "function");
   await dispose();
+  // Paseo 0.11 checks these fields and the icon when registering a source.
+  const sources = [];
+  const disposeWithUsage = contribution.default({
+    registerProvider() {},
+    registerUsageSource(source) {
+      sources.push(source);
+    },
+    handle() {},
+  });
+  assert.equal(sources.length, 1);
+  const [source] = sources;
+  assert.equal(source.id, "zcode");
+  assert.match(source.id, /^[a-z][a-z0-9._-]*$/);
+  assert.equal(typeof source.discover, "function");
+  assert.equal(typeof source.fetch, "function");
+  assert.equal(typeof source.input.parseAsync, "function");
+  await readPluginProviderIcon(candidate, source.icon);
+  await disposeWithUsage();
 
   const clientContribution = runInThisContext(clientBundle)((name) => {
     if (name === "react")
@@ -502,6 +552,7 @@ async function checkContributions({
     compiledBytes: Buffer.byteLength(serverBundle),
     clientCompiledBytes: Buffer.byteLength(clientBundle),
     registration: "passed",
+    usageSourceRegistration: "passed",
     clientRegistration: "passed",
   };
 }

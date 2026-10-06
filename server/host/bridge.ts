@@ -28,7 +28,11 @@ import {
 import type { Logger } from "../logger.js";
 import { PROVIDER_VERSION } from "../build-info.js";
 
-export type SettingsChannel = "oauth" | "setting" | "provider-settings";
+export type SettingsChannel =
+  | "oauth"
+  | "setting"
+  | "provider-settings"
+  | "usage-stats";
 
 export interface HostSubscription {
   readonly id: string;
