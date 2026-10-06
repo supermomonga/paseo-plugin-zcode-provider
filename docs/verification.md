@@ -1,3 +1,21 @@
+# Paseo 0.11.0-beta.5 への追従（2026-10-06）
+
+Paseo の追従 Issue 13 件（#21、#26〜#31、#33〜#38。0.9.0-beta.2〜0.11.0-beta.5）をまとめて扱った。0.11.0-beta.4 は変更履歴に単独の節がなく Issue も無いが、beta.5 の確認に含まれる。開発用 SDK 3 パッケージ（`@getpaseo/plugin`・`client`・`protocol`）を `0.11.0-beta.5` に固定し、CI の上流 checkout を同タグの `15d774d4a17c69bc0f8a62a85842764fab3c038d` に更新した。lockfile では推移依存の `@getpaseo/relay` と `ws`（8.21.3 → 8.22.0）も変わった。Provider 実装・保存形式・manifest の最低要件 `>=0.8.0` は変えていない。
+
+上流の差分は `git diff v0.9.0-beta.1 v0.11.0-beta.5` の `packages/plugin` と `packages/server/src/server/agent/plugin-provider.ts`、`plugins/` を読んで確認した。
+
+- **プラグインが使う API**：`registerProvider`、`addSettingsScreen`、`getPaseoClient(...).providers.refresh` は 0.10.3 と 0.11.0-beta.5 のどちらでも残っている。`addSurface` / `addSidebarItem` は非推奨になったが、このプラグインは使っていない。Provider のイベントと入力のスキーマは実質的に変わっていない。
+- **`command` / `status()` / `launch`（0.11.0-beta.1、#5707）**：`command` を宣言しない Provider には `launch` が渡らない（`plugin-provider.ts` の `resolveLaunch`）。`status()` が無い場合は `connect()` の成否で可用性を判定する。このプラグインの `connect()` はランタイムを検査しないため、常に available になる。`config.json` の `agents.providers.zcode` は `options`・`models`・`enabled` などが効き、`command` と `env` は適用されない。0.10 以前では、この ID の設定は検証か登録で失敗していた。
+- **`providerOptions`（0.11.0-beta.1、#5780）**：利用者が設定しない限り `undefined` のまま渡る。スケジュール・Hub・インポートが既定のキーを足すことはない。SDK の型は `JsonValue` から `unknown` に変わったが、`z.object({}).strict()` の検証はそのまま型検査を通る。設定した場合は従来どおり `INVALID_CONFIGURATION` になる（README に追記）。
+- **再開時の mode（0.11.0-beta.4、#5140）**：Paseo は再開時に、セッション中に変更した最後の mode を渡すようになった。0.10.3 以前は作成時の mode を渡す。ADR 14 の保証は Paseo が渡した値を再適用するもので、プラグイン側の変更は無い。
+- **再読み込みと終了（0.9.2 の #5231・#5298、0.11.0-beta.1 の #5579）**：`close()` を待ってから IPC を切り、要求の失敗で daemon が落ちなくなった。0.11 ではプラグインの再読み込み時に、実行中のセッションだけが失敗扱いになる。どちらもプラグインの対応は要らない。
+- **初期 usage**：0.10.3 と 0.11.0-beta.5 の AgentManager も、`session.ready` 前の使用量を購読者へ反映しない。既存の制約は残る。
+- **新 API の扱い**：Provider の `status()` と usage source は今回採用しない。評価は [残項目](todo.md) に記録した。
+- **自動試験（macOS arm64、Node.js 22）**：`npm ci --include=dev`、`npm ls`（SDK 3 パッケージがすべて 0.11.0-beta.5）、`npm run typecheck`、`npm test`（19 ファイル、170 tests）、`npm run build`、`npm run format:check`、`git diff --check` が成功した。`npm run check:paseo-releases -- --dry-run` は `No Paseo release newer than 0.11.0-beta.5` を返した。
+- **Paseo の実 compiler / adapter**：0.11.0-beta.5 に対する `npm run test:upstream` は、作業環境の権限設定で実行できず、ローカルでは実行していない。CI の `test` ジョブの結果で確認する。
+
+未検証：0.10.3 と最低要件 0.8.0 に対する `test:upstream`、今回の差分を入れた状態での実 daemon / UI 操作。下の「設定画面のタブ化とアカウント・プロバイダー管理の検証」にあるとおり、利用者の実環境（Paseo 0.11.0-beta.5 の daemon）では、Account タブのサインイン、カタログの再取得、実モデルのセッションが動いている。
+
 # ZCode 3.14.4 の確認（2026-10-06）
 
 変更履歴の 3.14.4 は「Disabled CAPTCHA verification for model requests to further improve the free tier experience.」の 1 項目だけだった。確認済みリリースを 3.14.4 に更新し、ソース基準と管理下ランタイムは 3.14.3 のまま据え置いた（Issue #32）。

@@ -25,3 +25,11 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 Browser/Computer Use、一般的な rewind、独立した Paseo 子エージェント管理、Hook 信頼レビュー画面、Goal/Workflow 操作 UI、カスタム system prompt、非永続会話、モデルへの JSON Schema 出力制約。通常の ZCode tools / skills / MCP は native に委ねる。
 
 Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグイン API の範囲でのみ対応する。本体変更や別の表示への置き換えは提案・実装しない。新しい公開 API が導入された時に契約と実 UI の両方を再評価する。
+
+## Paseo 0.11 で追加された公開 API の評価（0.11.0-beta.5 時点）
+
+互換性の追従（[検証記録](verification.md)）とは分けて扱い、どちらもまだ採用していない。
+
+- **Provider の `status()`**（0.11.0-beta.1、getpaseo/paseo#5707）：標準の Provider 診断欄に可用性と診断文を出せる。未実装の Provider は `connect()` の成否で判定される。このプラグインの `connect()` はランタイムを検査しないため、管理下ランタイムが未導入でも「Provider is available」と表示され、未導入はセッション作成時の案内付きエラーで初めて分かる。採用するときは、検査の範囲（`discoverRuntime` だけか smoke まで行うか）と所要時間を決め、診断文に ADR 7・8 の秘匿方針を適用する。0.8〜0.10 の daemon は登録の `status` を読まないので、最低要件を変えずに追加できる。`command` は宣言しない。宣言すると daemon が PATH を検索し、管理下ランタイムを使う前に失敗する。
+- **usage source**（`server.registerUsageSource`、0.11.0-beta.1）：ZCode には Coding Plan の quota を返す公式 `usage-stats` サービスがある。ただし契約が beta ごとに変わっている（beta.3 で `discover()` / `fetch()`、beta.4 で `discover(scope)`）。beta.5 でもプラグイン Provider のセッションではアカウント探索が動かず、表示は全体の Usage 画面に限られる。0.11.0 正式版で契約が固まってから評価する。
+- **初期 usage**：0.10.3 と 0.11.0-beta.5 でも、`session.ready` 前に送った使用量は購読者へ再通知されない。0.11.0-beta.4 の変更（getpaseo/paseo#6089）は、初回ターン前のメーターをアプリ側で空表示にするものである。制約は残る。

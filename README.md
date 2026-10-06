@@ -10,7 +10,7 @@ This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai.
 
 | Setting        | Requirement                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------------ |
-| Paseo          | 0.8.0 or later; development SDK 0.9.0-beta.1                                                                 |
+| Paseo          | 0.8.0 or later; development SDK 0.11.0-beta.5                                                                |
 | Plugin Node.js | 22.12.0 or later (the Paseo daemon's runtime)                                                                |
 | Managed setup  | darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64                                                     |
 | ZCode          | Managed: 3.14.3 with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
@@ -82,7 +82,7 @@ The source baseline is `29628c9acdb81b703bbd4080c207a0e7ce5e276e` (ZCode `v3.14.
 - Native permission IDs, option values, questions and Plan approval retain their meanings. Question auto-resolution is disabled for each owned Server. Workspace hook trust is reviewed through the official CLI; it is not represented as “allow once.”
 - Each session owns its Server process and environment. Metadata requests use temporary Servers. Closing stdin gives ZCode time to clean up before process termination.
 
-The plugin uses ZCode's own skills, MCP configuration and tools. Browser/Computer Use, generic rewind, independent Paseo child agents, hook-review UI and Goal/Workflow controls are outside this migration. `prompt.output_schema`, custom system prompts and `persist:false` are unsupported. MCP `alwaysLoad` is unsupported; stdio MCP commands must be absolute paths. Standard Paseo quota and initial usage UI limitations are not filled with substitute displays.
+The plugin uses ZCode's own skills, MCP configuration and tools. Browser/Computer Use, generic rewind, independent Paseo child agents, hook-review UI and Goal/Workflow controls are outside this migration. `prompt.output_schema`, custom system prompts and `persist:false` are unsupported. MCP `alwaysLoad` is unsupported; stdio MCP commands must be absolute paths. Provider options are unsupported: in Paseo 0.11 and later, `agents.providers.zcode.options` in Paseo's `config.json` makes sessions fail with `INVALID_CONFIGURATION`, and the `command` and `env` overrides there are not applied. Standard Paseo quota and initial usage UI limitations are not filled with substitute displays.
 
 ## Persistence
 
@@ -94,7 +94,7 @@ New conversations support listing, resume and paged V4 history. Mode/Plan restor
 
 ## Diagnostics
 
-**Settings → Plugins → zcode-provider → Diagnostics** shows whether the managed runtime or the environment override is in use, the runtime and Node.js paths and versions, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds.
+**Settings → Plugins → zcode-provider → Diagnostics** shows whether the managed runtime or the environment override is in use, the runtime and Node.js paths and versions, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds. Paseo 0.11 and later also show a provider status in their standard diagnostics. The plugin does not report its own status there, so ZCode appears available even when the runtime is not set up; use this screen instead.
 
 ```bash
 paseo plugin logs zcode-provider
