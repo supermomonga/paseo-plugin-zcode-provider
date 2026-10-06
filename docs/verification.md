@@ -1,3 +1,18 @@
+# 設定画面のタブ化とアカウント・プロバイダー管理の検証（2026-10-06）
+
+ADR 17 の Account タブを、管理下ランタイム 3.14.3（darwin-arm64）と隔離したデータで検証した。
+
+- **公式サービスの実測**: HOME・`ZCODE_DATA_BASE_DIR`・`ZCODE_STORAGE_DIR` を一時ディレクトリにした Server で、`oauth`・`setting`・`provider-settings` を呼んだ。カスタムプロバイダーの作成、API キー・Base URL・API 形式の保存、名前の変更、無効化、モデルの追加・無効化・削除、テンプレートからの作成と削除が期待どおりに `provider_config.json` へ反映された。名前だけの保存でモデルが残ること、テンプレート由来の Base URL を上書きしないこと、アカウントのプランの編集を拒否することも確認した。追加したモデルは `model-selection` に現れた。応答のどこにも API キーが含まれないことを検査した。
+- **サインインの開始**: `startOAuthWithPolling("zai")` は `chat.z.ai` の認可 URL を返し、`redirect_uri` は ZCode の中継ページ（最終的に `zcode://` へ遷移）だった。保留中の確認、取り消し、無操作での Server 終了（試験では 60 秒を 2 秒に短縮）と次の要求での再起動を確認した。認可の完了は試していない。
+- **実 UI**: Paseo 0.9.0-beta.2 の一時 daemon（一時ホーム、loopback、Web UI と plugins を有効）に現在の worktree を導入し、ヘッドレス Chrome で確認した。画面名「zcode-provider · Settings」、Runtime / Account タブ、Runtime タブの既存表示、Sign in でのサインインページの自動表示と URL・Open・Copy・Cancel、カスタムプロバイダーの作成、モデルの追加、テンプレート 20 件の一覧、確認付きの削除を確認した。幅 1280px と 420px で表示を確認し、行の区切り線が欠ける箇所（Fragment で囲んだ行）を検証中に修正した。
+- **Paseo のカタログ**: Paseo はプロバイダーのモデル一覧をキャッシュするため、画面での変更後に `getPaseoClient(...).providers.refresh` を呼ぶようにした。モデルを無効にすると `paseo provider models zcode` の一覧が追従することを確認した。
+- **実モデル**: 画面で「Z.ai Coding Plan」テンプレートと既存の Coding Plan キーから作成したプロバイダーで、`paseo run --provider zcode --model '["zai-api","GLM-5.3-Flash",null]'` が `ACCOUNT_TAB_OK` を返した。作成したプロバイダーは画面から削除した。
+- **実アカウントのサインイン**: 利用者の実環境（Paseo 0.11.0-beta.5 の daemon にこの worktree を導入）で、Account タブの Sign in から Z.ai アカウントのサインインが完了した。完了後の `setting.json` は `providerFamilyDomain: "zai"`、`zai` の接続プランは `individual-coding-plan` だった。`paseo provider models zcode` には Individual Coding Plan（GLM-5.3、GLM-5.3-Flash）と Start Plan（GLM-5.3-Flash）のモデルが現れ、カタログの再取得も 0.11 で動いた。
+- **アカウントのプランでのセッション**: 同じ実環境で Individual Coding Plan の GLM-5.3-Flash を指定した `paseo run` が `HOOK_CHECK_OK` を返し、続けて送ったメッセージにも応答した。
+- **自動試験**: `npm run typecheck`、`npm test`、`npm run build`、Paseo `7c1958f`（0.9.0-beta.1）に対する `npm run test:upstream` が成功。
+
+未検証：daemon 以外の端末（スマートフォンなど）で認可した場合に中継ページの `zcode://` 遷移の失敗に関係なく完了するか。期限切れ後の再サインイン、BigModel、Team プラン、Paseo 0.8 クライアントでの代替表示、Desktop とモバイルのネイティブ画面。検証後に一時 daemon を停止し、一時データを削除した。
+
 # プラグイン管理ランタイムの検証（2026-10-06）
 
 ADR 15 の管理下セットアップを、公開した成果物そのもので検証した。

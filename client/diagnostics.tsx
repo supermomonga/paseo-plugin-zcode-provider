@@ -11,25 +11,7 @@ import {
   zcodeDiagnostics,
   type DiagnosticsResult,
 } from "../shared/diagnostics";
-
-function Value({
-  children,
-  color,
-  compact,
-}: {
-  children: string;
-  color: string;
-  compact: boolean;
-}) {
-  return (
-    <Text
-      selectable
-      style={{ color, fontSize: compact ? 13 : 14, lineHeight: 20 }}
-    >
-      {children}
-    </Text>
-  );
-}
+import { Value } from "./value";
 
 function Installation({ result, theme, compact }: SectionProps) {
   return (
@@ -39,7 +21,7 @@ function Installation({ result, theme, compact }: SectionProps) {
           label="Install root"
           hint={
             result.source === "managed"
-              ? "Managed runtime installed from the Setup screen"
+              ? "Managed runtime installed from the Settings screen"
               : "PASEO_ZCODE_RUNTIME"
           }
         >

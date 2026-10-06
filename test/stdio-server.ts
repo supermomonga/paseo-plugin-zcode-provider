@@ -97,6 +97,14 @@ if (scenario === "bad-hello") {
         },
       }),
     );
+    server.registerChannel(
+      "provider-settings",
+      ProxyChannel.fromService({
+        async savePersonalProviderOverlay(...args: unknown[]) {
+          return args;
+        },
+      }),
+    );
     process.stdin.on("data", (b) => input.fire(VSBuffer.wrap(b)));
     if (header.length > end + 1)
       input.fire(VSBuffer.wrap(header.subarray(end + 1)));

@@ -71,6 +71,21 @@ it.each(["bad-hello", "bad-v4"])(
     }
   },
 );
+it("passes positional arguments to settings services", async () => {
+  const bridge = ZCodeHostBridge.start(runtime, logger);
+  try {
+    expect(
+      await bridge.invoke(
+        "provider-settings",
+        "savePersonalProviderOverlay",
+        ["provider", { api: { baseUrl: "https://example.com" } }, {}],
+        z.unknown(),
+      ),
+    ).toEqual(["provider", { api: { baseUrl: "https://example.com" } }, {}]);
+  } finally {
+    await bridge.close();
+  }
+});
 it("cancels pending RPC bookkeeping on timeout without retry", async () => {
   const bridge = ZCodeHostBridge.start(runtime, logger);
   try {

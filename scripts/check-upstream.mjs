@@ -457,15 +457,30 @@ async function checkContributions({
       };
     if (name === "react/jsx-runtime")
       return { jsx: () => null, jsxs: () => null };
-    if (name === "react-native") return { Text: () => null, View: () => null };
+    if (name === "react-native")
+      return {
+        Linking: {},
+        Platform: { select: () => undefined },
+        Pressable: () => null,
+        Text: () => null,
+        View: () => null,
+      };
     if (name === "@getpaseo/plugin/client")
-      return { useRpc: () => async () => ({}) };
+      return {
+        openExternalUrl: async () => {},
+        useRpc: () => async () => ({}),
+      };
+    if (name === "@getpaseo/plugin/client/react-native")
+      return { copyText: async () => {} };
     if (name === "@getpaseo/plugin/client/ui")
       return {
         SettingsAction: () => null,
         SettingsCard: () => null,
+        SettingsInput: () => null,
         SettingsRow: () => null,
         SettingsSection: () => null,
+        SettingsSelect: () => null,
+        SettingsSwitch: () => null,
       };
     return requireModule(name);
   });
@@ -477,7 +492,7 @@ async function checkContributions({
       return () => screens.delete(screen.id);
     },
   });
-  assert.deepEqual([...screens.keys()], ["setup", "diagnostics"]);
+  assert.deepEqual([...screens.keys()], ["settings", "diagnostics"]);
   for (const screen of screens.values())
     assert.equal(typeof screen.Component, "function");
   assert.equal(typeof disposeClient, "function");
