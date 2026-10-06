@@ -30,7 +30,9 @@ To follow the `main` branch instead, install the Git repository with `paseo plug
 
 ## Setup
 
-Open **Settings → Plugins → zcode-provider → Setup** and choose **Download and install**. The screen lists every download, its SHA-256, size and license before you start. Setup runs on the machine hosting the daemon:
+Open **Settings → Plugins → zcode-provider → Settings**. The screen has two tabs: **Runtime** installs and removes the runtime, and **Account** signs in and manages model providers.
+
+On the **Runtime** tab, choose **Download and install**. The screen lists every download, its SHA-256, size and license before you start. Setup runs on the machine hosting the daemon:
 
 - Node.js 24.21.0 from nodejs.org.
 - The ZCode runtime 3.14.3 from this repository's [releases](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.14.3). ZCode does not publish its integrated CLI, so this is an **unofficial build** of the unmodified public source, made and verified by CI. It is not endorsed or maintained by ZCode or Z.ai.
@@ -44,9 +46,16 @@ Both archives are verified against SHA-256 values pinned in the plugin and extra
 
 An absolute `XDG_DATA_HOME` replaces the base directory on every OS. `PATH` and other installations are not changed. The plugin never installs anything until you start setup.
 
-After setup, the screen shows a login command. Run it in a terminal on the daemon machine to sign in through ZCode's browser authorization (`--no-browser` prints the URL). Then choose **ZCode** when creating an agent. The plugin neither decrypts nor copies credentials.
+**Remove** on the Runtime tab deletes the managed runtime; `paseo plugin remove` does not. ZCode settings, logins and conversations are kept.
 
-**Remove** on the same screen deletes the managed runtime; `paseo plugin remove` does not. ZCode settings, logins and conversations are kept.
+### Account and model providers
+
+The **Account** tab uses ZCode's own account and provider services, the same ones ZCode Desktop uses, through a ZCode Server that the plugin starts while the screen is in use. Changes are stored in ZCode's data on the daemon machine and are shared with ZCode Desktop and the CLI there.
+
+- **Sign in**: choose Z.ai (international) or BigModel (China) and press **Sign in**. The sign-in page opens in your browser; the link is also shown, so you can finish on any device. The daemon receives the result, then selects the account's Coding Plan unless a plan is already chosen. The **Plans** section shows which of the account's plans (Coding Plan, Start Plan) are available. ZCode allows one signed-in account at a time.
+- **Model providers**: add any number of providers that use an API key, from a ZCode template (Z.ai, BigModel, Kimi, MiniMax, DeepSeek, Alibaba Cloud, OpenAI, Anthropic, xAI, OpenRouter and others) or a custom endpoint with its base URL, API format and model IDs. Providers and models can be turned off, edited and deleted.
+
+API keys are sent to ZCode, which stores them as Desktop does, and are never shown again. The plugin itself stores no credentials. Afterwards, choose **ZCode** when creating an agent; the model list is refreshed after each change on Paseo 0.9 or later.
 
 ### Using your own runtime
 
@@ -69,6 +78,7 @@ The source baseline is `29628c9acdb81b703bbd4080c207a0e7ce5e276e` (ZCode `v3.14.
 - Text, thoughts, tools, subagent progress, usage and history use V4 snapshots and deltas. Tool output is marked when ZCode truncates it. Usage is cumulative; repeated snapshots do not add it again.
 - Text submitted during generation uses native guidance. Attachments use the native queue. Paseo reports one run across these native turns and completes it only after all accepted input has been consumed and foreground work has ended.
 - Acceptance is reported once, after the native acknowledgement. Unknown delivery results are never automatically resent. Stop identifies the current native execution, disables automatic queue execution and removes pending input. A new explicit run enables the queue again.
+- As in ZCode Desktop, successful hooks are not shown. A finished hook invocation appears once, as a notification, only when a hook was blocked, failed, timed out or was cancelled; context compaction also appears once, when it ends. Paseo appends every notification it receives, so progress is not reported.
 - Native permission IDs, option values, questions and Plan approval retain their meanings. Question auto-resolution is disabled for each owned Server. Workspace hook trust is reviewed through the official CLI; it is not represented as “allow once.”
 - Each session owns its Server process and environment. Metadata requests use temporary Servers. Closing stdin gives ZCode time to clean up before process termination.
 

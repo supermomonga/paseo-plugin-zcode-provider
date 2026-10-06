@@ -45,8 +45,6 @@ export const runtimeSetupStatusSchema = z
     directory: z.string(),
     components: z.array(runtimeComponentSchema),
     job: setupJobSchema,
-    /** Present once both components are installed; run it on the daemon machine. */
-    loginCommand: z.string().optional(),
   })
   .strict();
 

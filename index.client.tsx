@@ -1,13 +1,13 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { DiagnosticsScreen } from "./client/diagnostics";
-import { SetupScreen } from "./client/setup";
+import { SettingsScreen } from "./client/settings";
 
 export default function contribute(client: PluginClientContext): () => void {
-  const removeSetup = client.addSettingsScreen({
-    id: "setup",
-    title: "Setup",
-    icon: "Download",
-    Component: SetupScreen,
+  const removeSettings = client.addSettingsScreen({
+    id: "settings",
+    title: "Settings",
+    icon: "Settings",
+    Component: SettingsScreen,
   });
   const removeDiagnostics = client.addSettingsScreen({
     id: "diagnostics",
@@ -16,7 +16,7 @@ export default function contribute(client: PluginClientContext): () => void {
     Component: DiagnosticsScreen,
   });
   return () => {
-    removeSetup();
+    removeSettings();
     removeDiagnostics();
   };
 }

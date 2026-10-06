@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Platform, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { type PluginSurfaceProps, useRpc } from "@getpaseo/plugin/client";
 import {
   SettingsAction,
@@ -13,28 +13,10 @@ import {
   zcodeRuntimeStatus,
   type RuntimeSetupStatus,
 } from "../shared/runtime-setup";
+import { Value } from "./value";
 
 type Theme = PluginSurfaceProps["theme"];
 type Job = RuntimeSetupStatus["job"];
-
-function Value({
-  children,
-  color,
-  compact,
-}: {
-  children: string;
-  color: string;
-  compact: boolean;
-}) {
-  return (
-    <Text
-      selectable
-      style={{ color, fontSize: compact ? 13 : 14, lineHeight: 20 }}
-    >
-      {children}
-    </Text>
-  );
-}
 
 const megabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
 
@@ -109,7 +91,7 @@ function Components({
   );
 }
 
-export function SetupScreen({ theme, layout }: PluginSurfaceProps) {
+export function RuntimeTab({ theme, layout }: PluginSurfaceProps) {
   const fetchStatus = useRpc(zcodeRuntimeStatus);
   const install = useRpc(zcodeRuntimeInstall);
   const remove = useRpc(zcodeRuntimeRemove);
@@ -270,39 +252,6 @@ export function SetupScreen({ theme, layout }: PluginSurfaceProps) {
         ) : null}
       </SettingsSection>
       <Components status={status} theme={theme} compact={compact} />
-      {status.loginCommand === undefined ? null : (
-        <SettingsSection title="Sign in to ZCode">
-          <SettingsCard>
-            <SettingsRow label="Run it">
-              <Value color={theme.colors.foreground} compact={compact}>
-                In a terminal on the daemon machine
-              </Value>
-            </SettingsRow>
-            <SettingsRow label="Authorization">
-              <Value color={theme.colors.foreground} compact={compact}>
-                Opens a browser; add --no-browser to print the URL
-              </Value>
-            </SettingsRow>
-            {/* A full-width block: a row value would squeeze the label column. */}
-            <View style={{ padding: compact ? 12 : 16 }}>
-              <Text
-                selectable
-                style={{
-                  color: theme.colors.foreground,
-                  fontFamily: Platform.select({
-                    ios: "Menlo",
-                    default: "monospace",
-                  }),
-                  fontSize: compact ? 12 : 13,
-                  lineHeight: 20,
-                }}
-              >
-                {status.loginCommand}
-              </Text>
-            </View>
-          </SettingsCard>
-        </SettingsSection>
-      )}
       <SettingsSection title="Remove">
         <SettingsAction
           label="Managed runtime"

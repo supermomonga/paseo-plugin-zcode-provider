@@ -28,6 +28,8 @@ import {
 import type { Logger } from "../logger.js";
 import { PROVIDER_VERSION } from "../build-info.js";
 
+export type SettingsChannel = "oauth" | "setting" | "provider-settings";
+
 export interface HostSubscription {
   readonly id: string;
   dispose(): Promise<void>;
@@ -265,7 +267,7 @@ export class ZCodeHostBridge implements HostBridge {
       }) + "\n",
     );
     const v4 = helloMessageSchema.parse(
-      await this.call("zcode-agent", "helloConversationV4", undefined, 10_000),
+      await this.call("zcode-agent", "helloConversationV4", [], 10_000),
     );
     if (
       v4.clientMode !== "desktop-continuous" ||
@@ -278,18 +280,20 @@ export class ZCodeHostBridge implements HostBridge {
     await this.call(
       "zcode-agent",
       "initializeConversationV4",
-      {
-        kind: "clientHello",
-        protocolVersion: 3,
-        clientId: "paseo-zcode-provider",
-        appVersion: PROVIDER_VERSION,
-      },
+      [
+        {
+          kind: "clientHello",
+          protocolVersion: 3,
+          clientId: "paseo-zcode-provider",
+          appVersion: PROVIDER_VERSION,
+        },
+      ],
       10_000,
     );
     await this.call(
       "zcode-agent",
       "syncAppRuntimePreferences",
-      { askUserQuestionAutoResolutionEnabled: false },
+      [{ askUserQuestionAutoResolutionEnabled: false }],
       10_000,
     );
   }
@@ -314,7 +318,7 @@ export class ZCodeHostBridge implements HostBridge {
   private async call(
     channel: string,
     method: string,
-    params: unknown,
+    args: readonly unknown[],
     timeoutMs: number,
   ): Promise<unknown> {
     if (!this.client)
@@ -323,13 +327,7 @@ export class ZCodeHostBridge implements HostBridge {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        this.client
-          .getChannel(channel)
-          .call(
-            method,
-            params === undefined ? [] : [params],
-            cancellation.token,
-          ),
+        this.client.getChannel(channel).call(method, args, cancellation.token),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             reject(new AdapterError("NATIVE_TIMEOUT", "ZCode RPC timed out"));
@@ -342,6 +340,12 @@ export class ZCodeHostBridge implements HostBridge {
       cancellation.dispose();
     }
   }
+  private async ensureOpen(): Promise<void> {
+    await this.ready;
+    if (this.failure) throw this.failure;
+    if (this.closing)
+      throw new AdapterError("NATIVE_EXITED", "ZCode Server is closing");
+  }
   async request<Schema extends z.ZodType>(
     method: string,
     params: unknown,
@@ -349,14 +353,12 @@ export class ZCodeHostBridge implements HostBridge {
     timeoutMs = 30_000,
   ): Promise<z.output<Schema>> {
     try {
-      await this.ready;
-      if (this.failure) throw this.failure;
-      if (this.closing)
-        throw new AdapterError("NATIVE_EXITED", "ZCode Server is closing");
+      await this.ensureOpen();
+      const args = params === undefined ? [] : [params];
       let result: unknown;
       if (method === "readModelSelection")
         result = projectModelSelection(
-          await this.call("model-selection", "getView", params, timeoutMs),
+          await this.call("model-selection", "getView", args, timeoutMs),
         );
       else
         result = await this.call(
@@ -365,7 +367,7 @@ export class ZCodeHostBridge implements HostBridge {
             ? "usage-stats"
             : "zcode-agent",
           method,
-          params,
+          args,
           timeoutMs,
         );
       return resultSchema.parse(result);
@@ -374,6 +376,27 @@ export class ZCodeHostBridge implements HostBridge {
         ...this.diagnostic,
         stage: "request",
         operation: method,
+      });
+    }
+  }
+  /** Calls an official account or settings service with positional arguments. */
+  async invoke<Schema extends z.ZodType>(
+    channel: SettingsChannel,
+    method: string,
+    args: readonly unknown[],
+    resultSchema: Schema,
+    timeoutMs = 30_000,
+  ): Promise<z.output<Schema>> {
+    try {
+      await this.ensureOpen();
+      return resultSchema.parse(
+        await this.call(channel, method, args, timeoutMs),
+      );
+    } catch (error) {
+      throw diagnosticError(error, {
+        ...this.diagnostic,
+        stage: "request",
+        operation: `${channel}.${method}`,
       });
     }
   }

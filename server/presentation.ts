@@ -8,6 +8,7 @@ import type {
 } from "@getpaseo/plugin/server/provider";
 import type {
   ConversationRow,
+  HookInvocationRow,
   TimelineMarkerPayload,
 } from "./vendor/zcode/packages/shared/src/zcode-protocol-v4/rows.js";
 import type {
@@ -160,13 +161,12 @@ export function rowTimeline(
         message: `${row.displayName} (${row.artifactType}, ${row.sizeBytes} bytes)`,
       };
     case "hookInvocation":
-      return {
-        id,
-        type: "notification",
-        level: "info",
-        message: `${row.hookEventName}: ${row.executions.map((h) => `${h.displayName} (${h.outcome ?? h.state})`).join(", ")}`,
-      };
+      return hookTimeline(id, row);
     case "timelineMarker":
+      // Paseo appends every notification it receives, so a changing row is
+      // reported once, in its final state.
+      if (row.marker.type === "compact" && row.marker.status === "running")
+        return;
       return {
         id,
         type: "notification",
@@ -175,6 +175,48 @@ export function rowTimeline(
       };
   }
 }
+// Like ZCode Desktop, which keeps hooks out of the conversation and lists
+// them on request, successful hooks are not shown. Paseo appends every
+// notification it receives, so an invocation is reported once, after it ends,
+// and only when a hook that ran did not succeed.
+function hookTimeline(
+  id: string,
+  row: HookInvocationRow,
+): ProviderTimelineItem | undefined {
+  if (
+    row.state === "running" ||
+    row.executions.some((h) => h.state === "running")
+  )
+    return;
+  const problems = row.executions.flatMap((hook) => {
+    if (!hook.didExecute) return [];
+    const outcome =
+      hook.outcome && hook.outcome !== "success"
+        ? hook.outcome
+        : hook.state === "failed"
+          ? "failed"
+          : undefined;
+    return outcome ? [{ hook, outcome }] : [];
+  });
+  if (problems.length === 0) return;
+  const outcomes = new Set(problems.map((p) => p.outcome));
+  return {
+    id,
+    type: "notification",
+    level: outcomes.has("failed")
+      ? "error"
+      : outcomes.has("blocked") || outcomes.has("timed_out")
+        ? "warning"
+        : "info",
+    message: `${row.hookEventName} hook ${problems
+      .map(
+        ({ hook, outcome }) =>
+          `${outcome.replace("_", " ")}: ${hook.displayName}${hook.blockReason ? ` (${hook.blockReason})` : ""}`,
+      )
+      .join("; ")}`,
+  };
+}
+
 export function usage(state: ConversationSnapshot): ProviderUsage {
   return {
     inputTokens: state.usage.cumulative.inputTokens,

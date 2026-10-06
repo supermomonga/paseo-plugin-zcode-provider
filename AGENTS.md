@@ -2,11 +2,11 @@
 
 ## Project Structure
 
-This plugin connects Paseo's public Provider API to the official stdio Services Server included in the integrated ZCode CLI distribution. The Setup screen installs a pinned build of that distribution and Node.js (ADR 15).
+This plugin connects Paseo's public Provider API to the official stdio Services Server included in the integrated ZCode CLI distribution. The Settings screen's Runtime tab installs a pinned build of that distribution and Node.js (ADR 15); its Account tab signs in and manages model providers through ZCode's official services (ADR 17).
 
 - `index.server.ts` / `index.client.tsx`: Server and settings UI registration.
 - `server/`: Provider, sessions, and persistence. `discovery/` locates installations; `runtime/` pins and installs the managed runtime; `host/` and `protocol/` handle startup, communication, and validation.
-- `client/`: React Native Setup and Diagnostics screens. `shared/` contains types and contracts shared by the server and client.
+- `client/`: React Native Settings (Runtime and Account tabs) and Diagnostics screens. `shared/` contains types and contracts shared by the server and client.
 - `test/`: Integration tests and `fake-host.ts`. Unit tests also live in `server/`.
 - `scripts/`: Build, upstream integration, and runtime verification scripts. `docs/` contains development procedures, verification records, and ADRs. Images live in `images/` and `icon.svg`.
 
@@ -53,9 +53,10 @@ Identify the root cause and do not add ad hoc workarounds. Add backward compatib
 
 - Use `~/ghq/github.com/zai-org/ZCode` as the implementation reference. Record commit SHA and source paths; do not extract Electron/deb bundles for source investigation.
 - Current source baseline: `29628c9acdb81b703bbd4080c207a0e7ce5e276e`. Verify vendored RPC/V4 source with `npm run check:zcode-source`. Keep `server/vendor/zcode` unformatted and retain its license/provenance.
-- The managed runtime is the default (ADR 15): Node.js from nodejs.org and the `zcode-runtime-v<version>` release of this repository, both pinned by SHA-256 in `server/runtime/pins.ts` and installed only when the user starts setup. Setup RPCs never accept URLs, paths or versions from clients. `PASEO_ZCODE_RUNTIME` plus ordinary Node.js 24.14.0+ via `PASEO_ZCODE_NODE` override it; one variable alone is an error. Never fall back to Desktop/Electron.
+- The managed runtime is the default (ADR 15): Node.js from nodejs.org and the `zcode-runtime-v<version>` release of this repository, both pinned by SHA-256 in `server/runtime/pins.ts` and installed only when the user starts setup. Runtime setup RPCs never accept URLs, paths or versions from clients. `PASEO_ZCODE_RUNTIME` plus ordinary Node.js 24.14.0+ via `PASEO_ZCODE_NODE` override it; one variable alone is an error. Never fall back to Desktop/Electron.
 - To ship a new ZCode version, update the source baseline, push a `zcode-runtime-v<version>` tag so `.github/workflows/zcode-runtime-release.yml` builds, verifies on all managed platforms and publishes the archive, then pin the published SHA-256 and size. Never replace an existing release asset.
 - `npm run test:stdio-runtime` uses the real runtime (override pair or managed runtime under `XDG_DATA_HOME`) with isolated data and a local model fixture. Resume guarantees require both Paseo's saved `mode` and `settings.plan_mode`; failures of this supported contract block release. Keep source SHA, distribution hashes, runtime versions and actual OS coverage separate.
 - `npm run test:native-restore` separately checks resume without explicit settings. The pinned upstream fails this unsupported path; retain its nonzero exit and run it when evaluating runtime updates. It is not a required CI or release condition (ADR 14).
+- Account and provider settings go only through the official `oauth`, `setting` and `provider-settings` services of a plugin-owned Server, as Desktop does (ADR 17). Never read or write ZCode's credential or configuration files directly, store credentials in the plugin, or return API keys or native error messages to clients.
 - Persistence handles use version 3. Do not migrate old Paseo handles or introduce Plan restoration storage.
 - The plugin is published to npm only through the Version Bump and Release workflows (ADR 16); see `docs/development.md`. npm installation omits development dependencies, so keep runtime libraries other than Paseo's host modules (`@getpaseo/plugin/*`, `zod`) in `dependencies`. The `build` commands in `paseo-plugin.json` prepare Git checkouts only; `prepack` removes them from the npm package.

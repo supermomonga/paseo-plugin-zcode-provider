@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type { RuntimeSetupStatus } from "../shared/runtime-setup.js";
 import { AdapterError } from "./errors.js";
 import {
@@ -13,20 +12,6 @@ const LICENSES = {
   zcode:
     "Unofficial build of ZCode (Apache-2.0); third-party terms in THIRD-PARTY-NOTICES.md",
 } as const;
-
-// Quoted for the shell a user is most likely to paste into on that OS.
-export function loginCommand(
-  executable: string,
-  installRoot: string,
-  windows = process.platform === "win32",
-): string {
-  const script = join(installRoot, "bin", "zcode.mjs");
-  return windows
-    ? `& ${powershellQuote(executable)} ${powershellQuote(script)} login`
-    : `${posixQuote(executable)} ${posixQuote(script)} login`;
-}
-const posixQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
-const powershellQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
 export function createRuntimeSetupHandlers(
   installer: ManagedRuntimeInstaller,
@@ -63,24 +48,14 @@ export function createRuntimeSetupHandlers(
           directory: managedRuntimeRoot(environment),
           components: [],
         };
-      const components = [
-        await component(layout.node),
-        await component(layout.zcode),
-      ];
       return {
         ...base,
         supported: true,
         directory: layout.root,
-        components,
-        ...(components.every((entry) => entry.installed)
-          ? {
-              loginCommand: loginCommand(
-                layout.node.executable,
-                layout.zcode.directory,
-                layout.platform.startsWith("win-"),
-              ),
-            }
-          : {}),
+        components: [
+          await component(layout.node),
+          await component(layout.zcode),
+        ],
       };
     },
     install: async () => ({ started: installer.start() }),

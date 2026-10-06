@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createRuntimeSetupHandlers, loginCommand } from "./runtime-setup.js";
+import { createRuntimeSetupHandlers } from "./runtime-setup.js";
 import { ManagedRuntimeInstaller, managedLayout } from "./runtime/managed.js";
 
 const directories: string[] = [];
@@ -17,22 +17,8 @@ async function dataHome() {
   return directory;
 }
 
-describe("login command", () => {
-  it("quotes POSIX paths for a shell", () => {
-    expect(loginCommand("/opt/it's/node", "/data/zcode", false)).toBe(
-      `'/opt/it'\\''s/node' '/data/zcode/bin/zcode.mjs' login`,
-    );
-  });
-
-  it("uses the PowerShell call operator on Windows", () => {
-    expect(
-      loginCommand("C:\\Users\\O'Neil\\node.exe", "C:\\data\\zcode", true),
-    ).toMatch(/^& 'C:\\Users\\O''Neil\\node\.exe' '.+zcode\.mjs' login$/u);
-  });
-});
-
 describe("runtime setup status", () => {
-  it("lists pinned downloads without a login command before setup", async () => {
+  it("lists pinned downloads before setup", async () => {
     const environment = { XDG_DATA_HOME: await dataHome() };
     const handlers = createRuntimeSetupHandlers(
       new ManagedRuntimeInstaller(environment, "linux-x64"),
@@ -51,10 +37,9 @@ describe("runtime setup status", () => {
     expect(status.components.every((component) => !component.installed)).toBe(
       true,
     );
-    expect(status.loginCommand).toBeUndefined();
   });
 
-  it("offers the login command once both components are installed", async () => {
+  it("reports installed components and the environment override", async () => {
     const environment = { XDG_DATA_HOME: await dataHome() };
     const layout = managedLayout(environment, "linux-x64")!;
     for (const component of [layout.node, layout.zcode]) {
@@ -72,8 +57,8 @@ describe("runtime setup status", () => {
       { ...environment, PASEO_ZCODE_NODE: "/custom/node" },
     ).status();
     expect(status.override).toBe(true);
-    expect(status.loginCommand).toContain(
-      join(layout.zcode.directory, "bin", "zcode.mjs"),
+    expect(status.components.every((component) => component.installed)).toBe(
+      true,
     );
   });
 

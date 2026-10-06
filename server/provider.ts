@@ -68,11 +68,11 @@ export type BridgeFactory = (
   workspace?: string,
 ) => Promise<HostBridge>;
 
-async function createHost(
+export async function createHost(
   environment: Readonly<Record<string, string>>,
   signal: AbortSignal,
   workspace?: string,
-): Promise<HostBridge> {
+): Promise<ZCodeHostBridge> {
   const env = { ...process.env, ...environment };
   const runtime = await discoverRuntime({ environment: env, signal });
   assertRuntimeSupported(runtime);
@@ -812,7 +812,9 @@ function publicError(error: unknown): ProviderError {
     RUNTIME_DISCOVERY_FAILED:
       "ZCode installation or required host structure could not be inspected. See the diagnostic for the failure stage.",
     RUNTIME_SETUP_REQUIRED:
-      "ZCode runtime is not set up. Open Settings → Plugins → zcode-provider to set it up.",
+      "ZCode runtime is not set up. Install it in Settings → Plugins → zcode-provider → Settings → Runtime.",
+    AUTH_REQUIRED:
+      "No ZCode model provider is usable. Sign in or add a provider in Settings → Plugins → zcode-provider → Settings → Account.",
     PERSISTENCE_VERSION_UNSUPPORTED:
       "ZCode persistence version is unsupported. Create a new Paseo ZCode session.",
     PERSISTENCE_INVALID:

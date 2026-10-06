@@ -119,3 +119,92 @@ it("marks bounded tool output as truncated", () => {
     },
   });
 });
+
+const hookRow = (executions: Record<string, unknown>[], state = "completed") =>
+  ({
+    rowId: 7,
+    turnId: "p",
+    productTurnId: "p",
+    entityId: "hook",
+    createdAt: 1,
+    createdAtSeq: 1,
+    kind: "hookInvocation",
+    hookInvocationId: "hook",
+    hookEventName: "PreToolUse",
+    hookCount: executions.length,
+    state,
+    startedAt: 1,
+    lane: "toolBefore",
+    executions: executions.map((execution, hookIndex) => ({
+      hookRunId: `run-${hookIndex}`,
+      hookIndex,
+      didExecute: true,
+      state: "completed",
+      startedAt: 1,
+      sourceKind: "plugin",
+      ...execution,
+    })),
+  }) as any;
+
+it("hides running and successful hooks", () => {
+  expect(
+    rowTimeline(
+      hookRow([{ displayName: "check", state: "running" }], "running"),
+    ),
+  ).toBeUndefined();
+  expect(
+    rowTimeline(
+      hookRow([
+        { displayName: "check", outcome: "success" },
+        { displayName: "skipped", didExecute: false, outcome: "blocked" },
+      ]),
+    ),
+  ).toBeUndefined();
+});
+
+it("reports a finished hook that did not succeed once, with the worst level", () => {
+  expect(
+    rowTimeline(
+      hookRow([
+        { displayName: "check", outcome: "success" },
+        { displayName: "guard", outcome: "blocked", blockReason: "No rm" },
+      ]),
+    ),
+  ).toEqual({
+    id: "zcode:row:7",
+    type: "notification",
+    level: "warning",
+    message: "PreToolUse hook blocked: guard (No rm)",
+  });
+  expect(
+    rowTimeline(
+      hookRow(
+        [
+          { displayName: "slow", outcome: "timed_out" },
+          { displayName: "lint", state: "failed" },
+        ],
+        "failed",
+      ),
+    ),
+  ).toMatchObject({
+    level: "error",
+    message: "PreToolUse hook timed out: slow; failed: lint",
+  });
+});
+
+it("reports context compaction only when it ends", () => {
+  const marker = (status: string) =>
+    ({
+      rowId: 8,
+      turnId: "p",
+      createdAt: 1,
+      createdAtSeq: 1,
+      kind: "timelineMarker",
+      marker: { type: "compact", origin: "auto", status },
+    }) as any;
+  expect(rowTimeline(marker("running"))).toBeUndefined();
+  expect(rowTimeline(marker("success"))).toMatchObject({
+    type: "notification",
+    message: "Context compaction: success",
+  });
+});
