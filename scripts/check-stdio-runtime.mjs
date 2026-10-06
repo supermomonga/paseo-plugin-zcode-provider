@@ -16,8 +16,14 @@ const { values } = parseArgs({
 });
 const root = resolve(import.meta.dirname, "..");
 const runtime = process.env.PASEO_ZCODE_RUNTIME,
-  node = process.env.PASEO_ZCODE_NODE;
-assert.ok(runtime && node, "Set PASEO_ZCODE_RUNTIME and PASEO_ZCODE_NODE");
+  node = process.env.PASEO_ZCODE_NODE,
+  data = process.env.XDG_DATA_HOME;
+// Either the explicit override pair or a managed runtime under XDG_DATA_HOME.
+const override = Boolean(runtime || node);
+assert.ok(
+  override ? runtime && node : data,
+  "Set PASEO_ZCODE_RUNTIME and PASEO_ZCODE_NODE, or XDG_DATA_HOME with a managed runtime",
+);
 const windows = process.platform === "win32";
 // POSIX keeps /tmp so ZCode's Unix socket paths stay below the platform length limit.
 const directory = await realpath(
@@ -146,8 +152,9 @@ try {
     ZCODE_STORAGE_DIR: join(directory, ".zcode"),
     ZCODE_SESSION_DB_PATH: join(directory, "sessions.db"),
     TMPDIR: join(directory, "tmp"),
-    PASEO_ZCODE_RUNTIME: runtime,
-    PASEO_ZCODE_NODE: node,
+    ...(override
+      ? { PASEO_ZCODE_RUNTIME: runtime, PASEO_ZCODE_NODE: node }
+      : { XDG_DATA_HOME: data }),
   });
   await build({
     stdin: {
@@ -168,7 +175,7 @@ try {
     ZCodeHostBridge,
     logger,
   } = await import(pathToFileURL(join(directory, "provider.mjs")));
-  const identity = (await discoverRuntime()).identity;
+  const { identity, source } = await discoverRuntime();
   const bridges = [];
   const provider = createZCodeProvider(
     async (environment, signal, workspace) => {
@@ -440,6 +447,7 @@ try {
     JSON.stringify(
       {
         identity,
+        source,
         restoration: "Paseo's saved mode and Plan settings",
         ...(values["check-native-restore"]
           ? { nativePlanRestore: "passed" }

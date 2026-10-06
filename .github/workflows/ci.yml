@@ -59,48 +59,43 @@ jobs:
         run: npm run test:upstream -- "$GITHUB_WORKSPACE/paseo"
 
   runtime:
-    name: Official stdio runtime contract
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    name: Managed runtime contract (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: win-x64
+            runner: windows-2025
+          - target: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v6
         with:
-          path: plugin
           persist-credentials: false
-      - uses: actions/checkout@v6
-        with:
-          repository: zai-org/ZCode
-          ref: 29628c9acdb81b703bbd4080c207a0e7ce5e276e
-          path: zcode-source
-          persist-credentials: false
+      # The plugin runs on the daemon's Node.js; ZCode uses the managed Node.js.
       - uses: actions/setup-node@v6
         with:
-          node-version: "24.14.0"
-      - uses: pnpm/action-setup@v4
-        with:
-          version: "10.33.2"
-      - name: Build the official integrated CLI
-        working-directory: zcode-source
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm exec tsc -b packages/shared
-          node scripts/build-zcode.mjs --base-url https://example.invalid/zcode/
-      - name: Extract outside the source checkout
-        run: |
-          mkdir "$RUNNER_TEMP/zcode-runtime"
-          sha256sum zcode-source/dist/zcode/releases/3.14.3/zcode-3.14.3.tar.gz
-          tar -xzf zcode-source/dist/zcode/releases/3.14.3/zcode-3.14.3.tar.gz -C "$RUNNER_TEMP/zcode-runtime"
-          echo "PASEO_ZCODE_RUNTIME=$RUNNER_TEMP/zcode-runtime/zcode" >> "$GITHUB_ENV"
-          echo "PASEO_ZCODE_NODE=$(command -v node)" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: zcode-runtime-linux-x64
-          path: zcode-source/dist/zcode/releases/3.14.3/zcode-3.14.3.tar.gz
+          node-version: "22"
+          cache: npm
       - name: Install plugin dependencies
-        working-directory: plugin
         run: npm ci --include=dev
-      - name: Verify Provider behavior on the official runtime
-        working-directory: plugin
+      - name: Install the pinned managed runtime (ADR 15)
+        run: |
+          data=$(node -p "require('node:path').join(process.env.RUNNER_TEMP, 'zcode-data')")
+          echo "XDG_DATA_HOME=$data" >> "$GITHUB_ENV"
+          XDG_DATA_HOME="$data" npm run setup:managed-runtime
+      - name: Verify Provider behavior on the managed runtime
         # Resume uses Paseo's saved mode and Plan settings (ADR 14).
         # The separate test:native-restore tracks unsupported settings-free resume.
         run: npm run test:stdio-runtime
@@ -120,20 +115,14 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: "24.14.0"
+          node-version: "22"
           cache: npm
-      - uses: actions/download-artifact@v4
-        with:
-          name: zcode-runtime-linux-x64
-          path: runtime-archive
-      - name: Configure official runtime
-        run: |
-          mkdir "$RUNNER_TEMP/zcode-runtime"
-          tar -xzf runtime-archive/zcode-3.14.3.tar.gz -C "$RUNNER_TEMP/zcode-runtime"
-          echo "PASEO_ZCODE_RUNTIME=$RUNNER_TEMP/zcode-runtime/zcode" >> "$GITHUB_ENV"
-          echo "PASEO_ZCODE_NODE=$(command -v node)" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: npm ci --include=dev
+      - name: Install the pinned managed runtime
+        run: |
+          echo "XDG_DATA_HOME=$RUNNER_TEMP/zcode-data" >> "$GITHUB_ENV"
+          XDG_DATA_HOME="$RUNNER_TEMP/zcode-data" npm run setup:managed-runtime
       - name: Run isolated real-model E2E
         env:
           GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
