@@ -33,7 +33,14 @@ Open **Settings → Plugins → zcode-provider → Setup** and choose **Download
 - Node.js 24.21.0 from nodejs.org.
 - The ZCode runtime 3.14.3 from this repository's [releases](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.14.3). ZCode does not publish its integrated CLI, so this is an **unofficial build** of the unmodified public source, made and verified by CI. It is not endorsed or maintained by ZCode or Z.ai.
 
-Both archives are verified against SHA-256 values pinned in the plugin and extracted to `$XDG_DATA_HOME/paseo-plugin-zcode-provider/runtimes`, or `~/.local/share/paseo-plugin-zcode-provider/runtimes`. `PATH` and other installations are not changed. The plugin never installs anything until you start setup.
+Both archives are verified against SHA-256 values pinned in the plugin and extracted to the daemon user's data directory:
+
+| OS            | Destination                                           |
+| ------------- | ----------------------------------------------------- |
+| Windows       | `%LOCALAPPDATA%\paseo-plugin-zcode-provider\runtimes` |
+| macOS / Linux | `~/.local/share/paseo-plugin-zcode-provider/runtimes` |
+
+An absolute `XDG_DATA_HOME` replaces the base directory on every OS. `PATH` and other installations are not changed. The plugin never installs anything until you start setup.
 
 After setup, the screen shows a login command. Run it in a terminal on the daemon machine to sign in through ZCode's browser authorization (`--no-browser` prints the URL). Then choose **ZCode** when creating an agent. The plugin neither decrypts nor copies credentials.
 

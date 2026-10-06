@@ -9,7 +9,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -17,6 +17,7 @@ import {
   ManagedRuntimeInstaller,
   isInstalled,
   managedLayout,
+  managedRuntimeRoot,
   resolveManagedRuntime,
   type ManagedLayout,
 } from "./managed.js";
@@ -120,6 +121,38 @@ describe("pins", () => {
     expect(managedPlatform("linux", "arm64")).toBe("linux-arm64");
     expect(managedPlatform("darwin", "x64")).toBeUndefined();
     expect(managedPlatform("freebsd", "x64")).toBeUndefined();
+  });
+});
+
+describe("managed runtime location", () => {
+  const suffix = join("paseo-plugin-zcode-provider", "runtimes");
+
+  it("uses %LOCALAPPDATA% on Windows and ~/.local/share elsewhere", () => {
+    const local = join(tmpdir(), "AppData", "Local");
+    expect(managedRuntimeRoot({ LOCALAPPDATA: local }, "win32")).toBe(
+      join(local, suffix),
+    );
+    expect(managedRuntimeRoot({}, "win32")).toBe(
+      join(homedir(), "AppData", "Local", suffix),
+    );
+    for (const platform of ["darwin", "linux"] as const)
+      expect(managedRuntimeRoot({ LOCALAPPDATA: local }, platform)).toBe(
+        join(homedir(), ".local", "share", suffix),
+      );
+  });
+
+  it("honors only an absolute XDG_DATA_HOME, on every OS", () => {
+    const data = join(tmpdir(), "xdg-data");
+    for (const platform of ["win32", "darwin", "linux"] as const)
+      expect(managedRuntimeRoot({ XDG_DATA_HOME: data }, platform)).toBe(
+        join(data, suffix),
+      );
+    expect(managedRuntimeRoot({ XDG_DATA_HOME: "relative" }, "linux")).toBe(
+      join(homedir(), ".local", "share", suffix),
+    );
+    expect(managedRuntimeRoot({ XDG_DATA_HOME: "" }, "darwin")).toBe(
+      join(homedir(), ".local", "share", suffix),
+    );
   });
 });
 

@@ -13,7 +13,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
@@ -62,16 +62,24 @@ const markerSchema = z
   .object({ version: z.string(), archiveSha256: z.string() })
   .strict();
 
-// Outside the plugin checkout, next to the session mappings' XDG convention,
-// so plugin updates do not download the runtime again.
+// Outside the plugin checkout so plugin updates do not download the runtime
+// again. Each OS uses its per-user data convention: Windows' non-roaming
+// %LOCALAPPDATA%, otherwise ~/.local/share. An absolute XDG_DATA_HOME is an
+// explicit override everywhere (CI isolates with it); relative values are
+// ignored as the XDG specification requires.
 export function managedRuntimeRoot(
   environment: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
 ): string {
-  return join(
-    environment.XDG_DATA_HOME ?? join(homedir(), ".local", "share"),
-    "paseo-plugin-zcode-provider",
-    "runtimes",
-  );
+  const absolute = (value: string | undefined) =>
+    value !== undefined && isAbsolute(value) ? value : undefined;
+  const base =
+    absolute(environment.XDG_DATA_HOME) ??
+    (platform === "win32"
+      ? (absolute(environment.LOCALAPPDATA) ??
+        join(homedir(), "AppData", "Local"))
+      : join(homedir(), ".local", "share"));
+  return join(base, "paseo-plugin-zcode-provider", "runtimes");
 }
 
 export function managedLayout(

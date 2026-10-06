@@ -55,7 +55,7 @@ ADR 13 は統合 CLI 配布物と普通の Node.js 24.14.0+ の導入・更新�
 
 **対象.** darwin-arm64、linux-x64、linux-arm64、win-x64、win-arm64 とする。各ターゲットで固定した成果物の実行時契約試験を CI で行い、失敗したターゲットは提供しない。それ以外の環境は従来どおり環境変数で手動設定する。
 
-**配置.** `$XDG_DATA_HOME/paseo-plugin-zcode-provider/runtimes`、未設定時は `~/.local/share/paseo-plugin-zcode-provider/runtimes` に、版とプラットフォームごとのディレクトリで置く。一時領域への取得、ハッシュ照合、展開、起動確認、rename による確定の順に行い、ロックで同時導入を防ぐ。Git checkout の外に置くため、プラグインの更新では再取得しない。PATH には追加せず、Server と Agent を絶対パスで起動する。
+**配置.** 各 OS の利用者別データ領域の慣習に従い、Windows は `%LOCALAPPDATA%\paseo-plugin-zcode-provider\runtimes`、macOS と Linux は `~/.local/share/paseo-plugin-zcode-provider/runtimes` に、版とプラットフォームごとのディレクトリで置く。Windows の既定はローミングされない `%LOCALAPPDATA%` とし、ホーム直下に `.local` を作らない。絶対パスの `XDG_DATA_HOME` は全 OS で基点を上書きする明示的な指定として扱い、CI と試験の隔離に使う。XDG の仕様どおり相対パスは無視する。一時領域への取得、ハッシュ照合、展開、起動確認、rename による確定の順に行い、ロックで同時導入を防ぐ。Git checkout の外に置くため、プラグインの更新では再取得しない。PATH には追加せず、Server と Agent を絶対パスで起動する。
 
 **選択.** `PASEO_ZCODE_RUNTIME` と `PASEO_ZCODE_NODE` の両方があれば、従来どおりそれを使う。片方だけの設定はエラーとする。どちらもなければ、プラグインが固定した版の管理下ランタイムを使い、未導入なら設定画面への案内付きのエラーにする。Electron と Desktop へのフォールバックは引き続き行わない。最低版の判定（ADR 7）は環境変数の経路に適用する。
 
