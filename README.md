@@ -78,6 +78,7 @@ The source baseline is `29628c9acdb81b703bbd4080c207a0e7ce5e276e` (ZCode `v3.14.
 - Text, thoughts, tools, subagent progress, usage and history use V4 snapshots and deltas. Tool output is marked when ZCode truncates it. Usage is cumulative; repeated snapshots do not add it again.
 - Text submitted during generation uses native guidance. Attachments use the native queue. Paseo reports one run across these native turns and completes it only after all accepted input has been consumed and foreground work has ended.
 - Acceptance is reported once, after the native acknowledgement. Unknown delivery results are never automatically resent. Stop identifies the current native execution, disables automatic queue execution and removes pending input. A new explicit run enables the queue again.
+- As in ZCode Desktop, successful hooks are not shown. A finished hook invocation appears once, as a notification, only when a hook was blocked, failed, timed out or was cancelled; context compaction also appears once, when it ends. Paseo appends every notification it receives, so progress is not reported.
 - Native permission IDs, option values, questions and Plan approval retain their meanings. Question auto-resolution is disabled for each owned Server. Workspace hook trust is reviewed through the official CLI; it is not represented as “allow once.”
 - Each session owns its Server process and environment. Metadata requests use temporary Servers. Closing stdin gives ZCode time to clean up before process termination.
 

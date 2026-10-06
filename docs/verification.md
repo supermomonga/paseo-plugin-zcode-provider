@@ -9,6 +9,7 @@ ADR 17 の Account タブを、管理下ランタイム 3.14.3（darwin-arm64）
 - **実モデル**: 画面で「Z.ai Coding Plan」テンプレートと既存の Coding Plan キーから作成したプロバイダーで、`paseo run --provider zcode --model '["zai-api","GLM-5.3-Flash",null]'` が `ACCOUNT_TAB_OK` を返した。作成したプロバイダーは画面から削除した。
 - **実アカウントのサインイン**: 利用者の実環境（Paseo 0.11.0-beta.5 の daemon にこの worktree を導入）で、Account タブの Sign in から Z.ai アカウントのサインインが完了した。完了後の `setting.json` は `providerFamilyDomain: "zai"`、`zai` の接続プランは `individual-coding-plan` だった。`paseo provider models zcode` には Individual Coding Plan（GLM-5.3、GLM-5.3-Flash）と Start Plan（GLM-5.3-Flash）のモデルが現れ、カタログの再取得も 0.11 で動いた。
 - **アカウントのプランでのセッション**: 同じ実環境で Individual Coding Plan の GLM-5.3-Flash を指定した `paseo run` が `HOOK_CHECK_OK` を返し、続けて送ったメッセージにも応答した。
+- **フックの表示**: Paseo は notification の ID を捨てて追記するため、ZCode が実行中から完了へ更新したフックの行が、更新のたびに別の通知として並んでいた（利用者のスクリーンショット）。Desktop と同じく成功したフックを表示せず、終わった呼び出しに blocked・failed・timed out・cancelled があるときだけ 1 回表示するよう変更した。コンテキスト圧縮のマーカーも終了時に 1 回だけ表示する。変更後、ZCode のログで SessionStart と UserPromptSubmit のフックが実行された 2 つのターンで、Paseo へ送られたタイムラインにフックの通知がないことを確認した。失敗・ブロックの表示は単体試験だけで確認した。
 - **自動試験**: `npm run typecheck`、`npm test`、`npm run build`、Paseo `7c1958f`（0.9.0-beta.1）に対する `npm run test:upstream` が成功。
 
 未検証：daemon 以外の端末（スマートフォンなど）で認可した場合に中継ページの `zcode://` 遷移の失敗に関係なく完了するか。期限切れ後の再サインイン、BigModel、Team プラン、Paseo 0.8 クライアントでの代替表示、Desktop とモバイルのネイティブ画面。検証後に一時 daemon を停止し、一時データを削除した。
