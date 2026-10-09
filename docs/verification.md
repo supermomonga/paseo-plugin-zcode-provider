@@ -1,3 +1,21 @@
+# パッチ済みランタイム 3.14.3-paseo.1 の公開と検証（2026-10-09）
+
+ADR 19 のパッチを当てた最初のランタイムを公開し、管理下ランタイムとして固定した。
+
+| 項目               | 実測値                                                                                                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| リリース           | [`zcode-runtime-v3.14.3-paseo.1`](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.14.3-paseo.1)（`65d550f`）、`zcode-runtime-3.14.3-paseo.1.tar.gz`、79,883,611 bytes |
+| 成果物 SHA-256     | `c51e4547dc804894fd7d62766ab0ce3d759948b8b56cb515528691d75a8e09f9`。`gh attestation verify` で、タグ `zcode-runtime-v3.14.3-paseo.1` のリリース用ワークフローによる署名を確認                                   |
+| `BUILD-INFO.json`  | `release: 3.14.3-paseo.1`、`modified: true`、パッチ `3be78e7a16eca3dcfa2550922d8f97bf9c79e48a4cde3d160c685486c91d3b92`。同梱のパッチは main のものとバイト単位で一致                                            |
+| 公式ビルドの成果物 | `7106d4d7648147b52c8915e0db86859b7590afef157587ef802f505837c7c51a`（パッチ適用後のソースから公式 `build-zcode.mjs` で作ったもの）                                                                               |
+
+- **PR #49 の CI**：リリース用ワークフローが PR 上でパッチ済みの成果物を作り（[run 37895109681](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/37895109681)）、5 プラットフォームで「2 つのプラグインと `node_repl` が隠れる」側の契約試験が通った。無改変の 3.14.3 での管理下ランタイムの契約試験（5 プラットフォーム、「見えたまま」側）、パッチが固定ソースに当たることの検査、実モデル E2E も成功した。
+- **タグのリリース**：[run 37896100218](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/37896100218) で、ビルド、5 プラットフォームの検証（すべて「隠れる」側）、署名、公開が成功した。
+- **導入**：`pins.ts` を更新した状態で、`XDG_DATA_HOME` を一時ディレクトリにした `npm run setup:managed-runtime` が公開版を取得・検証して導入した。その管理下ランタイムで `test:stdio-runtime` が全項目と「隠れる」側の分岐を通った（`source: managed`）。
+- **実モデル**：利用者の実データ（Desktop が導入したキャッシュとサインイン）と導入した公開版で、プロバイダ経由の最小のターンを 1 回送り、完了した。モデル入出力ログでは、渡ったツール 34 個に `mcp__node_repl__js` は無かった。スキル 37 件に `computer-use`、`control-browser`、`web-gui-tester` は無く、文書系、zcode-guide、`skill-creator`、`plugin-creator`、video2code 系は残った。ZCode のログでは、同じワークスペースで他の MCP サーバーの接続が各 7 件記録された一方、`node_repl` は 0 件で、登録されていなかった。試験の会話は ZCode に 1 件残る。
+
+未検証：Paseo daemon の実 UI での導入し直し（固定値が変わったため、既存の利用者は Runtime タブから導入し直す）、Linux と Windows の実データでの確認。
+
 # ADR 19 の実装の検証（2026-10-09）
 
 [ADR 19](adr/0019-使えない公式プラグインを隠すビルド時パッチを管理下ランタイムに当てる.md) のパッチ、リリース処理、プロバイダの変更を、macOS arm64 で確かめた。パッチを当てた正式なビルドはまだ作っていない。
