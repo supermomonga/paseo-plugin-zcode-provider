@@ -19,11 +19,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-deps
         with:
           node-version: "22"
-          cache: npm
-      - run: npm ci
       - name: Check for new ZCode releases
         run: npm run check:zcode-releases
         env:
