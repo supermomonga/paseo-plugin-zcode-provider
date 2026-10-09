@@ -1,8 +1,9 @@
 name: ZCode Runtime Release
 
-# Builds the integrated ZCode CLI from the pinned, unmodified public source,
-# adds upstream license material, verifies it on every managed platform and
-# publishes it only for zcode-runtime-v<version> tags (ADR 15).
+# Builds the integrated ZCode CLI from the pinned public source with
+# patches/zcode applied (ADR 19), adds upstream license material and the
+# patches, verifies it on every managed platform and publishes it only for
+# zcode-runtime-v<version>-paseo.<n> tags (ADR 15).
 on:
   push:
     tags: ["zcode-runtime-v*"]
@@ -11,6 +12,8 @@ on:
       - .github/workflows/zcode-runtime-release.yml
       - .github/actions/setup-node-deps/**
       - scripts/package-zcode-runtime.mjs
+      - scripts/apply-zcode-patches.mjs
+      - patches/zcode/**
       - scripts/zcode-manifest.mjs
       - scripts/check-stdio-runtime.mjs
       - server/discovery/manifest.ts
@@ -34,6 +37,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       version: ${{ steps.package.outputs.version }}
+      release: ${{ steps.package.outputs.release }}
       commit: ${{ steps.package.outputs.commit }}
       asset: ${{ steps.package.outputs.asset }}
       sha256: ${{ steps.package.outputs.sha256 }}
@@ -59,16 +63,19 @@ jobs:
           ref: ${{ steps.source.outputs.commit }}
           path: zcode-source
           persist-credentials: false
+      - name: Apply the provider's patches (ADR 19)
+        working-directory: plugin
+        run: node scripts/apply-zcode-patches.mjs apply --source ../zcode-source
       - uses: pnpm/action-setup@v4
         with:
           version: "10.33.2"
-      - name: Build the official integrated CLI
+      - name: Build the integrated CLI with the official script
         working-directory: zcode-source
         run: |
           pnpm install --frozen-lockfile
           pnpm exec tsc -b packages/shared
           node scripts/build-zcode.mjs --base-url https://example.invalid/zcode/
-      - name: Add upstream notices and build provenance
+      - name: Add upstream notices, patches and build provenance
         id: package
         working-directory: plugin
         env:
@@ -129,6 +136,7 @@ jobs:
           for file in LICENSE NOTICE.md THIRD-PARTY-NOTICES.md BUILD-INFO.json; do
             test -f "../zcode-runtime/zcode/$file"
           done
+          node -e "const b=require(process.argv[1]);const fs=require('node:fs');if(!b.source.modified||!b.source.patches.length)process.exit(1);for(const p of b.source.patches)fs.accessSync(require('node:path').join(process.argv[1],'..',p.file))" "$(pwd)/../zcode-runtime/zcode/BUILD-INFO.json"
           echo "PASEO_ZCODE_RUNTIME=$(node -p "require('node:path').resolve('../zcode-runtime/zcode')")" >> "$GITHUB_ENV"
           echo "PASEO_ZCODE_NODE=$(node -p process.execPath)" >> "$GITHUB_ENV"
       - name: Verify Provider behavior on the runtime
@@ -158,6 +166,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.build.outputs.version }}
+          RELEASE: ${{ needs.build.outputs.release }}
+          PATCHES_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}/patches/zcode
           COMMIT: ${{ needs.build.outputs.commit }}
           ASSET: ${{ needs.build.outputs.asset }}
           SHA256: ${{ needs.build.outputs.sha256 }}
@@ -166,7 +176,7 @@ jobs:
           cat > notes.md <<EOF
           Unofficial build of the ZCode integrated CLI distribution for paseo-plugin-zcode-provider's managed setup. It is not endorsed or maintained by ZCode or Z.ai.
 
-          - Source: https://github.com/zai-org/ZCode/tree/$COMMIT (ZCode $VERSION, unmodified)
+          - Source: https://github.com/zai-org/ZCode/tree/$COMMIT (ZCode $VERSION), modified by the patches in $PATCHES_URL (ADR 19). The archive contains them under \`patches/\` and lists them in \`BUILD-INFO.json\`.
           - Asset: \`$ASSET\`
           - SHA-256: \`$SHA256\`
           - Built and verified by: $RUN_URL
@@ -177,5 +187,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --latest=false \
-            --title "ZCode runtime $VERSION (unofficial build)" \
+            --title "ZCode runtime $RELEASE (unofficial patched build)" \
             --notes-file notes.md

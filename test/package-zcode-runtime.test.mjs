@@ -5,8 +5,9 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   REQUIRED_RUNTIME_FILES,
   assertRuntimeLayout,
+  parseRuntimeRelease,
   runtimeAssetName,
-  runtimeVersionFromTag,
+  runtimeReleaseFromTag,
 } from "../scripts/package-zcode-runtime.mjs";
 
 const directories = [];
@@ -16,20 +17,37 @@ afterEach(async () => {
 });
 
 describe("runtime release naming", () => {
-  test("accepts only exact stable or prerelease versions after the prefix", () => {
-    expect(runtimeVersionFromTag("zcode-runtime-v3.14.3")).toBe("3.14.3");
+  test("requires an exact ZCode version and a patch revision from 1", () => {
+    expect(runtimeReleaseFromTag("zcode-runtime-v3.14.3-paseo.1")).toBe(
+      "3.14.3-paseo.1",
+    );
+    expect(runtimeReleaseFromTag("zcode-runtime-v3.15.0-beta.1-paseo.12")).toBe(
+      "3.15.0-beta.1-paseo.12",
+    );
     for (const tag of [
-      "v3.14.3",
-      "zcode-runtime-3.14.3",
-      "zcode-runtime-v3.14",
-      "zcode-runtime-v3.14.3 ",
+      "zcode-runtime-v3.14.3",
+      "zcode-runtime-v3.14.3-paseo.0",
+      "zcode-runtime-v3.14.3-paseo.01",
+      "zcode-runtime-v3.14-paseo.1",
+      "zcode-runtime-3.14.3-paseo.1",
+      "zcode-runtime-v3.14.3-paseo.1 ",
     ])
-      expect(() => runtimeVersionFromTag(tag)).toThrow();
+      expect(() => runtimeReleaseFromTag(tag)).toThrow();
   });
 
-  test("derives the asset name from the version", () => {
-    expect(runtimeAssetName("3.14.3")).toBe("zcode-runtime-3.14.3.tar.gz");
-    expect(() => runtimeAssetName("../3.14.3")).toThrow();
+  test("splits the release into the ZCode version and revision", () => {
+    expect(parseRuntimeRelease("3.14.3-paseo.0")).toEqual({
+      version: "3.14.3",
+      revision: 0,
+    });
+  });
+
+  test("derives the asset name from the release", () => {
+    expect(runtimeAssetName("3.14.3-paseo.1")).toBe(
+      "zcode-runtime-3.14.3-paseo.1.tar.gz",
+    );
+    expect(() => runtimeAssetName("3.14.3")).toThrow();
+    expect(() => runtimeAssetName("../3.14.3-paseo.1")).toThrow();
   });
 });
 

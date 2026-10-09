@@ -55,6 +55,28 @@ it("negotiates stdio plus V4 and disables question auto resolution", async () =>
     await bridge.close();
   }
 });
+it("starts the Server without unsupported capabilities, whatever the caller sets", async () => {
+  const bridge = ZCodeHostBridge.start(runtime, logger, {
+    ...process.env,
+    ZCODE_CUA_PRODUCT_HELPER: "1",
+    PASEO_ZCODE_SUPPRESSED_PLUGINS: "",
+  });
+  try {
+    expect(
+      await bridge.request(
+        "readEnvironment",
+        ["ZCODE_CUA_PRODUCT_HELPER", "PASEO_ZCODE_SUPPRESSED_PLUGINS"],
+        z.unknown(),
+      ),
+    ).toEqual({
+      ZCODE_CUA_PRODUCT_HELPER: "0",
+      PASEO_ZCODE_SUPPRESSED_PLUGINS:
+        "computer-use@zcode-plugins-official,browser-use@zcode-plugins-official",
+    });
+  } finally {
+    await bridge.close();
+  }
+});
 it.each(["bad-hello", "bad-v4"])(
   "rejects %s and collects the process",
   async (scenario) => {

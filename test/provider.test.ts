@@ -32,6 +32,21 @@ it("accepts only after ACK even if rows and terminal state arrive first", async 
     ),
   ).toHaveLength(1);
 });
+it("hides the shared Browser and Computer Use tool from every input", async () => {
+  const f = await fixture();
+  await f.open();
+  await f.prompt();
+  expect(await f.prompt("m2", "guide")).toMatchObject({
+    result: { type: "steer" },
+  });
+  await completeTurn(f.host);
+  const payloads = f.host.calls
+    .filter((c) => c.params?.envelope?.type === "sendText")
+    .map((c) => c.params.envelope.payload);
+  expect(payloads).toHaveLength(2);
+  for (const payload of payloads)
+    expect(payload.toolDisallowlist).toEqual(["mcp__node_repl__js"]);
+});
 it("aggregates guide input and emits complete row snapshots with stable IDs", async () => {
   const f = await fixture();
   await f.open();

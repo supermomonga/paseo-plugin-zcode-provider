@@ -48,6 +48,8 @@ jobs:
           cache-dependency-path: plugin/package-lock.json
       - name: Verify vendored official contracts
         run: npm run check:zcode-source -- "$GITHUB_WORKSPACE/zcode-source"
+      - name: Check that the runtime patches apply (ADR 19)
+        run: npm run check:zcode-patches -- "$GITHUB_WORKSPACE/zcode-source"
       - name: Check types
         run: npm run typecheck
       - name: Run unit tests

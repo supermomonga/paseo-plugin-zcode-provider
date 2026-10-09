@@ -41,6 +41,7 @@ import {
 } from "./host/schemas.js";
 import type { HostBridge } from "./host/bridge.js";
 import type { Logger } from "./logger.js";
+import { UNSUPPORTED_TOOLS } from "./unsupported-capabilities.js";
 import type {
   NativePromptInput,
   NativeSessionEvent,
@@ -611,6 +612,7 @@ export class ZCodeSession {
           modelSelection: config.modelSelection,
           mode: config.mode,
           planEnabled: config.planEnabled === true,
+          toolDisallowlist: [...UNSUPPORTED_TOOLS],
           requestedDelivery: previous
             ? attachments.length
               ? "queue"

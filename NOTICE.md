@@ -12,7 +12,7 @@
 
 # ZCode ランタイムの配布
 
-ZCode は統合 CLI を配布していないため、このリポジトリは `zcode-runtime-v<version>` タグの GitHub Release で、統合 CLI 配布物の非公式ビルドを配布します（ADR 15）。CI が公開タグの無改変ソースを公式 `scripts/build-zcode.mjs` でビルドし、上流の `LICENSE`（Apache-2.0）、`NOTICE.md`、`THIRD-PARTY-NOTICES.md` と、出典・ビルド記録の `BUILD-INFO.json` を配布物に加えます。ソースは改変しません。第三者コンポーネントはそれぞれのライセンスに従い、上流が `third-party/inventory.json` で確認中とする項目もそのまま引き継ぎます。このビルドは ZCode・Z.ai の承認や保守を受けたものではなく、ZCode・Z.ai の商標の使用許諾も含みません。
+ZCode は統合 CLI を配布していないため、このリポジトリは `zcode-runtime-v<version>-paseo.<n>` タグの GitHub Release で、統合 CLI 配布物の非公式ビルドを配布します（ADR 15）。CI が公開タグのソースに [`patches/zcode/`](patches/zcode) のパッチを当て（ADR 19）、公式 `scripts/build-zcode.mjs` でビルドします。配布物には上流の `LICENSE`（Apache-2.0）、`NOTICE.md`、`THIRD-PARTY-NOTICES.md` と、当てたパッチそのもの（`patches/`）、出典・パッチの SHA-256・ビルド記録を収めた `BUILD-INFO.json` を加えます。パッチは Apache-2.0 で提供し、各パッチの冒頭に変更の目的と対象を記します。これは Apache-2.0 第 4 条 (b) の変更の明示にあたります。それ以前の `zcode-runtime-v3.14.3` は無改変のソースからのビルドです。第三者コンポーネントはそれぞれのライセンスに従い、上流が `third-party/inventory.json` で確認中とする項目もそのまま引き継ぎます。このビルドは ZCode・Z.ai の承認や保守を受けたものではなく、ZCode・Z.ai の商標の使用許諾も含みません。
 
 Node.js は利用者のマシンが nodejs.org の公式成果物を直接取得します。このリポジトリは Node.js を再配布しません。
 

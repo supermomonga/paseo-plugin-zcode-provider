@@ -49,6 +49,7 @@
     "test:model-plan-runtime": "node scripts/check-model-plan-runtime.mjs",
     "test:e2e": "node scripts/check-e2e.mjs",
     "check:zcode-source": "node scripts/sync-zcode-source.mjs",
+    "check:zcode-patches": "node scripts/apply-zcode-patches.mjs check --source",
     "test:stdio-runtime": "node scripts/check-stdio-runtime.mjs",
     "test:native-restore": "node scripts/check-stdio-runtime.mjs --check-native-restore",
     "setup:managed-runtime": "node scripts/install-managed-runtime.mjs",

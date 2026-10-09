@@ -72,6 +72,9 @@ if (scenario === "bad-hello") {
         async initialize() {
           return { available: true, autoResolution };
         },
+        async readEnvironment(keys: string[]) {
+          return Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+        },
         onDynamicConversationFrame() {
           return frames.event;
         },

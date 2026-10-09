@@ -1,3 +1,35 @@
+# ADR 19 の実装の検証（2026-10-09）
+
+[ADR 19](adr/0019-使えない公式プラグインを隠すビルド時パッチを管理下ランタイムに当てる.md) のパッチ、リリース処理、プロバイダの変更を、macOS arm64 で確かめた。パッチを当てた正式なビルドはまだ作っていない。
+
+- **パッチ**：`patches/zcode/0001-hide-suppressed-official-plugins.patch`（SHA-256 `3be78e7a16eca3dcfa2550922d8f97bf9c79e48a4cde3d160c685486c91d3b92`）は、`npm run check:zcode-patches` で `29628c9` のソースに当たった。参照用のチェックアウトは変更していない。
+- **単体試験**：ブリッジが呼び出し側の値にかかわらず `ZCODE_CUA_PRODUCT_HELPER=0` と `PASEO_ZCODE_SUPPRESSED_PLUGINS` を Server に渡すこと、最初の入力とステアリングの両方に `toolDisallowlist: ["mcp__node_repl__js"]` が付くことを確かめた。パッチ適用スクリプトについては、全パッチを検査してから当てること、位置のずれを吸収すること、作業ツリーの変更とパッチ以外の改変を拒むこと、各パッチに目的・対象・外せる条件・ライセンスがあることを確かめた。リリース名の `-paseo.<n>` 形式も試験した。全体は 22 ファイル、201 tests。`typecheck`、`build`、`format:check` も成功した。
+- **契約試験（`test:stdio-runtime`）**：隔離した保存領域に computer-use、browser-use、対照の `paseo-fixture` の模擬キャッシュを置いた。無改変の管理下ランタイム 3.14.3 では、既存の全項目に加えて「`mcp__node_repl__js` はモデルに渡らず、2 つのプラグインとスキルは見える」が通った。同じランタイムの複製の `agent/zcode.cjs` でパッチと同じ 1 行を置き換え、`BUILD-INFO.json` にパッチを記録した模擬版では、「2 つのプラグインとスキルも消え、対照は残る」が通った。
+- **実データ（模擬版、読み取りのみ）**：Desktop が導入したキャッシュがある利用者の `~/.zcode` で、プロバイダのブリッジから `listPlugins` とスキル一覧を読んだ。browser-use は一覧から消えた。computer-use は、`enabledPlugins` に名前があるため、読み込まれない `missing` の行としてだけ残った。スキル一覧から `computer-use`、`control-browser`、`web-gui-tester` が消え、文書系（`docx`、`pdf`、`pptx`、`xlsx`）、zcode-guide、`skill-creator`、`plugin-creator`、video2code 系、ユーザースキルは残った。
+
+未検証：リリース用ワークフローでのパッチ済みビルドと 5 プラットフォームの契約試験、公開した成果物での実モデルの確認（モデル入出力ログのツールとスキル、`node_repl` が登録されないこと）。video2code の `url2video` と `video2fullstack` は Browser Use を前提とするスキルで、一覧に残る。
+
+# ZCode Computer Use の利用可否（2026-10-09）
+
+このプロバイダからは ZCode の Computer Use（`computer-use@zcode-plugins-official`）を使えない。macOS arm64 で、管理下ランタイム 3.14.3 と、起動中の Desktop 3.14.4 が導入したプラグインを使って確かめた。モデル要求には実アカウント（Individual Coding Plan、GLM-5.3）を使った。
+
+- **公開ソース**：`29628c9` の `packages/zcode-cua` は Computer Use を含まない代替パッケージで、実行すると常に `Computer Use is not available in this build.` を返す。Helper とブローカーも利用不可を返し、`isOfficialCuaPluginEnabledForWorkspace` は常に `false` になる。プラグイン本体の `zcode-cua-plugin` はリポジトリに無い。管理下ランタイムの `agent/zcode.cjs` と `server/remote/zcode-server.cjs` にも同じ文字列がある。
+- **隔離データ**：HOME と ZCode のデータを一時ディレクトリにした Server では、`listPlugins` が 0 件だった。`setPluginEnabled` は `Plugin not found: computer-use@zcode-plugins-official` で失敗し、`cua-permission.getStatus` は `available: false` を返した。
+- **実データ**：プロバイダは Desktop と `~/.zcode` を共有する。Desktop が導入した computer-use 0.6.3 と node-repl-host 0.6.0 がキャッシュから読み込まれ、`enabledPlugins` の設定どおり有効になった。モデルには `computer-use:computer-use` スキルと `mcp__node_repl__js` が渡る。
+- **実セッション**：Provider 経由のセッションで、スキルのブートストラップ（`setupComputerUseRuntime`）は成功した。macOS で Helper が無いとき、Server は遅延起動のためにブローカーのソケットパスを Agent へ渡す（`packages/services/src/node.ts` の `resolveSpawnEnv`）。代替パッケージの `resolveBrokerSocketPath` は存在しないパスを返すが、node_repl はそれを接続先として受け取るため、ブートストラップの検査を通る。続けて読み取りだけの `agent.computerUse.listApps()` を 1 回呼ぶと、60 秒後に `The operation was aborted due to timeout` で失敗した。
+- **原因**：Desktop 版の node-repl-host 0.6.0 は実装入りの SDK を含み、`~/.zcode/computer-use/ZCode Computer Use.app` を起動した。Helper は `--launcher-pid did not verify as a code-signed ZCode process ...; refusing to start.` をログに残して起動を拒否した。管理下の Node は ZCode の署名を持たない。署名済みの Desktop で動かす以外に回避策は無く、それは ADR 15 で退けた構成である。
+
+## 無効化の手段
+
+Desktop の設定を変えずに、このプロバイダが起動した ZCode だけで Computer Use を止める方法を調べた。
+
+- **`ZCODE_CUA_PRODUCT_HELPER=0`（効果あり）**：Server の環境に渡すと `isCuaEnabledForContext` が偽になり、Agent へブローカーのソケットを渡さなくなる。同じブートストラップは即座に `Computer Use is unavailable for this node_repl session` で失敗し、ターン全体は 16 秒で終わった。Helper のログは増えず、起動も試みられない。スキルは一覧に残る。プラグインの探索は `~/.zcode/cli/plugins/cache` を走査し、有効かどうかを `enabledPlugins` で決める。この変数が抑止するのは同梱の seed だけで、Desktop のキャッシュは読まれる。`scripts/check-e2e.mjs` は既にこの値を設定している。
+- **ターン単位の `toolDisallowlist`（効果あり）**：V4 の `sendText` は `toolDisallowlist` を受け取り、Core はモデル要求のツール一覧から名前の一致するツールを除く（`apps/zcode-cli/packages/core/src/runtime/methods/turn-loop.ts`）。一時ビルドで `["mcp__node_repl__js"]` を足すと、モデルに渡るツールが 35 個から 34 個になり、node_repl が消えた。スキルの説明は残る。名前の照合は括弧より前だけを見るため、`Skill(computer-use:computer-use)` と書くと Skill ツール全体が消える。スキル単位では止められない。Provider が送らないターン（ZCode の自動化など）には効かない。
+- **Browser Use**：node_repl は Browser Use と共用だが、このプロバイダでは使える実行先が無い。`agent.browsers.list()` は `[]` を返した。実行先は Desktop の内蔵ブラウザか `--browser-use=headless` を付けた CLI で、後者は `app-server` で指定できない。
+- **使えない手段**：`app-server` には設定やツールを指定する引数が無い（`--disallowedTools` は対話 CLI だけ）。環境変数で上書きできる設定は、ストレージ・ネットワーク・ログ・並列数に限られる。ユーザー範囲の `setPluginEnabled` は Desktop の設定も変え、ワークスペース範囲はプロジェクトの設定ファイルに書き込む。`ZCODE_STORAGE_DIR` で分けると、サインインと履歴を Desktop と共有できなくなる。`syncAppRuntimePreferences` に該当する項目は無い。
+
+未検証：Linux と Windows、Desktop が起動していない状態、Desktop で Computer Use を無効にしている環境。検証で作った 9 件の試験会話は ZCode に残っている。
+
 # Paseo 0.11.0-beta.5 への追従（2026-10-06）
 
 Paseo の追従 Issue 13 件（#21、#26〜#31、#33〜#38。0.9.0-beta.2〜0.11.0-beta.5）をまとめて扱った。0.11.0-beta.4 は変更履歴に単独の節がなく Issue も無いが、beta.5 の確認に含まれる。開発用 SDK 3 パッケージ（`@getpaseo/plugin`・`client`・`protocol`）を `0.11.0-beta.5` に固定し、CI の上流 checkout を同タグの `15d774d4a17c69bc0f8a62a85842764fab3c038d` に更新した。lockfile では推移依存の `@getpaseo/relay` と `ws`（8.21.3 → 8.22.0）も変わった。Provider 実装・保存形式・manifest の最低要件 `>=0.8.0` は変えていない。
