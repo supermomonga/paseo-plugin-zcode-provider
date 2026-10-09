@@ -173,7 +173,7 @@ export function RuntimeTab({ theme, layout }: PluginSurfaceProps) {
           </SettingsRow>
           <SettingsRow
             label="ZCode build"
-            hint="ZCode does not publish its CLI; CI builds the unmodified source."
+            hint="ZCode does not publish its CLI; CI builds the public source with this plugin's published patches."
           >
             <Value color={theme.colors.foreground} compact={compact}>
               Unofficial, not endorsed by ZCode or Z.ai
