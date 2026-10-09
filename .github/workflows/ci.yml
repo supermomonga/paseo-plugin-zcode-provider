@@ -40,13 +40,12 @@ jobs:
           ref: 29628c9acdb81b703bbd4080c207a0e7ce5e276e
           path: zcode-source
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - name: Install dependencies and generate build metadata
+        uses: ./plugin/.github/actions/setup-node-deps
         with:
           node-version: "22"
-          cache: npm
+          working-directory: plugin
           cache-dependency-path: plugin/package-lock.json
-      - name: Install dependencies and generate build metadata
-        run: npm ci --include=dev
       - name: Verify vendored official contracts
         run: npm run check:zcode-source -- "$GITHUB_WORKSPACE/zcode-source"
       - name: Check types
@@ -84,12 +83,10 @@ jobs:
         with:
           persist-credentials: false
       # The plugin runs on the daemon's Node.js; ZCode uses the managed Node.js.
-      - uses: actions/setup-node@v6
+      - name: Install plugin dependencies
+        uses: ./.github/actions/setup-node-deps
         with:
           node-version: "22"
-          cache: npm
-      - name: Install plugin dependencies
-        run: npm ci --include=dev
       - name: Install the pinned managed runtime (ADR 15)
         run: |
           data=$(node -p "require('node:path').join(process.env.RUNNER_TEMP, 'zcode-data')")
@@ -113,12 +110,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - name: Install dependencies
+        uses: ./.github/actions/setup-node-deps
         with:
           node-version: "22"
-          cache: npm
-      - name: Install dependencies
-        run: npm ci --include=dev
       - name: Install the pinned managed runtime
         run: |
           echo "XDG_DATA_HOME=$RUNNER_TEMP/zcode-data" >> "$GITHUB_ENV"

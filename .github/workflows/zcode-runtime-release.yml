@@ -9,6 +9,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/zcode-runtime-release.yml
+      - .github/actions/setup-node-deps/**
       - scripts/package-zcode-runtime.mjs
       - scripts/zcode-manifest.mjs
       - scripts/check-stdio-runtime.mjs
@@ -73,11 +74,14 @@ jobs:
         env:
           TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
         run: node scripts/package-zcode-runtime.mjs package --source ../zcode-source --out ../runtime-release ${TAG:+--tag "$TAG"}
+      # Only verify and publish in this run use the archive; tags publish it
+      # as a release asset.
       - uses: actions/upload-artifact@v4
         with:
           name: zcode-runtime
           path: runtime-release/
           if-no-files-found: error
+          retention-days: 1
 
   verify:
     name: Verify ${{ matrix.target }}
@@ -105,10 +109,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - name: Install plugin dependencies
+        uses: ./.github/actions/setup-node-deps
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
       - uses: actions/download-artifact@v4
         with:
           name: zcode-runtime
@@ -127,8 +131,6 @@ jobs:
           done
           echo "PASEO_ZCODE_RUNTIME=$(node -p "require('node:path').resolve('../zcode-runtime/zcode')")" >> "$GITHUB_ENV"
           echo "PASEO_ZCODE_NODE=$(node -p process.execPath)" >> "$GITHUB_ENV"
-      - name: Install plugin dependencies
-        run: npm ci --include=dev
       - name: Verify Provider behavior on the runtime
         # Resume uses Paseo's saved mode and Plan settings (ADR 14).
         run: npm run test:stdio-runtime

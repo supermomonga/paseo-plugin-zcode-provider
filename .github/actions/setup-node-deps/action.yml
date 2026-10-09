@@ -1,0 +1,42 @@
+name: Set up Node.js and install dependencies
+description: >-
+  Runs npm ci with an npm cache that only main saves. Other refs only restore
+  it, so pull requests, release branches and tags add no cache entries.
+
+inputs:
+  node-version:
+    description: Node.js version for actions/setup-node.
+    required: true
+  working-directory:
+    description: Directory containing package.json.
+    default: .
+  cache-dependency-path:
+    description: Lockfile hashed into the cache key, relative to the workspace.
+    default: package-lock.json
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        package-manager-cache: false
+    - id: npm-cache
+      shell: bash
+      run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+    # Other refs fall back to an older main cache. Main saves only exact keys,
+    # so its cache never accumulates tarballs of replaced dependencies.
+    - id: restore
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.npm-cache.outputs.dir }}
+        key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(inputs.cache-dependency-path) }}
+        restore-keys: ${{ github.ref != 'refs/heads/main' && format('npm-{0}-{1}-', runner.os, runner.arch) || '' }}
+    - shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npm ci --include=dev
+    - if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.npm-cache.outputs.dir }}
+        key: ${{ steps.restore.outputs.cache-primary-key }}
