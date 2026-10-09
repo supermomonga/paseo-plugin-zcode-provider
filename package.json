@@ -1,6 +1,6 @@
 {
   "name": "paseo-plugin-zcode-provider",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Unofficial Paseo provider plugin for ZCode, using the official stdio Services Server of the integrated ZCode CLI.",
   "keywords": [
     "paseo",
