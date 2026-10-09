@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, realpath, writeFile, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  writeFile,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,6 +18,13 @@ import { e2eProviderConfig } from "./check-e2e.mjs";
 import { cleanupOnSignal } from "./runtime-check-lifecycle.mjs";
 
 // Real official Server/Agent, deterministic local model. No account or billable API.
+
+// Official plugin caches (plugin name: skill) for the ADR 19 checks.
+const FIXTURE_PLUGINS = {
+  "computer-use": "computer-use",
+  "browser-use": "control-browser",
+  "paseo-fixture": "paseo-fixture-check",
+};
 const { values } = parseArgs({
   options: { "check-native-restore": { type: "boolean", default: false } },
 });
@@ -33,11 +47,16 @@ let connection,
   scenario = "bash",
   modelCalls = 0;
 const responses = new Set();
+const modelRequests = [];
 const modelServer = createServer(async (req, res) => {
   try {
     let body = "";
     for await (const part of req) body += part;
     const input = JSON.parse(body);
+    modelRequests.push({
+      tools: (input.tools ?? []).map((t) => t.function.name),
+      messages: JSON.stringify(input.messages ?? []),
+    });
     res.writeHead(200, { "content-type": "text/event-stream" });
     responses.add(res);
     res.on("close", () => responses.delete(res));
@@ -128,6 +147,43 @@ try {
     JSON.stringify(config),
     { mode: 0o600 },
   );
+  // Official plugin caches as ZCode Desktop installs them into the shared
+  // storage, plus a control that must stay visible (ADR 19).
+  for (const [plugin, skill] of Object.entries(FIXTURE_PLUGINS)) {
+    const pluginRoot = join(
+      directory,
+      ".zcode/cli/plugins/cache/zcode-plugins-official",
+      plugin,
+      "0.0.0-fixture",
+    );
+    await mkdir(join(pluginRoot, ".zcode-plugin"), { recursive: true });
+    await mkdir(join(pluginRoot, "skills", skill), { recursive: true });
+    await writeFile(
+      join(pluginRoot, ".zcode-plugin/plugin.json"),
+      JSON.stringify({
+        name: plugin,
+        version: "0.0.0-fixture",
+        description: "Contract fixture.",
+      }),
+    );
+    await writeFile(
+      join(pluginRoot, "skills", skill, "SKILL.md"),
+      `---\nname: ${skill}\ndescription: Contract fixture skill.\n---\n\nFixture.\n`,
+    );
+  }
+  await writeFile(
+    join(directory, ".zcode/cli/config.json"),
+    JSON.stringify({
+      plugins: {
+        enabledPlugins: Object.fromEntries(
+          Object.keys(FIXTURE_PLUGINS).map((p) => [
+            `${p}@zcode-plugins-official`,
+            true,
+          ]),
+        ),
+      },
+    }),
+  );
   // This script owns its process environment; no real user configuration is read.
   // Windows processes also need their system locations; profile paths are isolated below.
   const inherited = windows
@@ -175,7 +231,19 @@ try {
     ZCodeHostBridge,
     logger,
   } = await import(pathToFileURL(join(directory, "provider.mjs")));
-  const { identity, source } = await discoverRuntime();
+  const discovered = await discoverRuntime();
+  const { identity, source } = discovered;
+  // Runtimes built with patches/zcode list them in BUILD-INFO.json (ADR 19).
+  const patched = await readFile(
+    join(discovered.paths.installRoot, "BUILD-INFO.json"),
+    "utf8",
+  ).then(
+    (text) =>
+      JSON.parse(text).source?.patches?.some(
+        (p) => p.file === "patches/0001-hide-suppressed-official-plugins.patch",
+      ) === true,
+    () => false,
+  );
   const bridges = [];
   const provider = createZCodeProvider(
     async (environment, signal, workspace) => {
@@ -296,6 +364,48 @@ try {
       .length,
     1,
   );
+  // Unsupported official capabilities (ADR 19). The control fixture proves
+  // that the fixture caches are discovered at all.
+  const turnRequest = modelRequests.find((r) => r.tools.includes("Bash"));
+  assert.ok(turnRequest, "The Bash turn must reach the model");
+  assert.ok(
+    !turnRequest.tools.includes("mcp__node_repl__js"),
+    "The shared Browser and Computer Use tool must be hidden from every turn",
+  );
+  // Enabled plugins that discovery skipped are still listed as "missing".
+  const listedPlugins =
+    // The session's Server; the catalog's Server has already closed.
+    (
+      await bridges.at(-1).request(
+        "listPlugins",
+        { workspacePath: join(directory, "workspace") },
+        z.object({
+          plugins: z.array(
+            z.object({ id: z.string(), source: z.string() }).passthrough(),
+          ),
+        }),
+      )
+    ).plugins
+      .filter((p) => p.source !== "missing")
+      .map((p) => p.id);
+  assert.ok(
+    listedPlugins.includes("paseo-fixture@zcode-plugins-official"),
+    String(listedPlugins),
+  );
+  assert.ok(turnRequest.messages.includes("paseo-fixture:paseo-fixture-check"));
+  for (const [plugin, skill] of Object.entries(FIXTURE_PLUGINS)) {
+    if (plugin === "paseo-fixture") continue;
+    assert.equal(
+      listedPlugins.includes(`${plugin}@zcode-plugins-official`),
+      !patched,
+      `${plugin} must be ${patched ? "hidden by the patch" : "visible without the patch"}`,
+    );
+    assert.equal(
+      turnRequest.messages.includes(`${plugin}:${skill}`),
+      !patched,
+      `${plugin}:${skill} skill visibility`,
+    );
+  }
   await configure({ settings: { plan_mode: true } });
   await configure({ mode: "edit" });
   const beforeResume = events.findLast(
@@ -467,6 +577,9 @@ try {
           "session listing v3",
           "EOF cleanup",
           "Agent cleanup after Server SIGKILL",
+          patched
+            ? "unsupported plugins and tool hidden (patched runtime)"
+            : "unsupported tool hidden, plugins visible (unpatched runtime)",
         ],
         model: "local deterministic fixture",
         sharedUserData: "not accessed",

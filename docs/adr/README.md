@@ -16,3 +16,4 @@
 * [16. プラグインをnpmで配布しバージョン更新PRのマージでtrusted publishingにより公開する](0016-プラグインをnpmで配布しバージョン更新prのマージでtrusted-publishingにより公開する.md)
 * [17. 設定画面のサインインとモデルプロバイダー管理をZCode公式サービスで行う](0017-設定画面のサインインとモデルプロバイダー管理をzcode公式サービスで行う.md)
 * [18. Paseo 0.11のProvider statusとusage sourceでランタイムの可用性とCoding Planの利用量を表示する](0018-paseo-0-11のprovider-statusとusage-sourceでランタイムの可用性とcoding-planの利用量を表示する.md)
+* [19. 使えない公式プラグインを隠すビルド時パッチを管理下ランタイムに当てる](0019-使えない公式プラグインを隠すビルド時パッチを管理下ランタイムに当てる.md)

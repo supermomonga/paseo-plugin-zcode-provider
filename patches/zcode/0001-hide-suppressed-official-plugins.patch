@@ -1,0 +1,39 @@
+Hide official plugins listed in PASEO_ZCODE_SUPPRESSED_PLUGINS
+
+Purpose: paseo-plugin-zcode-provider (ADR 19) runs ZCode in a standalone
+Server that shares ~/.zcode with ZCode Desktop. Computer Use cannot start its
+Helper there and Browser Use has no browser, yet the skills that Desktop
+installed are still offered to the model. The provider lists such plugin IDs,
+comma-separated, in PASEO_ZCODE_SUPPRESSED_PLUGINS. Discovery then skips them
+the same way it skips suppressedBuiltins, without writing any configuration.
+
+Target: NodePluginAdapter.discoverPluginsSync in
+apps/zcode-cli/packages/adapters/src/plugins/index.ts, which every plugin
+discovery path uses (ZCode 29628c9acdb81b703bbd4080c207a0e7ce5e276e).
+
+Remove when: ZCode offers an official per-process way to hide official
+plugins, for example when ZCODE_CUA_PRODUCT_HELPER=0 hides cached
+computer-use as resolveOfficialPluginRoots says it should.
+
+License: Apache-2.0, the license of the modified ZCode source.
+
+diff --git a/apps/zcode-cli/packages/adapters/src/plugins/index.ts b/apps/zcode-cli/packages/adapters/src/plugins/index.ts
+index 8d86c28..7d5ecbf 100644
+--- a/apps/zcode-cli/packages/adapters/src/plugins/index.ts
++++ b/apps/zcode-cli/packages/adapters/src/plugins/index.ts
+@@ -156,7 +156,14 @@ export class NodePluginAdapter implements PluginPort {
+       // 用插件的权威 id（manifest 名 @ marketplace）过滤，不依赖缓存文件是否已被物理删除——
+       // 这样即便 app 升级遗留了旧版本缓存目录、或会话内 facade 持有过时配置，被卸载的内置插件
+       // 也不会被重新发现。仅作用于 official 源，inline/cache（市场安装）不受影响。
+-      if (loaded.source === "official" && request.config.suppressedBuiltins.includes(loaded.id)) {
++      if (
++        loaded.source === "official" &&
++        (request.config.suppressedBuiltins.includes(loaded.id) ||
++          // paseo-plugin-zcode-provider (ADR 19): hide official plugins that the provider cannot run.
++          (request.env?.PASEO_ZCODE_SUPPRESSED_PLUGINS ?? "")
++            .split(",")
++            .some((id) => id.trim() === loaded.id))
++      ) {
+         continue;
+       }
+       if (seen.has(loaded.id)) {

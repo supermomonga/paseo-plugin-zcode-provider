@@ -26,7 +26,7 @@ Verify the files with `npm run check:zcode-source`. To deliberately resynchroniz
 
 ## Managed runtime and its releases
 
-Users install the runtime from the Settings screen's Runtime tab (ADR 15). `server/runtime/pins.ts` pins Node.js archives from nodejs.org and the `zcode-runtime-v<version>` release of this repository by URL, SHA-256 and size. The installer downloads to a staging directory under `runtimes/`, checks the size limit and SHA-256, extracts with the system `tar` (Windows uses `%SystemRoot%\System32\tar.exe`, which also reads zip), verifies Node's version and the runtime layout, writes a marker and renames the result into place. A lock directory with the owner PID prevents concurrent setup; a lock from a dead process is reclaimed.
+Users install the runtime from the Settings screen's Runtime tab (ADR 15). `server/runtime/pins.ts` pins Node.js archives from nodejs.org and the `zcode-runtime-v<version>-paseo.<n>` release of this repository by URL, SHA-256 and size. The installer downloads to a staging directory under `runtimes/`, checks the size limit and SHA-256, extracts with the system `tar` (Windows uses `%SystemRoot%\System32\tar.exe`, which also reads zip), verifies Node's version and the runtime layout, writes a marker and renames the result into place. A lock directory with the owner PID prevents concurrent setup; a lock from a dead process is reclaimed.
 
 To use it locally without touching your real data directory:
 
@@ -37,7 +37,17 @@ XDG_DATA_HOME=/tmp/zcode-data npm run test:stdio-runtime
 
 To pin a new Node.js version, take the five archive checksums from `SHASUMS256.txt`, verify its signature against the [nodejs/release-keys](https://github.com/nodejs/release-keys) active keyring in a temporary `GNUPGHOME`, and record the sizes.
 
-To publish a ZCode runtime, update the source baseline first, then push an annotated `zcode-runtime-v<version>` tag on a commit containing it. `.github/workflows/zcode-runtime-release.yml` builds the official distribution, adds the upstream notices and `BUILD-INFO.json` with `scripts/package-zcode-runtime.mjs`, runs `test:stdio-runtime` on all five managed platforms, attests the archive and creates a non-latest release. Rebuilds are not byte-identical, so pin the published asset's SHA-256 and size, never a local build. Pull requests that touch the packaging run the same build and verification without publishing.
+To publish a ZCode runtime, update the source baseline first, then push an annotated `zcode-runtime-v<version>-paseo.<n>` tag on a commit containing it. `<n>` starts at 1 and increases when the patches change for the same ZCode version; the earlier plain `zcode-runtime-v3.14.3` release is unmodified and stays as published. `.github/workflows/zcode-runtime-release.yml` applies `patches/zcode/` with `scripts/apply-zcode-patches.mjs`, builds with the official script, adds the upstream notices, the patches and `BUILD-INFO.json` (`modified: true` with each patch's SHA-256) with `scripts/package-zcode-runtime.mjs`, runs `test:stdio-runtime` on all five managed platforms, attests the archive and creates a non-latest release. Rebuilds are not byte-identical, so pin the published asset's SHA-256 and size, never a local build. Pull requests that touch the packaging or the patches run the same build and verification without publishing.
+
+## Runtime patches
+
+`patches/zcode/` holds the build-time patches allowed by ADR 19. Each is a plain unified diff against the pinned TypeScript source, preceded by a header with its purpose, target, removal condition and license (Apache-2.0, as the source it modifies). `git apply` locates hunks by their context, so upstream changes elsewhere only shift them; a change around a hunk makes the check fail, which is the signal to review the upstream change. Fuzz is never used.
+
+```bash
+npm run check:zcode-patches -- /absolute/ZCode   # read-only; CI runs it on the pinned source
+```
+
+When a patch no longer applies to a new baseline, make the same change in an isolated checkout of the new source, regenerate the diff with `git diff`, keep the header, and run `test:stdio-runtime` on a runtime built from it. Its ADR 19 check places Computer Use, Browser Use and a control plugin in the isolated plugin cache, then requires the first two to be hidden from discovery and the model on a runtime whose `BUILD-INFO.json` lists the patch, and visible on an unpatched runtime. The per-turn `toolDisallowlist` is checked on both.
 
 ## Build an isolated integrated CLI
 
@@ -90,7 +100,7 @@ The first version is published by hand from `main`, because a trusted publisher 
 
 ## Architecture
 
-Paseo and ZCode themselves must remain unmodified. Changes belong to this Provider plugin; a fork, source patch or patched upstream runtime is not an implementation option. Official configuration and protocol operations remain available. For mode/Plan resume, the plugin reapplies both settings when Paseo supplies them and waits for native confirmation before accepting prompts. This is the supported restoration contract. Omitted values use the state returned by ZCode and are not guaranteed to match the state before shutdown. Keep that upstream defect documented and reproducible with `test:native-restore` until an unmodified official version resolves it.
+Paseo and ZCode themselves must remain unmodified. Changes belong to this Provider plugin; a fork is not an implementation option. The single exception is the managed runtime's build-time patches under the conditions of ADR 19 (see Runtime patches). Official configuration and protocol operations remain available. For mode/Plan resume, the plugin reapplies both settings when Paseo supplies them and waits for native confirmation before accepting prompts. This is the supported restoration contract. Omitted values use the state returned by ZCode and are not guaranteed to match the state before shutdown. Keep that upstream defect documented and reproducible with `test:native-restore` until an official version resolves it.
 
 `discovery/` validates the environment override or, without one, the installed managed runtime. `runtime/` holds the pins and the installer behind the Runtime tab. `account.ts` serves the Account tab: it owns one Server for settings, serializes requests, polls sign-in on the daemon and projects ZCode's provider view without API keys (ADR 17). `usage.ts` is the Paseo 0.11 usage source: it reuses that Server and queue, caches discovered accounts and maps `usage-stats.getEntitlementSnapshot` to Paseo usage windows. `provider-status.ts` answers the provider's `status()` from runtime discovery, without starting a Server (ADR 18). `host/bridge.ts` owns hello/ack, official binary framing, RPC, process preferences and process shutdown. `conversation.ts` owns one V4 state, wire assembly, sequencing, resync and coherent history paging. `session.ts` coordinates admissions, public execution IDs, stop and native configuration. `presentation.ts` translates rows and interactions to Paseo. `persistence.ts` stores only the pre-send logical/native identity mapping. Authentication and provider storage remain in Services Host.
 

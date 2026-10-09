@@ -1,3 +1,14 @@
+# ADR 19 の実装の検証（2026-10-09）
+
+[ADR 19](adr/0019-使えない公式プラグインを隠すビルド時パッチを管理下ランタイムに当てる.md) のパッチ、リリース処理、プロバイダの変更を、macOS arm64 で確かめた。パッチを当てた正式なビルドはまだ作っていない。
+
+- **パッチ**：`patches/zcode/0001-hide-suppressed-official-plugins.patch`（SHA-256 `3be78e7a16eca3dcfa2550922d8f97bf9c79e48a4cde3d160c685486c91d3b92`）は、`npm run check:zcode-patches` で `29628c9` のソースに当たった。参照用のチェックアウトは変更していない。
+- **単体試験**：ブリッジが呼び出し側の値にかかわらず `ZCODE_CUA_PRODUCT_HELPER=0` と `PASEO_ZCODE_SUPPRESSED_PLUGINS` を Server に渡すこと、最初の入力とステアリングの両方に `toolDisallowlist: ["mcp__node_repl__js"]` が付くことを確かめた。パッチ適用スクリプトについては、全パッチを検査してから当てること、位置のずれを吸収すること、作業ツリーの変更とパッチ以外の改変を拒むこと、各パッチに目的・対象・外せる条件・ライセンスがあることを確かめた。リリース名の `-paseo.<n>` 形式も試験した。全体は 22 ファイル、201 tests。`typecheck`、`build`、`format:check` も成功した。
+- **契約試験（`test:stdio-runtime`）**：隔離した保存領域に computer-use、browser-use、対照の `paseo-fixture` の模擬キャッシュを置いた。無改変の管理下ランタイム 3.14.3 では、既存の全項目に加えて「`mcp__node_repl__js` はモデルに渡らず、2 つのプラグインとスキルは見える」が通った。同じランタイムの複製の `agent/zcode.cjs` でパッチと同じ 1 行を置き換え、`BUILD-INFO.json` にパッチを記録した模擬版では、「2 つのプラグインとスキルも消え、対照は残る」が通った。
+- **実データ（模擬版、読み取りのみ）**：Desktop が導入したキャッシュがある利用者の `~/.zcode` で、プロバイダのブリッジから `listPlugins` とスキル一覧を読んだ。browser-use は一覧から消えた。computer-use は、`enabledPlugins` に名前があるため、読み込まれない `missing` の行としてだけ残った。スキル一覧から `computer-use`、`control-browser`、`web-gui-tester` が消え、文書系（`docx`、`pdf`、`pptx`、`xlsx`）、zcode-guide、`skill-creator`、`plugin-creator`、video2code 系、ユーザースキルは残った。
+
+未検証：リリース用ワークフローでのパッチ済みビルドと 5 プラットフォームの契約試験、公開した成果物での実モデルの確認（モデル入出力ログのツールとスキル、`node_repl` が登録されないこと）。video2code の `url2video` と `video2fullstack` は Browser Use を前提とするスキルで、一覧に残る。
+
 # ZCode Computer Use の利用可否（2026-10-09）
 
 このプロバイダからは ZCode の Computer Use（`computer-use@zcode-plugins-official`）を使えない。macOS arm64 で、管理下ランタイム 3.14.3 と、起動中の Desktop 3.14.4 が導入したプラグインを使って確かめた。モデル要求には実アカウント（Individual Coding Plan、GLM-5.3）を使った。
