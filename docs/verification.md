@@ -46,7 +46,9 @@
 - **タグのリリース**：run 39586477395 で、ビルド、5 プラットフォームの検証、署名、公開（latest ではない）が成功した。
 - **導入**：`pins.ts` を更新した状態で、一時 `XDG_DATA_HOME` の `npm run setup:managed-runtime` が公開版を取得・検証して導入した。その管理下ランタイムで `test:stdio-runtime` が全項目、guarded、「隠れる」側を通った（`source: managed`、Server 3.16.2、Agent 0.17.0）。
 
-未検証：公開版での実モデル E2E（固定後の CI で確認する）、Account タブでの実際のサインイン（CAS の修正は模擬 Server で確認）、大きな共有データでの初回起動時間、Paseo daemon の実 UI。既存の利用者は、固定値が変わったので Runtime タブから導入し直す。
+- **固定後の CI**：[run 39587824143](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/39587824143) で、5 プラットフォームの管理下ランタイム契約試験が公開版（`source: managed`、Server 3.16.2）で guarded と「隠れる」側を含めて通った。実モデル E2E も公開版（`zcode-3.16.2-01f3ee802f4c`）で、モデルと推論レベル、独立した Plan と承認・拒否、Plan とモデルの復元、ガイダンス、添付キュー、単一完了が passed だった。
+
+未検証：Account タブでの実際のサインイン（CAS の修正は模擬 Server で確認）、大きな共有データでの初回起動時間、Paseo daemon の実 UI。既存の利用者は、固定値が変わったので Runtime タブから導入し直す。
 
 # Paseo 0.12.0 への追従（2026-10-21）
 
