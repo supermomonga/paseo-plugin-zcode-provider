@@ -1,3 +1,27 @@
+# 実モデル E2E の停止試験のタイムアウト（2026-10-21）
+
+[Issue #51](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/51) の対応。`check-steering-runtime.mjs` の停止の段階が、まれに 180 秒の期限切れで失敗していた。
+
+## 原因
+
+- 修正前のスクリプトに、待機中の段階と直近のイベントを出す一時的な計測を加えた。macOS arm64 で、管理下ランタイム 3.16.2-paseo.1（一時 `XDG_DATA_HOME`）を使い `npm run test:e2e` を 8 回実行したところ、6 回目が失敗した。
+- 失敗した回では、モデルが停止用の `sleep 30` を `run_in_background: true` で実行した。Bash の tool_call は `running` を経ずに `completed` になり、モデルは `TaskOutput`（`block: true`）で待ってからターンを完了した。スクリプトは Bash の `running` を待ち続け、期限切れで失敗した。
+- CI の 2 回の失敗（run 37888649047 と 37897167100）は、どちらも steering の結果の行を出してから 180.08 秒後に期限が切れている。停止の段階で steering の行の直後に始まる待機は、最初の 2 つ（`stop-run` のプロンプト結果と Bash の `running`）だけである。CI の失敗も同じ原因と見られる。
+- `3c5b227` の `bash-background-policy.ts` は、`sleep` で始まるコマンドを自動のバックグラウンド化から外している。つまり今回のバックグラウンド実行はモデル自身の指定である。バックグラウンド実行を無効にする公式の設定は無い。
+
+## 修正
+
+- 2 つの sleep のプロンプトで、Bash ツールを使い、`run_in_background` を付けずにフォアグラウンドで実行するよう指示した。これは起きる確率を下げるだけで、ゼロにはしない。
+- 待機ごとに段階名を付けた。Bash の `running`、ターンの完了、取消を待っている間にターンが終わると、期限を待たずに失敗する。エラーには段階名と、直近 20 件のイベントの種類（tool 名、状態、プロンプトの結果の種類など）を出す。モデルの文章とツールの出力は CI のログに出さない。これまで期限まで待っていた `session.turn` の `failed` も、すぐに失敗として扱われる。
+
+## 検証（macOS arm64、Node.js 26.9.0、2026-10-21）
+
+- 停止用のプロンプトだけを、`run_in_background` を使うよう書き換えた一時的な複製を実行した。`stop-run running Bash` の段階が、期限を待たずターンの完了時点で `unexpected session.turn completed` として失敗し、Bash `completed` → `TaskOutput` の順のイベントが出力された。
+- 修正後のスクリプトで、steering の試験だけを隔離した E2E 環境で 20 回連続して実行し、すべて成功した。`npm run test:e2e` も全項目が passed だった。
+- `npm run typecheck`、`npm test`（22 ファイル、205 tests）、`npm run format:check` が成功した。
+
+未検証：修正後の発生率がゼロになったこと（ローカルで確認したのは 20 回だけ）、Linux の CI での繰り返し実行。
+
 # ZCode 3.16.2 への追従（2026-10-21）
 
 [Issue #64](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/64)（3.16.2）の対応。変更履歴だけを確認済みだった #53（3.14.5）、#56（3.15.1）、#57（3.15.3）も含める。ソース基準を `3c5b227649371507ddc4eb46ac5133afe6db1cab`（3.16.2）に進め、パッチ済みランタイム `3.16.2-paseo.1` を公開して固定する。タグの無いコミットを基準にする判断は [ADR 20](adr/0020-タグの無い上流の同期コミットをpackage-versionで特定してzcodeのソース基準にする.md) に記録した。

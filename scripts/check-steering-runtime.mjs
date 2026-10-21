@@ -56,12 +56,37 @@ try {
       for (const listener of listeners) listener();
     });
   };
-  const wait = (predicate) =>
+  // Event shapes only: model text and tool output stay out of CI logs.
+  const describe = (e) => ({
+    type: e.type,
+    ...(e.clientMessageId ? { clientMessageId: e.clientMessageId } : {}),
+    ...(e.result ? { result: e.result.type } : {}),
+    ...(e.state ? { state: e.state } : {}),
+    ...(e.item
+      ? {
+          item: {
+            type: e.item.type,
+            ...(e.item.name ? { name: e.item.name } : {}),
+            ...(e.item.status ? { status: e.item.status } : {}),
+          },
+        }
+      : {}),
+  });
+  const turnEnded = (e) => e.type === "session.turn" && e.state !== "started";
+  // A stage fails at once when an `unexpected` event arrives first, such as
+  // the turn ending before the awaited event, instead of waiting for the timeout.
+  const wait = (stage, predicate, unexpected = () => false) =>
     new Promise((resolveResult, reject) => {
-      const timer = setTimeout(() => {
+      const fail = (reason) => {
+        clearTimeout(timer);
         listeners.delete(check);
-        reject(new Error("Native steering check timed out"));
-      }, 180_000);
+        reject(
+          new Error(
+            `Native steering check failed at ${stage}: ${reason}. Recent events: ${JSON.stringify(events.slice(-20).map(describe))}`,
+          ),
+        );
+      };
+      const timer = setTimeout(() => fail("timed out after 180 s"), 180_000);
       const check = () => {
         const failure = events.find(
           (e) =>
@@ -69,18 +94,21 @@ try {
             e.type === "session.runtime_failed" ||
             (e.type === "session.prompt_result" && e.result.type === "failed"),
         );
+        if (failure)
+          return fail(
+            `${failure.type}: ${failure.error?.code ?? failure.result?.error?.code}`,
+          );
         const result = events.find(predicate);
-        if (failure || result) {
+        if (result) {
           clearTimeout(timer);
           listeners.delete(check);
-          if (failure)
-            reject(
-              new Error(
-                `${failure.type}: ${failure.error?.code ?? failure.result?.error?.code}`,
-              ),
-            );
-          else resolveResult(result);
+          return resolveResult(result);
         }
+        const stray = events.find(unexpected);
+        if (stray)
+          fail(
+            `unexpected ${stray.type} ${stray.state ?? ""}${stray.error ? ` (${stray.error.code})` : ""}`.trim(),
+          );
       };
       listeners.add(check);
       check();
@@ -94,7 +122,7 @@ try {
       history: "replay",
       ...(persistence ? { persistence } : {}),
     });
-    await wait((e) => e.type === "session.ready");
+    await wait("session.ready", (e) => e.type === "session.ready");
     return events.find((e) => e.type === "session.opened").persistence;
   };
   const prompt = async (clientMessageId, text, attachment) => {
@@ -115,6 +143,7 @@ try {
     });
     return (
       await wait(
+        `prompt result for ${clientMessageId}`,
         (e) =>
           e.type === "session.prompt_result" &&
           e.clientMessageId === clientMessageId,
@@ -137,7 +166,7 @@ try {
     requestId: "catalog",
     cwd: directory,
   });
-  const { catalog } = await wait((e) => e.type === "catalog");
+  const { catalog } = await wait("catalog", (e) => e.type === "catalog");
   const defaultModel = catalog.models.find(
     (model) => model.id === catalog.defaultModel,
   );
@@ -149,11 +178,14 @@ try {
     e.item.type === "tool_call" &&
     e.item.name === "Bash" &&
     e.item.status === "running";
+  // Steering and stopping need a Bash call that is still running. A sleep run
+  // with run_in_background completes its Bash call at once, and the model then
+  // waits with TaskOutput, so the prompts ask for the foreground.
   const first = await prompt(
     "initial",
-    "Integration test. Run a shell command that sleeps for 5 seconds, then answer INITIAL. Do not edit files.",
+    "Integration test. Use the Bash tool to run `sleep 5` in the foreground, without run_in_background, then answer INITIAL. Do not edit files.",
   );
-  await wait(runningTool);
+  await wait("initial running Bash", runningTool, turnEnded);
   assert.deepEqual(
     await prompt(
       "guide",
@@ -169,7 +201,11 @@ try {
     ),
     { type: "steer", turnId: first.turnId },
   );
-  await wait((e) => e.type === "session.turn" && e.state === "completed");
+  await wait(
+    "steered turn completion",
+    (e) => e.type === "session.turn" && e.state === "completed",
+    turnEnded,
+  );
   assert.deepEqual(
     events.filter((e) => e.type === "session.turn").map((e) => e.state),
     ["started", "completed"],
@@ -192,9 +228,9 @@ try {
   events = [];
   await prompt(
     "stop-run",
-    "Integration test. Run a shell command that sleeps for 30 seconds. Do not edit files.",
+    "Integration test. Use the Bash tool to run `sleep 30` in the foreground, without run_in_background. Do not edit files.",
   );
-  await wait(runningTool);
+  await wait("stop-run running Bash", runningTool, turnEnded);
   await prompt(
     "cancel-queue",
     "This queued request must be cancelled before execution. Output CANCELLED_QUEUE_EXECUTED if it runs.",
@@ -205,7 +241,11 @@ try {
     sessionId: "test",
     requestId: "stop",
   });
-  await wait((e) => e.type === "session.turn" && e.state === "canceled");
+  await wait(
+    "turn cancellation",
+    (e) => e.type === "session.turn" && e.state === "canceled",
+    turnEnded,
+  );
   assert.deepEqual(
     events.filter((e) => e.type === "session.turn").map((e) => e.state),
     ["started", "canceled"],
@@ -215,7 +255,7 @@ try {
     sessionId: "test",
     requestId: "close",
   });
-  await wait((e) => e.type === "session.closed");
+  await wait("close before resume", (e) => e.type === "session.closed");
   await connection.close();
   connection = undefined;
   await connect();
@@ -245,10 +285,12 @@ try {
     "Answer RESUMED_OK. Do not use tools.",
   );
   await wait(
+    "resumed turn completion",
     (e) =>
       e.type === "session.turn" &&
       e.state === "completed" &&
       e.turnId === after.turnId,
+    turnEnded,
   );
   const restoredAnswers = events
     .filter(
@@ -263,7 +305,7 @@ try {
     sessionId: "test",
     requestId: "final-close",
   });
-  await wait((e) => e.type === "session.closed");
+  await wait("final close", (e) => e.type === "session.closed");
   console.log(
     JSON.stringify({
       nativeStop: "passed",
