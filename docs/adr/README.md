@@ -17,3 +17,5 @@
 * [17. 設定画面のサインインとモデルプロバイダー管理をZCode公式サービスで行う](0017-設定画面のサインインとモデルプロバイダー管理をzcode公式サービスで行う.md)
 * [18. Paseo 0.11のProvider statusとusage sourceでランタイムの可用性とCoding Planの利用量を表示する](0018-paseo-0-11のprovider-statusとusage-sourceでランタイムの可用性とcoding-planの利用量を表示する.md)
 * [19. 使えない公式プラグインを隠すビルド時パッチを管理下ランタイムに当てる](0019-使えない公式プラグインを隠すビルド時パッチを管理下ランタイムに当てる.md)
+* [20. タグの無い上流の同期コミットをpackage versionで特定してZCodeのソース基準にする](0020-タグの無い上流の同期コミットをpackage-versionで特定してzcodeのソース基準にする.md)
+* [21. Desktop専用のvisualizeプラグインもADR 19の抑止対象に加える](0021-desktop専用のvisualizeプラグインもadr-19の抑止対象に加える.md)

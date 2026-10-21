@@ -18,6 +18,7 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 - Desktop ネイティブ画面とモバイル実機での操作。Electron Helper / 通常 Node の両 daemon 起動と、実 Web UI の入力・質問・承認・停止・再起動復元は確認済み（[検証記録](verification.md)）。
 - macOS x64（管理下セットアップの対象外）、長時間ツール/MCP 子プロセスを含む異常終了時の回収は未検証。
 - native の長い会話・世代変更・background continuation・子エージェントからの権限要求。現在の契約試験の結果と実行確認を混同しない。
+- Desktop でアーカイブした会話。ZCode 3.16 の `session/list` はアーカイブを除かなくなり、Paseo の一覧にも出る。アーカイブはサービス側のタスク索引（`zcodeTaskService`）にあるので、公式サービスで除外できるか確認する。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 
 ## 今回追加しない機能
