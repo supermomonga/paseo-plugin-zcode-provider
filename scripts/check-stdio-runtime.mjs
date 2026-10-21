@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   writeFile,
@@ -12,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { gte } from "semver";
 import { parseArgs } from "node:util";
 import { build } from "esbuild";
 import { e2eProviderConfig } from "./check-e2e.mjs";
@@ -23,6 +25,8 @@ import { cleanupOnSignal } from "./runtime-check-lifecycle.mjs";
 const FIXTURE_PLUGINS = {
   "computer-use": "computer-use",
   "browser-use": "control-browser",
+  // 3.15.1+ also bundles it; its skill has the same name.
+  visualize: "visualize",
   "paseo-fixture": "paseo-fixture-check",
 };
 const { values } = parseArgs({
@@ -91,10 +95,16 @@ const modelServer = createServer(async (req, res) => {
               file_path: join(directory, "workspace", "approved.txt"),
               content: "APPROVED",
             }
-          : {
-              command: "printf ZCODE_STDIO_BASH_OK",
-              description: "Verify native shell execution",
-            };
+          : scenario === "guarded"
+            ? {
+                // A recursive rm matches ZCode's guarded safety rules.
+                command: "rm -r guarded-fixture",
+                description: "Remove the guarded fixture directory",
+              }
+            : {
+                command: "printf ZCODE_STDIO_BASH_OK",
+                description: "Verify native shell execution",
+              };
     const delta = useTool
       ? {
           tool_calls: [
@@ -134,6 +144,7 @@ const removeSignalHandlers = cleanupOnSignal(cleanup);
 try {
   for (const part of [
     "workspace",
+    "workspace/guarded-fixture",
     ".zcode/v2",
     "tmp",
     ...(windows ? ["AppData/Roaming", "AppData/Local"] : []),
@@ -340,7 +351,15 @@ try {
     requestId: "catalog",
     cwd: join(directory, "workspace"),
   });
-  assert.ok((await wait((e) => e.type === "catalog")).catalog.models.length);
+  const { catalog } = await wait((e) => e.type === "catalog");
+  assert.ok(catalog.models.length);
+  // Guarded ("Autonomous mode") exists from ZCode 3.15.1.
+  const guarded = gte(identity.appVersion, "3.15.1");
+  assert.equal(
+    catalog.modes.some((m) => m.id === "guarded"),
+    guarded,
+    "Guarded mode must be offered exactly when the Server supports it",
+  );
   let saved = await open();
   assert.equal(saved.version, 3);
   await configure({ mode: "yolo" });
@@ -499,6 +518,38 @@ try {
     response: { behavior: "allow", selectedActionId: action.id },
   });
   assert.equal((await terminal()).state, "completed");
+  if (guarded) {
+    // Ordinary commands run without approval; a risky one asks once per
+    // execution and offers no lasting approval.
+    await configure({ mode: "guarded" });
+    await prompt("bash");
+    assert.equal((await terminal()).state, "completed");
+    assert.equal(
+      events.some((e) => e.type === "session.permission"),
+      false,
+    );
+    await prompt("guarded");
+    const risky = (
+      await wait(
+        (e) => e.type === "session.permission" && e.request.kind === "tool",
+      )
+    ).request;
+    assert.equal(risky.name, "Bash");
+    assert.deepEqual(risky.actions.map((a) => a.behavior).sort(), [
+      "allow",
+      "deny",
+    ]);
+    await send({
+      type: "session.permission",
+      permissionId: risky.id,
+      response: {
+        behavior: "deny",
+        selectedActionId: risky.actions.find((a) => a.behavior === "deny").id,
+      },
+    });
+    assert.equal((await terminal()).state, "completed");
+    await readdir(join(directory, "workspace", "guarded-fixture"));
+  }
   await prompt("hold");
   await wait((e) => e.type === "session.turn" && e.state === "started");
   await send({ type: "session.interrupt", requestId: "stop" });
@@ -571,6 +622,7 @@ try {
           "history replay",
           "question",
           "permission",
+          ...(guarded ? ["guarded risky-command approval"] : []),
           "targeted stop",
           "restart after stop",
           "slash command completion",
