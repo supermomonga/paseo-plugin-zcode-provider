@@ -13,7 +13,7 @@ This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai.
 | Paseo          | 0.8.0 or later; development SDK 0.12.0                                                                                                  |
 | Plugin Node.js | 22.12.0 or later (the Paseo daemon's runtime)                                                                                           |
 | Managed setup  | darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64                                                                                |
-| ZCode          | Managed: 3.14.3 (release `3.14.3-paseo.1`) with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
+| ZCode          | Managed: 3.16.2 (release `3.16.2-paseo.1`) with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
 
 ## Installation
 
@@ -35,7 +35,7 @@ Open **Settings → Plugins → zcode-provider → Settings**. The screen has tw
 On the **Runtime** tab, choose **Download and install**. The screen lists every download, its SHA-256, size and license before you start. Setup runs on the machine hosting the daemon:
 
 - Node.js 24.21.0 from nodejs.org.
-- The ZCode runtime 3.14.3 from this repository's [releases](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.14.3-paseo.1) (`3.14.3-paseo.1`). ZCode does not publish its integrated CLI, so this is an **unofficial build** of the public source with the patches in [patches/zcode](patches/zcode) applied (ADR 19), made and verified by CI. The patches hide Computer Use and Browser Use, which cannot run here. It is not endorsed or maintained by ZCode or Z.ai.
+- The ZCode runtime 3.16.2 from this repository's [releases](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.16.2-paseo.1) (`3.16.2-paseo.1`). ZCode does not publish its integrated CLI, so this is an **unofficial build** of the public source with the patches in [patches/zcode](patches/zcode) applied (ADR 19), made and verified by CI. The patches hide Computer Use, Browser Use and Visualize, which cannot run or render here. It is not endorsed or maintained by ZCode or Z.ai.
 
 Both archives are verified against SHA-256 values pinned in the plugin and extracted to the daemon user's data directory:
 

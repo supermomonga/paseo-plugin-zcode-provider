@@ -33,7 +33,20 @@
 - **`test:native-restore`**：3.16.2 でも失敗した（期待 `edit` + Plan ON に対し、`yolo` + Plan OFF）。保証範囲外の上流の不具合は残る（ADR 14）。
 - **`test:usage-runtime`**：このローカルビルドと利用者の実データ（Desktop 3.16.2 のサインイン）で、`status()` が available、アカウント 1 件、`GLM Coding Max` の 4 つの枠を返し、Paseo のスキーマを通った。
 
-未検証：パッチ済み 3.16.2 の公式リリースのビルドと 5 プラットフォームの契約試験、公開版での実モデル E2E、Account タブでの実際のサインイン（CAS の修正は模擬 Server で確認）、大きな共有データでの初回起動時間、Paseo daemon の実 UI。
+## 公開と固定
+
+| 項目               | 実測値                                                                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| リリース           | [`zcode-runtime-v3.16.2-paseo.1`](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.16.2-paseo.1)（PR #65 の `f781642`）、`zcode-runtime-3.16.2-paseo.1.tar.gz`、82,516,181 bytes |
+| 成果物 SHA-256     | `01f3ee802f4c0b24c4023e366485120416a6acc92ec899a9edf7f2fc76eaa17d`。`gh attestation verify` で、タグ `zcode-runtime-v3.16.2-paseo.1` のリリース用ワークフローによる署名（ソース `f781642`）を確認                         |
+| `BUILD-INFO.json`  | `release: 3.16.2-paseo.1`、ソース `3c5b227`（3.16.2）、`modified: true`、パッチ `5bfa90d…`。同梱のパッチはリポジトリのものとバイト単位で一致。`agent/provider/zcode-builtin.json` は本番用ファイルと一致                  |
+| 公式ビルドの成果物 | `dea514198788941513d1fc60d7a797f19855286898577a9389235ce7ce76fcf4`（Node.js 24.21.0、[run 39586477395](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/39586477395)）                            |
+
+- **PR #65 の CI**：[run 39585419092](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/39585419092) で、test（`test:upstream` を含む）、固定前の 3.14.3-paseo.1 での 5 プラットフォームの契約試験、実モデル E2E が成功した。リリース用ワークフローは PR 上でパッチ済み 3.16.2 を作り（[run 39585419524](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/39585419524)、未公開）、5 プラットフォームで guarded と「隠れる」側の ADR 19 を含む契約試験が通った。
+- **タグのリリース**：run 39586477395 で、ビルド、5 プラットフォームの検証、署名、公開（latest ではない）が成功した。
+- **導入**：`pins.ts` を更新した状態で、一時 `XDG_DATA_HOME` の `npm run setup:managed-runtime` が公開版を取得・検証して導入した。その管理下ランタイムで `test:stdio-runtime` が全項目、guarded、「隠れる」側を通った（`source: managed`、Server 3.16.2、Agent 0.17.0）。
+
+未検証：公開版での実モデル E2E（固定後の CI で確認する）、Account タブでの実際のサインイン（CAS の修正は模擬 Server で確認）、大きな共有データでの初回起動時間、Paseo daemon の実 UI。既存の利用者は、固定値が変わったので Runtime タブから導入し直す。
 
 # Paseo 0.12.0 への追従（2026-10-21）
 
