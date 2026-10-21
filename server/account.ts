@@ -127,6 +127,7 @@ export const sessionStateSchema = z.discriminatedUnion("status", [
 export const familySchema = z.enum(["zai", "bigmodel"]).nullable();
 export const accountSettingsSchema = z.object({
   providerFamilyDomain: z.string().optional(),
+  providerFamilyDomainUpdatedAt: z.number().optional(),
   providerFamilyConnectionSelections: record.optional(),
 });
 const startedSchema = z.object({
@@ -749,6 +750,8 @@ export class AccountService {
   // Desktop's completion: select the signed-in family and its individual
   // Coding Plan unless a plan is already chosen, then refresh entitlements.
   // Without the family the Server does not offer the account's models.
+  // Writing the selections requires the settings read here as the expected
+  // state (compare-and-set), as Desktop's setProviderFamilyDomain passes them.
   private async completeSignIn(
     host: SettingsHost,
     family: AccountFamily,
@@ -772,6 +775,13 @@ export class AccountService {
             ...selections,
             [family]: selections[family] ?? { kind: "individual-coding-plan" },
           },
+        },
+        {
+          providerFamilyDomain: settings.providerFamilyDomain,
+          providerFamilyConnectionSelections:
+            settings.providerFamilyConnectionSelections,
+          providerFamilyDomainUpdatedAt:
+            settings.providerFamilyDomainUpdatedAt ?? 0,
         },
       ],
       z.unknown(),

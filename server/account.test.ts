@@ -128,7 +128,25 @@ class FakeHost implements SettingsHost {
     "oauth.cancelPending": () => undefined,
     "oauth.logout": () => undefined,
     "setting.get": () => this.settings,
-    "setting.update": (patch) => {
+    // ZCode 3.16's settingService: writing the connection selections needs
+    // the settings the caller read, and fails if they changed since.
+    "setting.update": (patch, expected) => {
+      if (
+        Object.hasOwn(patch as object, "providerFamilyConnectionSelections")
+      ) {
+        const cas = expected as Record<string, unknown> | undefined;
+        if (cas?.providerFamilyDomainUpdatedAt === undefined)
+          throw new Error("Account connection CAS required");
+        if (
+          this.settings.providerFamilyDomain !== cas.providerFamilyDomain ||
+          (this.settings.providerFamilyDomainUpdatedAt ?? 0) !==
+            cas.providerFamilyDomainUpdatedAt ||
+          JSON.stringify(
+            this.settings.providerFamilyConnectionSelections ?? {},
+          ) !== JSON.stringify(cas.providerFamilyConnectionSelections ?? {})
+        )
+          throw new Error("Account connection settings changed");
+      }
       this.settings = { ...this.settings, ...(patch as object) };
     },
     "provider-settings.getView": () => this.view,
@@ -324,6 +342,38 @@ describe("sign-in", () => {
     expect(host.settings.providerFamilyConnectionSelections).toEqual({
       zai: team,
     });
+    await account.close();
+  });
+
+  it("reports a failed switch when the account settings changed meanwhile", async () => {
+    const { host, account } = service();
+    host.settings = {
+      providerFamilyDomain: "bigmodel",
+      providerFamilyDomainUpdatedAt: 5,
+    };
+    const get = host.handlers["setting.get"]!;
+    host.handlers["setting.get"] = () => {
+      const read = structuredClone(get());
+      // Another ZCode window switches the family after the plugin's read.
+      host.settings = {
+        ...host.settings,
+        providerFamilyDomainUpdatedAt:
+          (host.settings.providerFamilyDomainUpdatedAt as number) + 1,
+      };
+      return read;
+    };
+    host.handlers["oauth.pollPendingOAuth"] = () => ({
+      kind: "session",
+      provider: "zai",
+    });
+    await account.change({ action: "signIn", family: "zai" });
+    await vi.waitFor(async () =>
+      expect((await ready(account.view())).signIn).toMatchObject({
+        state: "failed",
+        message: "Signed in, but ZCode could not switch to the account.",
+      }),
+    );
+    expect(host.settings.providerFamilyDomain).toBe("bigmodel");
     await account.close();
   });
 
