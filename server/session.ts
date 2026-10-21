@@ -29,8 +29,9 @@ import {
   decodeModel,
   encodeModel,
   mapPrompt,
+  requireConfigurableMode,
   requireMode,
-  ZCODE_MODES,
+  zcodeModes,
 } from "./mapping.js";
 import {
   InitializeResultSchema,
@@ -436,7 +437,7 @@ export class ZCodeSession {
       mode: c.mode,
       thinkingOption: c.thought,
       models: catalogModels(this.modelCatalog, c.modelSelection),
-      modes: ZCODE_MODES,
+      modes: zcodeModes(this.bridge.diagnostic.appVersion),
       thinkingOptions: c.thoughtLevels.map((id) => ({ id, label: id })),
       settings: [
         {
@@ -461,14 +462,10 @@ export class ZCodeSession {
   }
   async configureMode(mode?: string | null, plan?: boolean): Promise<void> {
     this.assertIdle();
-    if (
-      mode === null ||
-      (mode !== undefined && !ZCODE_MODES.some((m) => m.id === mode))
-    )
-      throw new AdapterError(
-        "INVALID_CONFIGURATION",
-        "Mode must be build, edit, or yolo",
-      );
+    requireConfigurableMode(
+      mode,
+      zcodeModes(this.bridge.diagnostic.appVersion),
+    );
     const nextMode = mode ?? this.state.config.mode,
       nextPlan = plan ?? this.state.config.planEnabled === true;
     if (

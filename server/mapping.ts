@@ -1,6 +1,7 @@
 import type { NativePromptInput } from "./session-types.js";
 import { realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, relative } from "node:path";
+import { gte, valid } from "semver";
 import { z } from "zod";
 
 import type {
@@ -24,11 +25,41 @@ export const ZCODE_MODES: ProviderMode[] = [
     description: "Edit files automatically while keeping other approvals",
   },
   {
+    id: "guarded",
+    label: "Autonomous",
+    description: "Run tools without approval, but ask before risky commands",
+  },
+  {
     id: "yolo",
     label: "Full Access",
     description: "Run tools without approval",
   },
 ];
+// ZCode 3.15.1 added guarded ("Autonomous mode"); older Servers reject it.
+const GUARDED_MINIMUM_APP_VERSION = "3.15.1";
+
+// The modes the runtime with this Server version supports.
+export function zcodeModes(appVersion: string | undefined): ProviderMode[] {
+  const guarded =
+    appVersion !== undefined &&
+    valid(appVersion) !== null &&
+    gte(appVersion, GUARDED_MINIMUM_APP_VERSION);
+  return guarded ? ZCODE_MODES : ZCODE_MODES.filter((m) => m.id !== "guarded");
+}
+
+export function requireConfigurableMode(
+  mode: string | null | undefined,
+  modes: readonly ProviderMode[] = ZCODE_MODES,
+): void {
+  if (
+    mode === null ||
+    (mode !== undefined && !modes.some((m) => m.id === mode))
+  )
+    throw new AdapterError(
+      "INVALID_CONFIGURATION",
+      `ZCode editing mode must be ${modes.map((m) => m.id).join(", ")}`,
+    );
+}
 
 export function requireMode(mode: string): string {
   if (

@@ -402,3 +402,43 @@ it("answers native interactions once and ignores responses after their observed 
     },
   });
 });
+it("offers guarded mode only on ZCode 3.15.1 and later", async () => {
+  const f = await fixture();
+  const modes = () =>
+    (
+      f.events.findLast((e) => e.type === "session.config") as Extract<
+        (typeof f.events)[number],
+        { type: "session.config" }
+      >
+    ).config.modes?.map((m) => m.id);
+  const configure = async (requestId: string) => {
+    await f.send({
+      type: "session.configure",
+      sessionId: "public",
+      requestId,
+      changes: { mode: "guarded" },
+    });
+    return f.wait(
+      (e) =>
+        (e.type === "request.completed" || e.type === "request.failed") &&
+        e.requestId === requestId,
+    );
+  };
+  await f.open();
+  expect(modes()).toEqual(["build", "edit", "yolo"]);
+  expect(await configure("old")).toMatchObject({
+    type: "request.failed",
+    error: { code: "INVALID_CONFIGURATION" },
+  });
+  expect(f.host.state.config.mode).toBe("build");
+
+  f.host.diagnostic.appVersion = "3.16.2";
+  expect(await configure("new")).toMatchObject({ type: "request.completed" });
+  expect(f.host.state.config.mode).toBe("guarded");
+  expect(modes()).toEqual(["build", "edit", "guarded", "yolo"]);
+  expect(
+    f.host.calls.find(
+      (c) => c.params?.envelope?.type === "switchCollaborationMode",
+    )?.params.envelope.payload,
+  ).toEqual({ mode: "guarded" });
+});

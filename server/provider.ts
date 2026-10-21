@@ -41,7 +41,8 @@ import {
   decodeModel,
   encodeModel,
   mapMcpServers,
-  ZCODE_MODES,
+  requireConfigurableMode,
+  zcodeModes,
 } from "./mapping.js";
 import {
   ZCodeSession,
@@ -316,7 +317,7 @@ export class ZCodeConnection implements ProviderConnection {
             requestId: input.requestId,
             catalog: {
               models,
-              modes: ZCODE_MODES,
+              modes: zcodeModes(host.diagnostic.appVersion),
               defaultModel: models.find((model) => model.isDefault)?.id,
               defaultMode: presentation.mode,
             },
@@ -453,14 +454,7 @@ export class ZCodeConnection implements ProviderConnection {
       }
       case "session.configure": {
         const settings = settingsSchema.parse(input.changes.settings ?? {});
-        if (
-          input.changes.mode !== undefined &&
-          !ZCODE_MODES.some((mode) => mode.id === input.changes.mode)
-        )
-          throw new AdapterError(
-            "INVALID_CONFIGURATION",
-            "ZCode editing mode must be build, edit, or yolo",
-          );
+        requireConfigurableMode(input.changes.mode);
         if (input.changes.model !== undefined)
           await entry.native.setModel(input.changes.model);
         if (input.changes.thinkingOption !== undefined)
@@ -499,14 +493,7 @@ export class ZCodeConnection implements ProviderConnection {
     const config = input.config;
     optionsSchema.parse(config.providerOptions ?? {});
     const settings = settingsSchema.parse(config.settings);
-    if (
-      config.mode !== undefined &&
-      !ZCODE_MODES.some((mode) => mode.id === config.mode)
-    )
-      throw new AdapterError(
-        "INVALID_CONFIGURATION",
-        "ZCode editing mode must be build, edit, or yolo",
-      );
+    requireConfigurableMode(config.mode);
     if (config.systemPrompt?.trim())
       throw new AdapterError(
         "INVALID_CONFIGURATION",

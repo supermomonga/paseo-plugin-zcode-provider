@@ -11,6 +11,8 @@ import {
   mapMcpServers,
   mapPrompt,
   planMarkdown,
+  requireConfigurableMode,
+  zcodeModes,
 } from "./mapping.js";
 import type { SessionSettings } from "./host/schemas.js";
 
@@ -101,6 +103,23 @@ describe("ZCode catalog mapping", () => {
     value.model.available.pop();
     value.mode.current = "future";
     expect(() => requireMode(value.mode.current)).toThrow(/unknown mode/u);
+  });
+
+  it("offers guarded mode from ZCode 3.15.1", () => {
+    const ids = (version: string | undefined) =>
+      zcodeModes(version).map((m) => m.id);
+    expect(ids("3.14.3")).toEqual(["build", "edit", "yolo"]);
+    expect(ids(undefined)).toEqual(["build", "edit", "yolo"]);
+    expect(ids("3.15.1")).toEqual(["build", "edit", "guarded", "yolo"]);
+    expect(ids("3.16.2")).toEqual(["build", "edit", "guarded", "yolo"]);
+    expect(() =>
+      requireConfigurableMode("guarded", zcodeModes("3.14.3")),
+    ).toThrow("ZCode editing mode must be build, edit, yolo");
+    expect(() => requireConfigurableMode("plan")).toThrow(
+      /must be build, edit, guarded, yolo/u,
+    );
+    expect(() => requireConfigurableMode(null)).toThrow();
+    expect(() => requireConfigurableMode(undefined)).not.toThrow();
   });
 });
 
