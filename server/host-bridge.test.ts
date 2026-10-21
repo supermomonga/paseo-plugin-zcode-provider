@@ -71,7 +71,7 @@ it("starts the Server without unsupported capabilities, whatever the caller sets
     ).toEqual({
       ZCODE_CUA_PRODUCT_HELPER: "0",
       PASEO_ZCODE_SUPPRESSED_PLUGINS:
-        "computer-use@zcode-plugins-official,browser-use@zcode-plugins-official",
+        "computer-use@zcode-plugins-official,browser-use@zcode-plugins-official,visualize@zcode-plugins-official",
     });
   } finally {
     await bridge.close();
