@@ -69,6 +69,24 @@ export async function assertRuntimeLayout(root, files) {
     }
 }
 
+// The official build embeds config/provider/zcode-builtin.test.json unless
+// ZCODE_ENV=production (scripts/builtin-provider-config.mjs, since 3.15.1).
+export const BUILTIN_PROVIDER_CONFIG = {
+  source: "config/provider/zcode-builtin.json",
+  runtime: "agent/provider/zcode-builtin.json",
+};
+
+export async function assertProductionProviderConfig(source, root) {
+  const [expected, actual] = await Promise.all([
+    readFile(join(source, BUILTIN_PROVIDER_CONFIG.source)),
+    readFile(join(root, BUILTIN_PROVIDER_CONFIG.runtime)),
+  ]);
+  if (!expected.equals(actual))
+    throw new Error(
+      `Runtime ${BUILTIN_PROVIDER_CONFIG.runtime} is not the production ${BUILTIN_PROVIDER_CONFIG.source}; build with ZCODE_ENV=production`,
+    );
+}
+
 export async function sha256File(path) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -128,6 +146,7 @@ export async function packageRuntime({ source, out, tag }) {
     execFileSync("tar", ["-xzf", upstreamArchive, "-C", staging]);
     const root = join(staging, "zcode");
     await assertRuntimeLayout(root, REQUIRED_RUNTIME_FILES);
+    await assertProductionProviderConfig(source, root);
     for (const file of UPSTREAM_NOTICE_FILES) {
       try {
         await access(join(root, file));

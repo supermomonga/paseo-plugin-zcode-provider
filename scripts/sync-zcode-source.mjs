@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, posix, resolve } from "node:path";
 import ts from "typescript";
 
-export const ZCODE_SOURCE_COMMIT = "29628c9acdb81b703bbd4080c207a0e7ce5e276e";
+export const ZCODE_SOURCE_COMMIT = "3c5b227649371507ddc4eb46ac5133afe6db1cab";
 const checkout = resolve(
   process.argv.slice(2).find((arg) => arg !== "--write") ??
     `${process.env.HOME}/ghq/github.com/zai-org/ZCode`,
@@ -44,25 +44,35 @@ function collect(path) {
           : undefined;
     if (literal && ts.isStringLiteral(literal)) {
       const specifier = literal.text;
-      let target;
+      let target, alias;
       if (specifier.startsWith("."))
         target = posix
           .normalize(posix.join(posix.dirname(path), specifier))
           .replace(/\.js$/, ".ts");
-      else if (specifier === "@zcode/model-option-map") {
-        target = "packages/model-option-map/src/index.ts";
+      else if (specifier === "@zcode/model-option-map")
+        target = alias = "packages/model-option-map/src/index.ts";
+      else if (
+        specifier.startsWith("#src/") &&
+        path.startsWith("packages/shared/src/")
+      )
+        // packages/shared/package.json: "imports": { "#src/*": "./src/*" }
+        target = alias = posix
+          .join("packages/shared/src", specifier.slice(5))
+          .replace(/\.js$/, ".ts");
+      else if (specifier !== "zod" && !specifier.startsWith("node:"))
+        throw new Error(
+          `Unexpected upstream dependency ${specifier} in ${path}`,
+        );
+      if (alias) {
         const replacement = posix
-          .relative(posix.dirname(path), target)
+          .relative(posix.dirname(path), alias)
           .replace(/\.ts$/, ".js");
         edits.push([
           literal.getStart(ast) + 1,
           literal.getEnd() - 1,
           replacement.startsWith(".") ? replacement : `./${replacement}`,
         ]);
-      } else if (specifier !== "zod" && !specifier.startsWith("node:"))
-        throw new Error(
-          `Unexpected upstream dependency ${specifier} in ${path}`,
-        );
+      }
       if (target) dependencies.push(target);
     }
     ts.forEachChild(node, visit);
@@ -113,6 +123,7 @@ const manifest = {
   entries,
   modifications: [
     "Resolve the private @zcode/model-option-map workspace import to its vendored relative path.",
+    "Resolve packages/shared's #src/* subpath imports to their vendored relative paths.",
     `Select Visual Studio Code notice ${noticeId} from THIRD-PARTY-NOTICES.md and add a scope explanation; sourceSha256 hashes the complete upstream file. LICENSE and NOTICE.md are unchanged.`,
   ],
   files: Object.fromEntries(

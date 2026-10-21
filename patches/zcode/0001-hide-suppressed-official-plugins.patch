@@ -9,7 +9,7 @@ the same way it skips suppressedBuiltins, without writing any configuration.
 
 Target: NodePluginAdapter.discoverPluginsSync in
 apps/zcode-cli/packages/adapters/src/plugins/index.ts, which every plugin
-discovery path uses (ZCode 29628c9acdb81b703bbd4080c207a0e7ce5e276e).
+discovery path uses (ZCode 3c5b227649371507ddc4eb46ac5133afe6db1cab).
 
 Remove when: ZCode offers an official per-process way to hide official
 plugins, for example when ZCODE_CUA_PRODUCT_HELPER=0 hides cached

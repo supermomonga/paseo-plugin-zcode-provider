@@ -71,6 +71,10 @@ jobs:
           version: "10.33.2"
       - name: Build the integrated CLI with the official script
         working-directory: zcode-source
+        env:
+          # The build embeds config/provider/zcode-builtin.test.json unless told
+          # otherwise (scripts/builtin-provider-config.mjs, since 3.15.1).
+          ZCODE_ENV: production
         run: |
           pnpm install --frozen-lockfile
           pnpm exec tsc -b packages/shared

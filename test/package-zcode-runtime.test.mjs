@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
+  BUILTIN_PROVIDER_CONFIG,
   REQUIRED_RUNTIME_FILES,
+  assertProductionProviderConfig,
   assertRuntimeLayout,
   parseRuntimeRelease,
   runtimeAssetName,
@@ -66,5 +68,28 @@ describe("runtime archive layout", () => {
     await expect(
       assertRuntimeLayout(root, REQUIRED_RUNTIME_FILES),
     ).rejects.toThrow("server/remote/zcode-server.cjs");
+  });
+});
+
+describe("built-in provider configuration", () => {
+  test("must be the production file of the source", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "zcode-provider-config-"));
+    directories.push(directory);
+    const source = join(directory, "source"),
+      root = join(directory, "zcode");
+    const write = async (base, file, content) => {
+      await mkdir(join(base, file, ".."), { recursive: true });
+      await writeFile(join(base, file), content);
+    };
+    await write(source, BUILTIN_PROVIDER_CONFIG.source, '{"env":"production"}');
+    await write(source, "config/provider/zcode-builtin.test.json", "{}");
+    await write(root, BUILTIN_PROVIDER_CONFIG.runtime, '{"env":"production"}');
+    await expect(
+      assertProductionProviderConfig(source, root),
+    ).resolves.toBeUndefined();
+    await write(root, BUILTIN_PROVIDER_CONFIG.runtime, "{}");
+    await expect(assertProductionProviderConfig(source, root)).rejects.toThrow(
+      "ZCODE_ENV=production",
+    );
   });
 });
