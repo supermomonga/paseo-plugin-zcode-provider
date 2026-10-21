@@ -1,3 +1,21 @@
+# Paseo 0.12.0 への追従（2026-10-21）
+
+Paseo の追従 Issue 9 件（#46、#47、#54、#58〜#63。0.11.0〜0.12.0）をまとめて扱った。開発用 SDK 3 パッケージ（`@getpaseo/plugin`・`client`・`protocol`）を `0.12.0` に固定し、CI の上流 checkout を同タグの `cafe4b01c8522ff39560241c5deb01427dc8dc5b` に更新した。lockfile で変わったのは推移依存の `@getpaseo/relay` を含む `@getpaseo/*` の 4 項目だけである。`@getpaseo/plugin@0.12.0` は `client`・`protocol` を同じ版に固定するので、3 パッケージは同時に上げる。Provider 実装・保存形式・manifest の最低要件 `>=0.8.0` は変えていない。
+
+上流の差分は `git diff v0.11.0-beta.5 v0.12.0` の `packages/plugin`、`packages/server/src/server/agent/plugin-provider.ts`、`packages/server/src/server/plugins/`、usage source の registry を読んで確認した。
+
+- **公開 SDK**：`packages/plugin/src` の試験以外の変更は、任意の `ProviderRegistration.requiresConfiguration`、ACP 専用の `AcpOptions.workspaceOnlyCatalog`、ACP 接続の内部だけである。`PROVIDER_CAPABILITIES`、Provider の入力・イベント、client・設定画面・RPC の API は変わっていない。`requiresConfiguration` は `agents.providers` に設定が無い限り Provider を隠すので採用しない。usage source の型（`packages/plugin/src/server/usage.ts`）は 0.11.0-beta.5 から差分が無い。
+- **ステアリング（#7270、#5164）**：`PluginAgentSession.steerActiveTurn` は、`prompt.steer` を交渉した Provider にだけステアリングを渡すようになった（`plugin-provider.ts:1178`）。このプラグインは宣言・交渉済みなので影響しない。CLI・MCP からエージェント間で送るメッセージも、既定で実行中のターンへのステアリングとして同じ経路に入る。ZCode に実行中のターンが無ければ `unavailable` を返し、Paseo が新しいターンを始める。`clearPendingPermissions` を付けるのは従来どおり Web UI の経路だけである。
+- **最初のプロンプトの失敗（#6379）**：作成直後のターンが拒否されると、下書きに戻さず、エージェントにターンのエラーを表示するようになった。プラグインが返すエラーは従来どおり固定文言で、変更は要らない。
+- **usage（#7246、#6947、#6474）**：registry が最後に成功した値を保持し、`discover()` が例外を投げたときは前回の探索結果を使うようになった。`UsageReportSchema`、5 分のキャッシュ、20 秒の期限は変わらない。`fetch()` が `status: "error"` を返すと、最後に成功した値とともに表示される。新しい `paseo usage` も同じ registry を読む。このプラグインの `discover()` は失敗を空の一覧として返すため、探索に失敗したときは前回の結果が保持されず、カードは従来どおり消える。
+- **エージェント単位の利用量と初期 usage**：`PluginAgentSession` には 0.12.0 でも `usageSession()` が無く、AgentManager にも usage の変更が無い。どちらの制約も残る（[todo](todo.md)）。
+- **プラグインの導入元（0.11.0）**：`github:` などの接頭辞が無い `owner/repo` は、常に Paseo のプラグイン registry（`https://plugins.paseo.sh`）で解決されるようになった（`managed-source.ts` の `parsePluginRegistryReference`）。0.11.0-beta.5 までは `registryOptions.enabled` が条件だった。このプラグインは registry に無い（`/plugins/supermomonga/paseo-plugin-zcode-provider.json` は 404）ため、README の `paseo plugin add supermomonga/paseo-plugin-zcode-provider` は 0.11.0 以降で失敗する。0.9.0 以降のすべての版で Git として解決される `github:supermomonga/paseo-plugin-zcode-provider` に改めた。npm 形式の手順は影響しない。
+- **その他**：`providers.waitForReady`（#6760）は使っていない（`providers.refresh` のみ）。`@getpaseo/protocol` の型 import の修正（#7023）は、本番コードがその型を import しないので関係しない。保存 mode の検証（#5847）と xhigh の表示名（#6005）はアプリ側の修正である。アーカイブ済みエージェントの修正（#6766）は ACP Provider だけに及ぶ。0.11.1〜0.11.4 に SDK の変更は無い。
+- **自動試験（macOS arm64、Node.js 26.9.0）**：`npm run typecheck`、`npm test`（22 ファイル、201 tests）、`npm run build`、`npm run format:check` が成功した。`npm run check:paseo-releases -- --dry-run` は `No Paseo release newer than 0.12.0` を返した。
+- **Paseo の実 compiler / adapter**：`v0.12.0` の checkout に対する `npm run test:upstream` は、Git 準備（`NODE_ENV` 未設定 / production）、npm インストール、登録、usage source の登録、V4 タイムライン、ステアリング、添付キュー、単一完了、Provider 差し替え、再開、Plan 設定の再開、停止、`status()` がすべて passed だった。ハーネスが使う上流ファイルと、`which@5.0.0` を含む依存は変わっていない。
+
+未検証：0.12.0 の実 daemon と実 UI での導入・セッション、実行中の ZCode ターンへの `paseo send --steer`、`github:` 形式での実際の Git 導入、0.11.x と最低要件 0.8.0 に対する `test:upstream`。
+
 # ZCode 3.14.5 の確認（2026-10-11）
 
 [Issue #53](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/53) の調査。確認済み変更履歴を 3.14.5 に進めるが、ソース基準、最低対応版、管理下ランタイムの固定値は変更しない。**管理下ランタイムは ADR 19 のパッチ済み 3.14.3-paseo.1 を維持する。3.14.5 の互換性を実証したという意味ではない。**

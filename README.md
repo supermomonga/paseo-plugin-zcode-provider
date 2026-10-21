@@ -10,7 +10,7 @@ This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai.
 
 | Setting        | Requirement                                                                                                                             |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Paseo          | 0.8.0 or later; development SDK 0.11.0-beta.5                                                                                           |
+| Paseo          | 0.8.0 or later; development SDK 0.12.0                                                                                                  |
 | Plugin Node.js | 22.12.0 or later (the Paseo daemon's runtime)                                                                                           |
 | Managed setup  | darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64                                                                                |
 | ZCode          | Managed: 3.14.3 (release `3.14.3-paseo.1`) with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
@@ -26,7 +26,7 @@ paseo plugin ls
 
 You can also paste `npm:paseo-plugin-zcode-provider` into **Settings → Plugins → Plugin source**. npm packages require Paseo 0.9.0 or later and npm on the daemon host. Paseo installs the released version and compiles the plugin. Update with `paseo plugin update zcode-provider`. Plugins execute with the daemon user's permissions.
 
-To follow the `main` branch instead, install the Git repository with `paseo plugin add supermomonga/paseo-plugin-zcode-provider`. Paseo prepares the checkout with `npm ci`.
+To follow the `main` branch instead, install the Git repository with `paseo plugin add github:supermomonga/paseo-plugin-zcode-provider` (Paseo 0.9.0 or later). Since Paseo 0.11.0, the form without `github:` looks the plugin up in Paseo's plugin registry, which does not list it. Paseo prepares the checkout with `npm ci`.
 
 ## Setup
 
@@ -59,7 +59,7 @@ API keys are sent to ZCode, which stores them as Desktop does, and are never sho
 
 ### Coding Plan usage
 
-On Paseo 0.11 and later, Paseo's **Usage** screen and sidebar usage summary show a **ZCode** card for the signed-in account's Individual Coding Plan (Z.ai or BigModel). It lists the 5-hour, weekly, monthly tool-call and ZCode MCP quotas with their reset times, as ZCode Desktop does. The plugin asks ZCode's official usage service for this plan only, on the same ZCode Server as the Account tab. The service never uses an API key from the environment. Team Plan and Start Plan are not shown. Paseo 0.11.0-beta.5 does not yet show usage in a ZCode agent's popover.
+On Paseo 0.11 and later, Paseo's **Usage** screen and sidebar usage summary show a **ZCode** card for the signed-in account's Individual Coding Plan (Z.ai or BigModel). It lists the 5-hour, weekly, monthly tool-call and ZCode MCP quotas with their reset times, as ZCode Desktop does. The plugin asks ZCode's official usage service for this plan only, on the same ZCode Server as the Account tab. The service never uses an API key from the environment. Team Plan and Start Plan are not shown. Paseo 0.12.0 does not yet show usage in a ZCode agent's popover.
 
 ### Using your own runtime
 
