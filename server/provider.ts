@@ -497,7 +497,7 @@ export class ZCodeConnection implements ProviderConnection {
     if (config.systemPrompt?.trim())
       throw new AdapterError(
         "INVALID_CONFIGURATION",
-        "Custom system prompts are unsupported by the verified ZCode host",
+        "ZCode does not support custom system prompts. Remove any added by Paseo's System prompt setting (Orchestration) or by another plugin.",
       );
     if (!config.persist)
       throw new AdapterError(
@@ -814,12 +814,23 @@ function publicError(error: unknown): ProviderError {
     PERSISTENCE_WRITE_FAILED:
       "ZCode resume information could not be saved. The prompt was not sent.",
   };
+  // diagnosticError keeps the thrown error as the cause. Only a configuration
+  // reason the plugin raised itself is shown; wrapped native or unexpected
+  // failures keep the generic text.
+  const configurationReason =
+    error instanceof AdapterError &&
+    error.code === "INVALID_CONFIGURATION" &&
+    error.cause instanceof AdapterError
+      ? error.message
+      : undefined;
   return {
     diagnostic: formatDiagnostic(error),
     code: error instanceof AdapterError ? error.code : "INVALID_CONFIGURATION",
     message:
       error instanceof AdapterError
-        ? (messages[error.code] ?? `ZCode operation failed (${error.code})`)
+        ? (messages[error.code] ??
+          configurationReason ??
+          `ZCode operation failed (${error.code})`)
         : "Invalid ZCode provider request",
   };
 }

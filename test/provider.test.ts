@@ -236,13 +236,30 @@ it.each([1, 2])(
   },
 );
 it.each([
-  { persist: false },
-  { systemPrompt: "custom" },
-  { providerOptions: { unknown: true } },
-])("explicitly rejects unsupported configuration", async (override) => {
-  const f = await fixture();
-  expect(await f.open(override)).toMatchObject({ type: "request.failed" });
-});
+  {
+    override: { persist: false },
+    message: "The verified ZCode host requires persistent sessions",
+  },
+  {
+    override: { systemPrompt: "custom" },
+    message: expect.stringContaining("does not support custom system prompts"),
+  },
+  // Schema failures carry no plugin-authored reason, so the text stays generic.
+  {
+    override: { providerOptions: { unknown: true } },
+    message: "ZCode operation failed (INVALID_CONFIGURATION)",
+  },
+])(
+  "explicitly rejects unsupported configuration with its reason",
+  async ({ override, message }) => {
+    const f = await fixture();
+    expect(await f.open(override)).toMatchObject({
+      type: "request.failed",
+      error: { code: "INVALID_CONFIGURATION", message },
+    });
+    expect(f.host.calls).toEqual([]);
+  },
+);
 it("reports cumulative usage without adding repeated snapshots", async () => {
   const f = await fixture();
   await f.open();
