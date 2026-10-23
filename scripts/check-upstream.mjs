@@ -215,10 +215,12 @@ try {
     const run = await resumed.startTurn("Continue", {
       clientMessageId: "next",
     });
+    // The Web UI always asks to clear pending permissions when steering.
     assert.deepEqual(
       await resumed.steerActiveTurn("Guide", {
         expectedTurnId: run.turnId,
         clientMessageId: "guide",
+        clearPendingPermissions: true,
       }),
       { status: "accepted" },
     );

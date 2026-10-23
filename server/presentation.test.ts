@@ -60,6 +60,55 @@ it.each([false, true])(
     ).toEqual({ action: interrupt ? "cancel" : "decline" });
   },
 );
+it("declines each interaction with its first deny action, without interrupting", () => {
+  const permission = presentInteraction({
+    interactionId: "p",
+    kind: "permission",
+    anchorRowId: 1,
+    createdAt: 1,
+    payload: {
+      kind: "permission",
+      toolCallId: "t",
+      toolName: "CreateWorkflow",
+      summary: "create",
+      detail: {},
+      options: [
+        { optionId: "allowOnce", label: "Once", kind: "allowOnce" },
+        { optionId: "deny", label: "Deny", kind: "deny" },
+        {
+          optionId: "workflowRefine",
+          label: "Refine",
+          kind: "custom",
+          response: { decision: "deny" },
+        },
+      ],
+    },
+  })!;
+  expect(permission.decline).toEqual({ optionId: "deny" });
+  const plan = presentInteraction({
+    ...question,
+    payload: {
+      kind: "userInput",
+      prompt: "Review",
+      freeText: true,
+      input: { plan: "# Plan" },
+      schema: { interaction: "plan_approval", toolName: "ExitPlanMode" },
+      questions: [
+        {
+          question: "Approve?",
+          header: "Plan",
+          options: [{ value: "approve", label: "Approve" }],
+        },
+      ],
+    },
+  })!;
+  expect(plan.decline).toEqual(
+    plan.answer({ behavior: "deny", selectedActionId: "dismiss:question-1" }),
+  );
+  const asked = presentInteraction(question)!;
+  expect(asked.decline).toEqual(asked.answer({ behavior: "deny" }));
+  expect(asked.decline).toEqual({ action: "decline" });
+});
 it("does not offer full access as allow once", () => {
   const p = presentInteraction({
     interactionId: "p",

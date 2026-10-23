@@ -419,6 +419,160 @@ it("answers native interactions once and ignores responses after their observed 
     },
   });
 });
+it("steers a typed message, which always asks to clear pending permissions", async () => {
+  const f = await fixture();
+  await f.open();
+  await f.prompt();
+  await f.send({
+    type: "session.prompt",
+    sessionId: "public",
+    prompt: {
+      clientMessageId: "typed",
+      input: { type: "message", content: [{ type: "text", text: "steer" }] },
+      delivery: "steer",
+      clearPendingPermissions: true,
+    },
+  });
+  expect(
+    await f.wait(
+      (e) =>
+        e.type === "session.prompt_result" && e.clientMessageId === "typed",
+    ),
+  ).toMatchObject({ result: { type: "steer" } });
+  await completeTurn(f.host);
+  expect(
+    f.host.calls.some((c) => c.params?.envelope?.type === "resolveInteraction"),
+  ).toBe(false);
+});
+it("declines interactions blocking a typed steer until ZCode reads it", async () => {
+  const f = await fixture();
+  await f.open();
+  await f.prompt();
+  const permission = (id: string) => ({
+    interactionId: id,
+    kind: "permission" as const,
+    anchorRowId: 1,
+    createdAt: 1,
+    payload: {
+      kind: "permission" as const,
+      toolCallId: id,
+      toolName: "Bash",
+      summary: "run",
+      detail: { command: "pwd" },
+      options: [
+        { optionId: "once", label: "Once", kind: "allowOnce" as const },
+        { optionId: "deny", label: "Deny", kind: "deny" as const },
+      ],
+    },
+  });
+  const request = async (id: string) => {
+    await f.host.deltas([
+      {
+        op: "state.updated",
+        patch: {
+          pendingInteractions: [
+            ...f.host.state.pendingInteractions,
+            permission(id),
+          ],
+        },
+      },
+    ]);
+    await f.wait((e) => e.type === "session.permission" && e.request.id === id);
+  };
+  const resolutions = () =>
+    f.host.calls
+      .filter((c) => c.params?.envelope?.type === "resolveInteraction")
+      .map((c) => c.params.envelope.payload);
+  await request("blocking");
+  f.host.deferConsumption = true;
+  await f.send({
+    type: "session.prompt",
+    sessionId: "public",
+    prompt: {
+      clientMessageId: "typed",
+      input: { type: "message", content: [{ type: "text", text: "steer" }] },
+      delivery: "steer",
+      clearPendingPermissions: true,
+    },
+  });
+  expect(
+    await f.wait(
+      (e) =>
+        e.type === "session.prompt_result" && e.clientMessageId === "typed",
+    ),
+  ).toMatchObject({ result: { type: "steer" } });
+  await f.wait(
+    (e) =>
+      e.type === "session.permission_resolved" && e.permissionId === "blocking",
+  );
+  // A later tool of the same model step asks again before the steer is read.
+  await request("later");
+  await f.wait(
+    (e) =>
+      e.type === "session.permission_resolved" && e.permissionId === "later",
+  );
+  const steer = f.host.calls.findLast(
+    (c) => c.params?.envelope?.type === "sendText",
+  )!.params.envelope.commandId;
+  await f.host.consume(steer, "steer", true);
+  await request("after-read");
+  await f.send({
+    type: "session.permission",
+    sessionId: "public",
+    permissionId: "after-read",
+    response: { behavior: "allow", selectedActionId: "once" },
+  });
+  await f.wait(
+    (e) =>
+      e.type === "session.permission_resolved" &&
+      e.permissionId === "after-read",
+  );
+  expect(resolutions()).toEqual([
+    { interactionId: "blocking", answer: { optionId: "deny" } },
+    { interactionId: "later", answer: { optionId: "deny" } },
+    { interactionId: "after-read", answer: { optionId: "once" } },
+  ]);
+  await completeTurn(f.host);
+  expect(f.events.some((e) => e.type === "session.runtime_failed")).toBe(false);
+});
+it("accepts Paseo's replacement prompt after a steer was not admitted", async () => {
+  const f = await fixture();
+  await f.open();
+  await f.prompt();
+  const input = {
+    type: "message" as const,
+    content: [{ type: "text" as const, text: "/review src" }],
+  };
+  await f.send({
+    type: "session.prompt",
+    sessionId: "public",
+    prompt: { clientMessageId: "m2", input, delivery: "steer" },
+  });
+  expect(
+    await f.wait(
+      (e) => e.type === "session.prompt_result" && e.clientMessageId === "m2",
+    ),
+  ).toMatchObject({ result: { type: "failed" } });
+  // Paseo interrupts and resends the unavailable steer with its clientMessageId.
+  await f.send({
+    type: "session.interrupt",
+    sessionId: "public",
+    requestId: "stop",
+  });
+  await f.wait((e) => e.type === "session.turn" && e.state === "canceled");
+  f.events.length = 0;
+  await f.send({
+    type: "session.prompt",
+    sessionId: "public",
+    prompt: { clientMessageId: "m2", input, delivery: "auto" },
+  });
+  expect(
+    await f.wait(
+      (e) => e.type === "session.prompt_result" && e.clientMessageId === "m2",
+    ),
+  ).toMatchObject({ result: { type: "turn" } });
+  await completeTurn(f.host);
+});
 it("offers guarded mode only on ZCode 3.15.1 and later", async () => {
   const f = await fixture();
   const modes = () =>

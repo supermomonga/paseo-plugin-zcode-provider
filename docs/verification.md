@@ -1,3 +1,33 @@
+# アプリからの Steer が `Duplicate ZCode clientMessageId` で失敗する（2026-10-24）
+
+ZCode の実行中にアプリからメッセージを送ると、`[System Error] Duplicate ZCode clientMessageId` になり、メッセージが届かなかった。
+
+## 原因
+
+- Paseo は、アプリで入力したメッセージを実行中のターンへ Steer するとき、常に `clearPendingPermissions: true` を付ける（Paseo の `session.ts`）。プラグインはこのフラグ付きの Steer を、`INTERACTION_UNSUPPORTED` の失敗として返していた。
+- Paseo の `PluginAgentSession.steerActiveTurn` は失敗を `unavailable` とみなし、同じ `clientMessageId` のまま、実行中のターンを中断して送り直す（`agent-manager.ts` の `steerOrReplaceActiveTurn`）。プラグインは一度使った ID を重複として拒否していたので、送り直しも `send()` の時点で失敗した。
+- `test:upstream` と `test:steering-runtime` はフラグを付けずに Steer していたので、この経路を通らなかった。
+
+## 修正
+
+- フラグ付きの Steer を通常の Steer と同じく `guide` で送る。ZCode が受け付けた後、その入力の `userInput` 行が現れるまで、保留中の権限確認・質問・Plan 承認を拒否の操作で答える。判断は [ADR 22](adr/0022-paseoが求めるときは受け付けたsteerが読まれるまで保留中の権限確認を拒否する.md) に記録した。
+- 受け付けなかったプロンプトの `clientMessageId` は再利用できるようにした。
+
+## ZCode の挙動（3c5b227）
+
+- 権限確認を待っている間も `guide` の `sendText` は受け付けられ、実行中のターンに積まれる。読まれるのは、そのモデルステップのツール呼び出しがすべて終わった区切りである。
+- 権限確認と質問の拒否ではターンは続き、Steer は同じターンで読まれる。Plan モードで Plan 承認を拒否するとターンが終わり、Steer は `guide.noToolBoundary` でキューに回る。
+- `resolveInteraction` は、対話がすでに無くても `accepted` を返す。
+- 公式 Desktop は対話の保留中は入力欄を隠すので、この状況でメッセージを送らない。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-10-24）
+
+- 追加したテストが修正前に失敗することを確認した。フラグ付きの Steer は `failed` になり、同じ ID の送り直しは `Duplicate ZCode clientMessageId` で失敗した。拒否の処理を外すと、権限確認は拒否されなかった。
+- `npm run typecheck`、`npm test`（22 ファイル、209 tests）、`npm run build`、`npm run format:check` が成功した。
+- Paseo 0.12.0（`cafe4b01c8522ff39560241c5deb01427dc8dc5b`）に対する `npm run test:upstream` が成功した。Paseo の実際のアダプターから `clearPendingPermissions: true` 付きの Steer を送っている。ローカルでは `NODE_PATH` がグローバルの `zod` を解決させ、Git 準備の検査が失敗するので、`NODE_PATH` を外して実行した。
+
+未検証：実モデルと実ランタイムでの、権限確認で止まったターンへの Steer。実 daemon と実 UI での操作。
+
 # 実モデル E2E の停止試験のタイムアウト（2026-10-21）
 
 [Issue #51](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/51) の対応。`check-steering-runtime.mjs` の停止の段階が、まれに 180 秒の期限切れで失敗していた。

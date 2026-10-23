@@ -220,7 +220,9 @@ export class ZCodeConnection implements ProviderConnection {
         if (input.type === "session.prompt") {
           const promptEntry = entry ?? this.sessions.get(input.sessionId);
           if (promptEntry?.messages.get(input.prompt.clientMessageId)) return;
-          promptEntry?.messages.set(input.prompt.clientMessageId, true);
+          // The input was not admitted. Paseo's interrupt-and-replace fallback
+          // for an unavailable steer resends it with the same ID.
+          promptEntry?.messages.delete(input.prompt.clientMessageId);
           this.emit({
             type: "session.prompt_result",
             sessionId: input.sessionId,
@@ -374,11 +376,6 @@ export class ZCodeConnection implements ProviderConnection {
     switch (input.type) {
       case "session.prompt": {
         const prompt = input.prompt.input;
-        if (input.prompt.clearPendingPermissions)
-          throw new AdapterError(
-            "INTERACTION_UNSUPPORTED",
-            "Steering does not resolve pending ZCode permissions",
-          );
         if (input.prompt.delivery === "steer" && !entry.native.hasActiveTurn())
           throw new AdapterError(
             "SESSION_BUSY",
@@ -439,6 +436,7 @@ export class ZCodeConnection implements ProviderConnection {
           {
             clientMessageId: input.prompt.clientMessageId,
             delivery: input.prompt.delivery,
+            clearPendingPermissions: input.prompt.clearPendingPermissions,
             beforeSend: async () => {
               if (!entry.submitted) {
                 await this.persistenceStore.save(

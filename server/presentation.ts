@@ -233,6 +233,8 @@ export function usage(state: ConversationSnapshot): ProviderUsage {
 export interface PresentedInteraction {
   request: ProviderPermissionRequest;
   answer(response: ProviderPermissionResponse): Record<string, unknown>;
+  /** Native answer of the first deny action, without interrupting. */
+  decline: Record<string, unknown>;
 }
 export function presentInteraction(
   interaction: PendingInteraction,
@@ -262,7 +264,8 @@ export function presentInteraction(
         variant: behavior === "allow" ? "primary" : "danger",
       };
     });
-    if (!actions.some((a) => a.behavior === "deny"))
+    const deny = actions.find((a) => a.behavior === "deny");
+    if (!deny)
       throw new AdapterError(
         "NATIVE_PROTOCOL_ERROR",
         "ZCode permission has no deny option",
@@ -299,6 +302,7 @@ export function presentInteraction(
           );
         return { optionId: action.id };
       },
+      decline: { optionId: deny.id },
     };
   }
   if (p.sensitive)
@@ -414,6 +418,7 @@ export function presentInteraction(
           },
         };
       },
+      decline: { action: "decline" },
     };
   }
   return {
@@ -445,6 +450,7 @@ export function presentInteraction(
             content: answerContent(record(response.updatedInput?.answers)),
           };
     },
+    decline: { action: "decline" },
   };
 }
 

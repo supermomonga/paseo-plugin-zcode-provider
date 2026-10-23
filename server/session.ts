@@ -55,6 +55,8 @@ interface Admission {
   accepted: boolean;
   consumed: boolean;
   productTurnId?: string;
+  /** Paseo's clearPendingPermissions: decline interactions until consumed. */
+  releasesInteractions?: boolean;
 }
 interface Run {
   id: string;
@@ -286,6 +288,7 @@ export class ZCodeSession {
         });
       }
     }
+    this.releaseInteractions();
     if (
       this.state.workspaceHookAdmission ||
       this.state.pendingInteractions.some(
@@ -322,6 +325,29 @@ export class ZCodeSession {
       void this.interrupt().catch(() => {}); // interrupt reports terminal transport failures.
     }
     this.maybeComplete();
+  }
+  /**
+   * ZCode reads a steer only after every tool call of the model step settles,
+   * so a parked turn never reads it. While an accepted steer that asked to clear
+   * permissions is unread, decline each pending interaction, including requests
+   * opened after an earlier decline.
+   */
+  private releaseInteractions(): void {
+    const run = this.active;
+    if (
+      !run ||
+      run.cancelled ||
+      ![...run.inputs.values()].some(
+        (i) => i.releasesInteractions && i.accepted && !i.consumed,
+      )
+    )
+      return;
+    for (const [id, interaction] of this.pending) {
+      if (this.answering.has(id)) continue;
+      this.resolveInteraction(id, interaction.decline).catch((error) =>
+        this.runtimeFailed(diagnosticError(error, this.bridge.diagnostic)),
+      );
+    }
   }
   private maybeComplete(): void {
     const run = this.active;
@@ -537,6 +563,7 @@ export class ZCodeSession {
     options?: {
       clientMessageId: string;
       delivery?: "auto" | "steer";
+      clearPendingPermissions?: boolean;
       beforeSend?: () => Promise<void>;
     },
   ): Promise<{ turnId: string }> {
@@ -634,6 +661,7 @@ export class ZCodeSession {
         );
       this.assertOpen();
       input.accepted = true;
+      input.releasesInteractions = options?.clearPendingPermissions === true;
       if (options?.clientMessageId)
         this.emit({
           type: "prompt_accepted",
@@ -701,7 +729,12 @@ export class ZCodeSession {
         "SESSION_NOT_FOUND",
         "ZCode interaction is no longer pending",
       );
-    const answer = pending.answer(response);
+    await this.resolveInteraction(id, pending.answer(response));
+  }
+  private async resolveInteraction(
+    id: string,
+    answer: Record<string, unknown>,
+  ): Promise<void> {
     this.answering.add(id);
     try {
       await this.control("resolveInteraction", { interactionId: id, answer });
