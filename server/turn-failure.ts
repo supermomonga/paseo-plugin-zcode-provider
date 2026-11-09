@@ -29,6 +29,7 @@ const reasonCodes: Partial<Record<ModelFailureReason, TurnFailureCode>> = {
   tls_error: "MODEL_NETWORK_ERROR",
   server_error: "MODEL_PROVIDER_ERROR",
   provider_overloaded: "MODEL_PROVIDER_ERROR",
+  content_filter: "MODEL_CONTENT_FILTERED",
 };
 
 const messages: Record<
@@ -55,6 +56,10 @@ const messages: Record<
   MODEL_PROVIDER_ERROR: [
     "The model provider returned a server error or is overloaded",
     "Try again later.",
+  ],
+  MODEL_CONTENT_FILTERED: [
+    "The model provider's content filter blocked the reply",
+    "Rephrase the request or switch models.",
   ],
   MODEL_REQUEST_FAILED: ["The model provider rejected the request"],
 };

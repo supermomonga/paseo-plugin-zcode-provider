@@ -37,7 +37,7 @@ ADR 7 は、ネイティブのエラーメッセージを ProviderError.diagnost
 Chosen option: 「`lastError.attribution` で分類したコードと、プラグインの固定の文言を返す」。ADR 7 を変えずに、失敗の種類と対処を伝えられるため。
 
 - ターンが失敗したら、そのフレームの `control.lastError` を読む。分類には `attribution.source`（無ければ `lastError.source`）と `attribution.reason` だけを使う。`lastError.code` にはプロバイダー固有のコードがそのまま入ることがあるので使わない。
-- `source` が `provider` か `network` のとき、`reason`（ZCode の `ModelFailureReason`）を次のコードに対応付ける。`MODEL_RATE_LIMITED`（`rate_limited`、`offpeak_queued`）、`MODEL_AUTH_FAILED`（`auth_failed`、`auth_refresh`、`provider_not_configured`）、`MODEL_CONTEXT_EXCEEDED`（`context_exceeded`）、`MODEL_NETWORK_ERROR`（`network_error`、`timeout`、`stream_idle_timeout`、`stale_connection`、`proxy_error`、`tls_error`）、`MODEL_PROVIDER_ERROR`（`server_error`、`provider_overloaded`）。それ以外の `reason` は、`network` なら `MODEL_NETWORK_ERROR`、`provider` なら `MODEL_REQUEST_FAILED` とする。
+- `source` が `provider` か `network` のとき、`reason`（ZCode の `ModelFailureReason`）を次のコードに対応付ける。`MODEL_RATE_LIMITED`（`rate_limited`、`offpeak_queued`）、`MODEL_AUTH_FAILED`（`auth_failed`、`auth_refresh`、`provider_not_configured`）、`MODEL_CONTEXT_EXCEEDED`（`context_exceeded`）、`MODEL_NETWORK_ERROR`（`network_error`、`timeout`、`stream_idle_timeout`、`stale_connection`、`proxy_error`、`tls_error`）、`MODEL_PROVIDER_ERROR`（`server_error`、`provider_overloaded`）、`MODEL_CONTENT_FILTERED`（`content_filter`）。`content_filter` は `ModelFailureReason` の外の値で、3.17.1 から、プロバイダーの内容フィルターが止めた空の応答に付く。それ以外の `reason` は、`network` なら `MODEL_NETWORK_ERROR`、`provider` なら `MODEL_REQUEST_FAILED` とする。
 - `runtime`・`tool` の失敗と、`lastError` が無い失敗は `NATIVE_TURN_FAILED`（`ZCode turn failed.`）とする。ターンの失敗に `NATIVE_PROTOCOL_ERROR` は使わない。
 - 文言はプラグインの固定の英文とし、HTTP ステータスと、数字だけか英字の語だけからなるプロバイダーのエラーコードを添える。利用上限では、Coding Plan のリセット時刻を Paseo 0.11 以降の Usage 画面で確認できると案内する（ADR 18）。
 - ProviderError.diagnostic に `stage: "turn"` と `failure` を加える。`failure` には、許可リストに一致した `source`・`reason`・`errorPhase`・`exceptionKind`、100〜599 の `statusCode`、上記の条件を満たす `providerErrorCode`、`retryable` だけを入れる。`providerId`・`modelId` は利用者が付けた名前を含みうるので入れない。
@@ -51,7 +51,7 @@ Chosen option: 「`lastError.attribution` で分類したコードと、プラ�
 
 ### Confirmation
 
-`server/turn-failure.test.ts` で、各 `reason` と `source` の分類、ネイティブの文字列が文言と診断に入らないこと、報告できないプロバイダーのエラーコードを落とすことを確認する。`test/provider.test.ts` で、3.16.2 の 429 と同じ形の `lastError` が分類されて Paseo の `session.turn` に届くことと、`lastError` が無いときの汎用の失敗を確認する。`npm run test:stdio-runtime` は、ローカルのモデルが 429（1310）を返したときに `MODEL_RATE_LIMITED` が届き、原文が含まれず、次のプロンプトが完了することを実ランタイムで確認する。
+`server/turn-failure.test.ts` で、各 `reason` と `source` の分類、ネイティブの文字列が文言と診断に入らないこと、報告できないプロバイダーのエラーコードを落とすことを確認する。`test/provider.test.ts` で、3.16.2 の 429 と同じ形の `lastError` が分類されて Paseo の `session.turn` に届くことと、`lastError` が無いときの汎用の失敗を確認する。`npm run test:stdio-runtime` は、ローカルのモデルが 429（1310）を返したときに `MODEL_RATE_LIMITED` が届き、原文が含まれず、次のプロンプトが完了することを実ランタイムで確認する。3.17.1 以降のランタイムでは、ローカルのモデルが GLM と同じ `sensitive` で応答を止めたときに、再試行されずに `MODEL_CONTENT_FILTERED` が届くことも確認する。
 
 ## Pros and Cons of the Options
 
@@ -73,3 +73,5 @@ Chosen option: 「`lastError.attribution` で分類したコードと、プラ�
 ## More Information
 
 ADR 7 の診断の方針を補う。ZCode 側の根拠は 3c5b227 の `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts`（TurnError の投影と、ターン開始時の消去）、`packages/shared/src/zcode-protocol-v4/snapshot.ts`（`sessionErrorInfoSchema`、`errorAttributionSchema`）、`apps/zcode-cli/packages/contracts/src/model/index.ts`（`ModelFailureReason`）、`apps/zcode-cli/packages/adapters/src/model/failure-provider-business-codes.ts`、`packages/ui/src/ChatErrorBanner.tsx`。Paseo 側は `packages/server/src/server/agent/agent-manager.ts` の `formatTurnFailedMessage`。ZCode が `lastError` にリセット時刻などを構造化して加えたとき、または Paseo がエラーコードに応じた表示を持ったときに見直す。
+
+2026-11-09 の追記（ZCode 3.17.2、a9fe401）：3.17.1 から、本文もツール呼び出しも無く、終了理由が `content-filter`・`content_filter`・`sensitive` の応答は、再試行されずにすぐ失敗する（`apps/zcode-cli/packages/core/src/runtime/helpers/model-errors.ts` の `createContentFilteredModelResultError`）。3.16.2 までは、疑わしい空の応答として再試行されていた。`attribution` は `source: "provider"`、`reason: "content_filter"` になる。これまでの分類では `MODEL_REQUEST_FAILED` に落ち、診断の許可リストにも無かったので、`MODEL_CONTENT_FILTERED` を加えた。

@@ -13,7 +13,7 @@ This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai.
 | Paseo          | 0.15.0 or later; development SDK 0.15.3                                                                                                 |
 | Plugin Node.js | 22.12.0 or later (the Paseo daemon's runtime)                                                                                           |
 | Managed setup  | darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64                                                                                |
-| ZCode          | Managed: 3.16.2 (release `3.16.2-paseo.1`) with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
+| ZCode          | Managed: 3.17.2 (release `3.17.2-paseo.1`) with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
 
 ## Installation
 
@@ -35,7 +35,7 @@ Open **Settings → Plugins → zcode-provider → Settings**. The screen has th
 On the **Runtime** tab, choose **Download and install**. The screen lists every download, its SHA-256, size and license before you start. Setup runs on the machine hosting the daemon:
 
 - Node.js 24.21.0 from nodejs.org.
-- The ZCode runtime 3.16.2 from this repository's [releases](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.16.2-paseo.1) (`3.16.2-paseo.1`). ZCode does not publish its integrated CLI, so this is an **unofficial build** of the public source with the patches in [patches/zcode](patches/zcode) applied (ADR 19), made and verified by CI. The patches hide Computer Use, Browser Use and Visualize, which cannot run or render here. It is not endorsed or maintained by ZCode or Z.ai.
+- The ZCode runtime 3.17.2 from this repository's [releases](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.17.2-paseo.1) (`3.17.2-paseo.1`). ZCode does not publish its integrated CLI, so this is an **unofficial build** of the public source with the patches in [patches/zcode](patches/zcode) applied (ADR 19), made and verified by CI. The patches hide Computer Use, Browser Use and Visualize, which cannot run or render here. It is not endorsed or maintained by ZCode or Z.ai.
 
 Both archives are verified against SHA-256 values pinned in the plugin and extracted to the daemon user's data directory:
 
@@ -76,9 +76,9 @@ export PASEO_ZCODE_NODE=/absolute/path/to/node       # ordinary Node.js 24.14.0 
 
 `PASEO_ZCODE_RUNTIME` must contain `server/remote/zcode-server.cjs`, `agent/zcode.cjs`, its provider configuration, and `package.json`. Setting only one variable is an error. Newer stable versions are allowed, including major versions; passing the minimum check does not certify compatibility. A terminal export does not change an already running Desktop application. Electron, `process.execPath` and Desktop discovery are never used.
 
-Session environment variables are forwarded, subject to ZCode's own proxy, certificate and runtime environment handling.
+Session environment variables are forwarded, subject to ZCode's own proxy, certificate and runtime environment handling. As Desktop does, the plugin sets `ZCODE_APP_VERSION` to the runtime's ZCode version, so model requests report it instead of the CLI's version.
 
-The source baseline is `3c5b227649371507ddc4eb46ac5133afe6db1cab` (ZCode 3.16.2, an untagged upstream `main` commit; see ADR 20). The managed runtime passed the stdio runtime contract on all five managed platforms in CI. See the [verification record](docs/verification.md) for exact coverage.
+The source baseline is `a9fe401eede6e6e5e01be9048679c206fe6f02d9` (ZCode 3.17.2, upstream tag `v3.17.2`). The managed runtime passed the stdio runtime contract on all five managed platforms in CI. See the [verification record](docs/verification.md) for exact coverage.
 
 ## Behavior
 
@@ -86,10 +86,11 @@ The source baseline is `3c5b227649371507ddc4eb46ac5133afe6db1cab` (ZCode 3.16.2,
 - Text, thoughts, tools, subagent progress, usage and history use V4 snapshots and deltas. Tool output is marked when ZCode truncates it. Usage is cumulative; repeated snapshots do not add it again.
 - Text submitted during generation uses native guidance. Attachments use the native queue. Paseo reports one run across these native turns and completes it only after all accepted input has been consumed and foreground work has ended.
 - Paseo sends every message typed in the app during a run as a steer that asks to clear pending permissions. The plugin queues it first, then declines pending permissions, questions and Plan approvals with their deny action until ZCode reads the message, including requests opened in the meantime. Requests that appear after it is read are left to the user. Declining a Plan approval in Plan mode ends ZCode's turn; the message then starts the next native turn in the same Paseo run (ADR 22).
-- A failed turn reports a code classified from the attribution of ZCode's error: `MODEL_RATE_LIMITED`, `MODEL_AUTH_FAILED`, `MODEL_CONTEXT_EXCEEDED`, `MODEL_NETWORK_ERROR`, `MODEL_PROVIDER_ERROR` or `MODEL_REQUEST_FAILED` when the model provider or network failed, and `NATIVE_TURN_FAILED` otherwise. The message is the plugin's own text with the HTTP status and the provider's error code when known. The provider's own message, which can include a quota reset time, is not shown; Coding Plan reset times appear on Paseo's Usage screen (ADR 23).
+- A failed turn reports a code classified from the attribution of ZCode's error: `MODEL_RATE_LIMITED`, `MODEL_AUTH_FAILED`, `MODEL_CONTEXT_EXCEEDED`, `MODEL_NETWORK_ERROR`, `MODEL_PROVIDER_ERROR`, `MODEL_CONTENT_FILTERED` or `MODEL_REQUEST_FAILED` when the model provider or network failed, and `NATIVE_TURN_FAILED` otherwise. The message is the plugin's own text with the HTTP status and the provider's error code when known. The provider's own message, which can include a quota reset time, is not shown; Coding Plan reset times appear on Paseo's Usage screen (ADR 23).
 - Acceptance is reported once, after the native acknowledgement. Unknown delivery results are never automatically resent. Stop identifies the current native execution, disables automatic queue execution and removes pending input. A new explicit run enables the queue again.
 - As in ZCode Desktop, successful hooks are not shown. A finished hook invocation appears once, as a notification, only when a hook was blocked, failed, timed out or was cancelled; context compaction also appears once, when it ends. Paseo appends every notification it receives, so progress is not reported. Model changes appear only when turned on (see [Timeline](#timeline)).
 - Native permission IDs, option values, questions and Plan approval retain their meanings. Question auto-resolution is disabled for each owned Server. Workspace hook trust is reviewed through the official CLI; it is not represented as “allow once.”
+- From ZCode 3.17, a project's own MCP servers start only after they are trusted in ZCode Desktop (Settings → MCP Servers); ZCode has no CLI command for it. A session that uses the project's MCP configuration shows a warning while any of them awaits trust. MCP servers that Paseo passes to a session replace ZCode's MCP configuration, as before, and are marked as the user's, so the project's trust review does not block them.
 - Each session owns its Server process and environment. Metadata requests use temporary Servers. Closing stdin gives ZCode time to clean up before process termination.
 - With **Release idle agents** (Host settings → Agents, on by default), Paseo closes an agent's session after an hour of inactivity and reopens it on the next message. The plugin keeps the session while ZCode still has a foreground turn, queued input, a pending question or approval, a running background command, subagent or workflow, or a goal that is active or being verified (ADR 25). A finished background command's result that ZCode has not yet delivered is not distinguishable and does not keep it. **Resume agents after restart** reopens agents interrupted by a host restart and sends the resume prompt. Both reopen the saved conversation with Paseo's saved mode and Plan settings ([ADR 14](docs/adr/0014-paseoの保存設定を再適用する復元を保証範囲とする.md)).
 

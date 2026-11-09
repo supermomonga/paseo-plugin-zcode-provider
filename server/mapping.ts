@@ -38,13 +38,22 @@ export const ZCODE_MODES: ProviderMode[] = [
 // ZCode 3.15.1 added guarded ("Autonomous mode"); older Servers reject it.
 const GUARDED_MINIMUM_APP_VERSION = "3.15.1";
 
-// The modes the runtime with this Server version supports.
-export function zcodeModes(appVersion: string | undefined): ProviderMode[] {
-  const guarded =
+// ZCode 3.17.1 added the MCP server `scope`; older Servers reject it.
+const MCP_SCOPE_MINIMUM_APP_VERSION = "3.17.1";
+
+function atLeast(appVersion: string | undefined, minimum: string): boolean {
+  return (
     appVersion !== undefined &&
     valid(appVersion) !== null &&
-    gte(appVersion, GUARDED_MINIMUM_APP_VERSION);
-  return guarded ? ZCODE_MODES : ZCODE_MODES.filter((m) => m.id !== "guarded");
+    gte(appVersion, minimum)
+  );
+}
+
+// The modes the runtime with this Server version supports.
+export function zcodeModes(appVersion: string | undefined): ProviderMode[] {
+  return atLeast(appVersion, GUARDED_MINIMUM_APP_VERSION)
+    ? ZCODE_MODES
+    : ZCODE_MODES.filter((m) => m.id !== "guarded");
 }
 
 export function requireConfigurableMode(
@@ -151,7 +160,14 @@ export function catalogModels(
 
 export function mapMcpServers(
   servers: Record<string, ProviderMcpServerConfig> | undefined,
+  appVersion: string | undefined,
 ): Array<Record<string, unknown>> {
+  // Paseo's servers are not project declarations. Without a scope, ZCode
+  // treats them as such when the project declares the same name or its
+  // configuration is unreadable, and blocks them until the project is trusted.
+  const scope = atLeast(appVersion, MCP_SCOPE_MINIMUM_APP_VERSION)
+    ? { scope: "user" }
+    : {};
   return Object.entries(servers ?? {}).map(([name, server]) => {
     if (name.trim() === "") {
       throw new AdapterError(
@@ -174,6 +190,7 @@ export function mapMcpServers(
       }
       return {
         name,
+        ...scope,
         command: server.command,
         args: server.args ?? [],
         env: Object.entries(server.env ?? {}).map(([key, value]) => ({
@@ -189,7 +206,7 @@ export function mapMcpServers(
       }),
     );
     if (server.type === "http" || server.type === "sse") {
-      return { type: server.type, name, url: server.url, headers };
+      return { type: server.type, name, ...scope, url: server.url, headers };
     }
     throw new AdapterError(
       "INVALID_CONFIGURATION",

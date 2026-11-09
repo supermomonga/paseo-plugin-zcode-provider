@@ -44,7 +44,12 @@ export const LOCAL_TTFT_CLOCK_TTL_MS = 60_000;
 const time = z.number().finite().nonnegative();
 const identifier = z.string().min(1).max(128);
 export const localTtftContextSchema = z
-  .object({ version: z.literal(1), observationId: z.string().uuid() })
+  .object({
+    version: z.literal(1),
+    observationId: z.string().uuid(),
+    // 本地默认采集不能顺带开启云端；在一次发送开始时冻结出口选择。
+    localOnly: z.literal(true).optional(),
+  })
   .strict();
 export type LocalTtftContext = z.infer<typeof localTtftContextSchema>;
 export const localTtftClockSchema = z
@@ -123,6 +128,7 @@ export const localTtftRecordSchema = z
   .object({
     version: z.literal(1),
     observationId: z.string().uuid(),
+    localOnly: z.literal(true).optional(),
     commandId: identifier.optional(),
     sessionId: identifier.optional(),
     turnId: identifier.optional(),
@@ -189,4 +195,53 @@ export const localTtftBatchSchema = z
 export type LocalTtftBatch = z.infer<typeof localTtftBatchSchema>;
 export function localTtftNow(): number {
   return performance.timeOrigin + performance.now();
+}
+
+/** 有界异步诊断队列；文件 I/O 由宿主 adapter 注入，不参与业务等待。 */
+export function createLocalTtftLogQueue(
+  write: (entries: readonly { path: string; line: string }[], dropped: number) => Promise<void>,
+  maxChars = 262_144,
+) {
+  let entries: { path: string; line: string }[] = [];
+  let chars = 0;
+  let dropped = 0;
+  let draining: Promise<void> | undefined;
+  const drain = async () => {
+    while (entries.length) {
+      const batch = entries;
+      entries = [];
+      chars = 0;
+      try {
+        await write(batch, dropped);
+      } catch {
+        dropped += batch.length;
+      }
+    }
+  };
+  const schedule = () => {
+    draining ??= Promise.resolve()
+      .then(drain)
+      .finally(() => {
+        draining = undefined;
+        // drain 的 Promise 收口前仍可能有新记录进入，不能让它等下一次业务日志才落盘。
+        if (entries.length) schedule();
+      });
+  };
+  return {
+    enqueue(entry: { path: string; line: string }): void {
+      if (chars + entry.line.length > maxChars) {
+        dropped++;
+        return;
+      }
+      entries.push(entry);
+      chars += entry.line.length;
+      schedule();
+    },
+    async flush(): Promise<void> {
+      while (draining) await draining;
+    },
+    get dropped(): number {
+      return dropped;
+    },
+  };
 }

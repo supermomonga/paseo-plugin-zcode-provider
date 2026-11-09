@@ -17,8 +17,11 @@ const stages = [
   "session",
   "turn",
 ] as const;
-// ZCode's ModelFailureReason (apps/zcode-cli/packages/contracts/src/model/index.ts at 3c5b227).
+// ZCode's ModelFailureReason (apps/zcode-cli/packages/contracts/src/model/index.ts at
+// a9fe401), plus content_filter, which 3.17 sets outside that list for a reply
+// the provider's content filter blocked (core/src/runtime/helpers/model-errors.ts).
 export const modelFailureReasons = [
+  "content_filter",
   "rate_limited",
   "provider_overloaded",
   "server_error",

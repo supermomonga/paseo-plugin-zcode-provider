@@ -563,7 +563,10 @@ export class ZCodeConnection implements ProviderConnection {
                     }
                   : {}),
               }),
-          mcpServers: mapMcpServers(config.mcpServers),
+          mcpServers: mapMcpServers(
+            config.mcpServers,
+            host.diagnostic.appVersion,
+          ),
         },
         SessionSnapshotSchema,
         60000,
@@ -578,6 +581,8 @@ export class ZCodeConnection implements ProviderConnection {
         modelCatalog: selection.models,
         timeline: this.timeline,
         onClose() {},
+        // A non-empty list replaces ZCode's MCP configuration files.
+        projectMcpServers: Object.keys(config.mcpServers ?? {}).length === 0,
       });
       if (
         initialModel &&

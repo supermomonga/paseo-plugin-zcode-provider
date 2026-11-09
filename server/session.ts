@@ -99,6 +99,8 @@ export class ZCodeSession {
     private modelCatalog: readonly ModelOption[],
     private readonly timeline: () => TimelinePreferences,
     private readonly onClose: () => void,
+    /** False when Paseo's MCP servers replace the project's configuration. */
+    private readonly projectMcpServers: boolean,
   ) {
     assertSnapshotWorkspace(snapshot, workspace);
     this.id = snapshot.session.sessionId;
@@ -114,6 +116,7 @@ export class ZCodeSession {
     modelCatalog: readonly ModelOption[];
     timeline: () => TimelinePreferences;
     onClose: () => void;
+    projectMcpServers: boolean;
   }): Promise<ZCodeSession> {
     const session = new ZCodeSession(
       options.bridge,
@@ -123,6 +126,7 @@ export class ZCodeSession {
       options.modelCatalog,
       options.timeline,
       options.onClose,
+      options.projectMcpServers,
     );
     session.unlistenFailure = options.bridge.onFailure((error) =>
       session.runtimeFailed(error),
@@ -316,19 +320,18 @@ export class ZCodeSession {
       this.state.pendingInteractions.some(
         (i) => i.kind === "workspaceHookReview",
       )
-    ) {
-      const item: ProviderTimelineItem = {
-        id: "zcode:hook-trust",
-        type: "notification",
-        level: "warning",
-        message:
-          "ZCode workspace hooks require trust review. Review them with the official zcode hooks trust command.",
-      };
-      if (!this.presented.has(item.id)) {
-        this.presented.set(item.id, { item });
-        this.runEvent({ type: "timeline", item });
-      }
-    }
+    )
+      this.warnOnce(
+        "zcode:hook-trust",
+        "ZCode workspace hooks require trust review. Review them with the official zcode hooks trust command.",
+      );
+    // ZCode 3.17 counts the project's declarations even when Paseo's servers
+    // replace them, so the warning only applies to the project's configuration.
+    if (this.projectMcpServers && this.state.workspaceMcpAdmission)
+      this.warnOnce(
+        "zcode:mcp-trust",
+        "ZCode has not started this project's MCP servers because they are not trusted. Trust them in ZCode Desktop under Settings → MCP Servers, then start a new session.",
+      );
     this.changed();
     const run = this.active;
     if (
@@ -370,6 +373,17 @@ export class ZCodeSession {
         this.runtimeFailed(diagnosticError(error, this.bridge.diagnostic)),
       );
     }
+  }
+  private warnOnce(id: string, message: string): void {
+    if (this.presented.has(id)) return;
+    const item: ProviderTimelineItem = {
+      id,
+      type: "notification",
+      level: "warning",
+      message,
+    };
+    this.presented.set(id, { item });
+    this.runEvent({ type: "timeline", item });
   }
   private maybeComplete(): void {
     const run = this.active;

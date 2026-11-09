@@ -77,6 +77,23 @@ it("starts the Server without unsupported capabilities, whatever the caller sets
     await bridge.close();
   }
 });
+it("gives the Server the runtime's app version, as Desktop does", async () => {
+  const bridge = ZCodeHostBridge.start(runtime, logger, {
+    ...process.env,
+    ZCODE_APP_VERSION: "0.0.1",
+  });
+  try {
+    expect(
+      await bridge.request(
+        "readEnvironment",
+        ["ZCODE_APP_VERSION"],
+        z.unknown(),
+      ),
+    ).toEqual({ ZCODE_APP_VERSION: "3.14.0" });
+  } finally {
+    await bridge.close();
+  }
+});
 it.each(["bad-hello", "bad-v4"])(
   "rejects %s and collects the process",
   async (scenario) => {

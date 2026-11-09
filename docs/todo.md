@@ -20,6 +20,8 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 - native の長い会話・世代変更・子エージェントからの権限要求。background continuation は、`run_in_background` の Bash の結果が届くまでを契約試験で確認した。現在の契約試験の結果と実行確認を混同しない。
 - アイドル時の解放（ADR 25）で、完了したがまだ届いていないバックグラウンドの結果が失われるか。固定ソースの V4 の状態は、届けた後も `resultPending` を残すので区別できない。ZCode が届けた項目を消すようになったら、扱いを見直す。
 - Desktop でアーカイブした会話。ZCode 3.16 の `session/list` はアーカイブを除かなくなり、Paseo の一覧にも出る。アーカイブはサービス側のタスク索引（`zcodeTaskService`）にあるので、公式サービスで除外できるか確認する。
+- プロジェクトの MCP の信頼（ZCode 3.17）。Desktop の Settings → MCP Servers で付けた信頼が、プラグインの Server のセッションにも効くか。保存先は共有の `~/.zcode/security/workspace-mcp-trust-v1.json` で、ローカルのワークスペースは解決済みのパスで識別される（ソースからの推定）。シンボリックリンク経由のフォルダーでは一致しない可能性がある。
+- ZCode Sites（3.17.2 の公式プラグイン `zcode-site`）でのデプロイ。CLI は Bash から `node` で動き、認証は Server の公式の経路を使うので、プラグインからも使えるとみて隠していない。サインインした実ランタイムで `zcode-site list` を試していない。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 
 ## 今回追加しない機能

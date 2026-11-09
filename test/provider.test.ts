@@ -378,6 +378,58 @@ it("keeps the generic turn failure when ZCode reports no error", async () => {
     error: { code: "NATIVE_TURN_FAILED", message: "ZCode turn failed." },
   });
 });
+it("warns once about untrusted project MCP servers only when the project's configuration is used", async () => {
+  const admission = (digest: string) =>
+    [
+      {
+        op: "state.updated" as const,
+        patch: {
+          workspaceMcpAdmission: { pendingCount: 1, bundleDigest: digest },
+        },
+      },
+    ] as const;
+  const compaction = (f: Awaited<ReturnType<typeof fixture>>) =>
+    f.host.append({
+      ...f.host.rowBase(),
+      kind: "timelineMarker",
+      marker: { type: "compact", origin: "auto", status: "success" },
+    });
+  const notices = (f: Awaited<ReturnType<typeof fixture>>) =>
+    f.events.flatMap((e) =>
+      e.type === "timeline.item" && e.item.type === "notification"
+        ? [e.item.message]
+        : [],
+    );
+  const project = await fixture();
+  await project.open();
+  await project.host.deltas([...admission("a".repeat(64))]);
+  await project.host.deltas([...admission("b".repeat(64))]);
+  await compaction(project);
+  await project.wait(
+    (e) =>
+      e.type === "timeline.item" &&
+      e.item.type === "notification" &&
+      e.item.message.startsWith("Context compaction"),
+  );
+  expect(notices(project)).toEqual([
+    "ZCode has not started this project's MCP servers because they are not trusted. Trust them in ZCode Desktop under Settings → MCP Servers, then start a new session.",
+    "Context compaction: success",
+  ]);
+  // Paseo's servers replace the project's, which ZCode still counts.
+  const paseo = await fixture();
+  await paseo.open({
+    mcpServers: { paseo: { type: "http", url: "http://127.0.0.1/mcp" } },
+  });
+  await paseo.host.deltas([...admission("a".repeat(64))]);
+  await compaction(paseo);
+  await paseo.wait(
+    (e) =>
+      e.type === "timeline.item" &&
+      e.item.type === "notification" &&
+      e.item.message.startsWith("Context compaction"),
+  );
+  expect(notices(paseo)).toEqual(["Context compaction: success"]);
+});
 it("shows model change markers only while the setting is on when first seen", async () => {
   const preferences = { showModelChanges: false };
   const f = await fixture(() => preferences);
