@@ -38,7 +38,7 @@ const messages: Record<
   NATIVE_TURN_FAILED: ["ZCode turn failed"],
   MODEL_RATE_LIMITED: [
     "The model provider's usage or rate limit was reached",
-    "Wait for it to reset or switch models. For a ZCode Coding Plan, Paseo 0.11 and later show the reset times on the Usage screen.",
+    "Wait for it to reset or switch models. For a ZCode Coding Plan, Paseo shows the reset times on the Usage screen.",
   ],
   MODEL_AUTH_FAILED: [
     "The model provider is not signed in or rejected the credentials",

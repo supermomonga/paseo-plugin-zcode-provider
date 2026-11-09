@@ -466,6 +466,28 @@ export class ZCodeSession {
   hasActiveTurn(): boolean {
     return !!this.active;
   }
+  /**
+   * Whether closing loses no native work (Paseo's idle runtime cleanup).
+   * Background Bash, subagents and workflow runs outlive the foreground turn,
+   * and an active goal continues on its own. Only `running` work counts, as in
+   * ZCode's own `hasBackgroundWork`: a finished one stays `resultPending` even
+   * after the turn that delivered its result.
+   */
+  canStopRuntime(): boolean {
+    this.assertOpen();
+    const state = this.state;
+    return (
+      !this.active &&
+      !this.pendingAdmissions &&
+      this.conversation.idle &&
+      !state.pendingInteractions.length &&
+      !state.pendingCommands.length &&
+      !state.backgroundWorks.some((w) => w.status === "running") &&
+      !state.subagents?.running.length &&
+      state.goal?.status !== "active" &&
+      state.goal?.status !== "verifying"
+    );
+  }
   subscribe(listener: (event: NativeSessionEvent) => void): () => void {
     this.listeners.add(listener);
     listener({ type: "usage_updated", usage: usage(this.state) });

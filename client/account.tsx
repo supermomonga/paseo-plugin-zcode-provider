@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform, Text, View } from "react-native";
+import { Platform, Text, View } from "react-native";
 import {
   getPaseoClient,
   openExternalUrl,
   type PluginSurfaceProps,
   useRpc,
 } from "@getpaseo/plugin/client";
-import { copyText } from "@getpaseo/plugin/client/react-native";
 import {
+  copyText,
   SettingsAction,
   SettingsCard,
   SettingsInput,
@@ -56,18 +56,9 @@ const CUSTOM = "custom";
 const failure = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The account request failed.";
 
-// openExternalUrl, copyText and getPaseoClient arrived in Paseo 0.9; 0.8
-// hosts omit them.
-async function openUrl(url: string): Promise<void> {
-  if (typeof openExternalUrl === "function") await openExternalUrl(url);
-  else await Linking.openURL(url);
-}
-const canCopy = typeof copyText === "function";
-
 // Paseo caches provider catalogs, so new models would otherwise appear only
 // after a manual refresh.
 function refreshCatalog(serverId: string): void {
-  if (typeof getPaseoClient !== "function") return;
   getPaseoClient(serverId)
     .providers.refresh({ providers: ["zcode"] })
     .catch(() => {});
@@ -152,7 +143,7 @@ function Account({
   const { account, signIn } = view;
   const open = (url: string) => {
     setOpenError(null);
-    openUrl(url).catch(() =>
+    openExternalUrl(url).catch(() =>
       setOpenError("The browser could not be opened. Copy the link instead."),
     );
   };
@@ -216,14 +207,12 @@ function Account({
               actionLabel="Open"
               onPress={() => open(signIn.authorizeUrl)}
             />,
-            canCopy ? (
-              <SettingsAction
-                key="copy"
-                label="Sign-in link"
-                actionLabel="Copy"
-                onPress={() => void copyText(signIn.authorizeUrl)}
-              />
-            ) : null,
+            <SettingsAction
+              key="copy"
+              label="Sign-in link"
+              actionLabel="Copy"
+              onPress={() => void copyText(signIn.authorizeUrl)}
+            />,
             <SettingsAction
               key="cancel"
               label="Cancel sign-in"
@@ -415,7 +404,7 @@ function NewProvider({
             label="Get an API key"
             hint={template.apiKeyManagementUrl}
             actionLabel="Open"
-            onPress={() => void openUrl(template.apiKeyManagementUrl!)}
+            onPress={() => void openExternalUrl(template.apiKeyManagementUrl!)}
           />
         ) : null}
         <SettingsAction
@@ -554,7 +543,9 @@ function ProviderEditor({
               label="Get an API key"
               hint={provider.apiKeyManagementUrl}
               actionLabel="Open"
-              onPress={() => void openUrl(provider.apiKeyManagementUrl!)}
+              onPress={() =>
+                void openExternalUrl(provider.apiKeyManagementUrl!)
+              }
             />
           ) : null}
           <SettingsAction

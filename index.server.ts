@@ -34,10 +34,8 @@ export default function contribute(server: PluginServerContext): () => void {
   );
   server.handle(zcodeAccountView, () => account.view());
   server.handle(zcodeAccountChange, (input) => account.change(input));
-  // Usage sources arrived in Paseo 0.11; older daemons do not offer them.
   const usage = createUsageSource(account);
-  if (typeof server.registerUsageSource === "function")
-    server.registerUsageSource(usage.source);
+  server.registerUsageSource(usage.source);
   return () => {
     usage.dispose();
     timeline.dispose();

@@ -1,5 +1,5 @@
 {
   "id": "zcode-provider",
-  "requirements": { "paseo": ">=0.9.0" },
+  "requirements": { "paseo": ">=0.15.0" },
   "build": [["npm", "ci", "--include=dev"]]
 }

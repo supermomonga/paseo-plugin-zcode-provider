@@ -17,7 +17,8 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 - プロキシや社内ミラーのみの環境での取得。現状は nodejs.org と GitHub への直接接続が必要で、失敗時は環境変数の上書きで回避する。
 - Desktop ネイティブ画面とモバイル実機での操作。Electron Helper / 通常 Node の両 daemon 起動と、実 Web UI の入力・質問・承認・停止・再起動復元は確認済み（[検証記録](verification.md)）。
 - macOS x64（管理下セットアップの対象外）、長時間ツール/MCP 子プロセスを含む異常終了時の回収は未検証。
-- native の長い会話・世代変更・background continuation・子エージェントからの権限要求。現在の契約試験の結果と実行確認を混同しない。
+- native の長い会話・世代変更・子エージェントからの権限要求。background continuation は、`run_in_background` の Bash の結果が届くまでを契約試験で確認した。現在の契約試験の結果と実行確認を混同しない。
+- アイドル時の解放（ADR 25）で、完了したがまだ届いていないバックグラウンドの結果が失われるか。固定ソースの V4 の状態は、届けた後も `resultPending` を残すので区別できない。ZCode が届けた項目を消すようになったら、扱いを見直す。
 - Desktop でアーカイブした会話。ZCode 3.16 の `session/list` はアーカイブを除かなくなり、Paseo の一覧にも出る。アーカイブはサービス側のタスク索引（`zcodeTaskService`）にあるので、公式サービスで除外できるか確認する。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 
@@ -31,7 +32,7 @@ Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグ�
 
 `ProviderRegistration.status()` と usage source を採用した（[ADR 18](adr/0018-paseo-0-11のprovider-statusとusage-sourceでランタイムの可用性とcoding-planの利用量を表示する.md)）。残る項目は次のとおり。
 
-- **ZCode エージェント単位の利用量**：0.12.0 の Paseo も、プラグイン Provider のセッションでアカウントを探索しない（`plugin-provider.ts` の `PluginAgentSession` に `usageSession()` が無い）ため、エージェントのポップオーバーに利用量が出ない。プラグインはセッションの範囲の探索に対応済みなので、Paseo が探索するようになったら表示を確認する。
+- **ZCode エージェント単位の利用量**：0.15.3 の Paseo も、プラグイン Provider のセッションでアカウントを探索しない（`plugin-provider.ts` の `PluginAgentSession` に `usageSession()` が無い）ため、エージェントのポップオーバーに利用量が出ない。プラグインはセッションの範囲の探索に対応済みなので、Paseo が探索するようになったら表示を確認する。
 - **Team Plan と Start Plan の利用量**：Desktop は Team Plan に組織とプロジェクトを含む動的なアカウントアクセスを渡し、Start Plan は残高として別に表示する。同じ経路を公式サービスで再現できるか確認してから対応する。
 - **サインイン状態の可用性**：`status()` はランタイムだけを検査する。未サインインやモデルが無い状態は、Server を起動しないと分からないため、従来どおりセッション作成時に知らせる。
-- **初期 usage**：0.10.3、0.11.0-beta.5、0.12.0 でも、`session.ready` 前に送った使用量は購読者へ再通知されない。0.11.0-beta.4 の変更（getpaseo/paseo#6089）は、初回ターン前のメーターをアプリ側で空表示にするものである。制約は残る。
+- **初期 usage**：0.10.3、0.11.0-beta.5、0.12.0 でも、`session.ready` 前に送った使用量は購読者へ再通知されない。0.15.3 のアダプターも、ready 前のイベントは履歴に積むだけで購読者へ流さない。0.11.0-beta.4 の変更（getpaseo/paseo#6089）は、初回ターン前のメーターをアプリ側で空表示にするものである。制約は残る。

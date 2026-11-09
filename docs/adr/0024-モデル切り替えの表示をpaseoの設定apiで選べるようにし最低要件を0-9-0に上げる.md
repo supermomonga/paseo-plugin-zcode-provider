@@ -6,6 +6,8 @@ date: 2026-11-09
 links:
   - target: 8
     kind: amends
+  - target: 25
+    kind: amendedby
 ---
 
 # モデル切り替えの表示をPaseoの設定APIで選べるようにし最低要件を0.9.0に上げる

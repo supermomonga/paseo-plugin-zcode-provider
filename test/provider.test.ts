@@ -467,6 +467,110 @@ it("replays model change markers with the setting current at reopening", async (
     await f.wait((e) => e.type === "timeline.item" && e.item.id === id),
   ).toMatchObject({ item: { message: "Using provider/model" } });
 });
+it("keeps an idle runtime while ZCode background work or a goal remains", async () => {
+  const f = await fixture();
+  expect(await f.open()).toMatchObject({ type: "session.ready" });
+  expect(
+    f.events.find((e) => e.type === "session.opened")?.capabilities,
+  ).toContain("session.can_stop_runtime");
+  let request = 0;
+  const canStop = async () => {
+    const requestId = `stop-${++request}`;
+    await f.send({
+      type: "session.can_stop_runtime",
+      requestId,
+      sessionId: "public",
+    });
+    const reply = await f.wait(
+      (e) => "requestId" in e && e.requestId === requestId,
+    );
+    expect(reply).toMatchObject({
+      type: "session.can_stop_runtime",
+      sessionId: "public",
+    });
+    return reply.type === "session.can_stop_runtime" && reply.canStop;
+  };
+  const work = (status: "running" | "resultPending") => ({
+    workId: "work-1",
+    kind: "bash" as const,
+    title: "npm run dev",
+    status,
+    startedAt: 1,
+    anchorRowId: null,
+  });
+  expect(await canStop()).toBe(true);
+  await f.prompt();
+  expect(await canStop()).toBe(false);
+  await completeTurn(f.host);
+  await f.wait((e) => e.type === "session.turn" && e.state === "completed");
+  expect(await canStop()).toBe(true);
+  await f.host.deltas([
+    { op: "state.updated", patch: { backgroundWorks: [work("running")] } },
+  ]);
+  expect(await canStop()).toBe(false);
+  // ZCode keeps a finished work as resultPending after delivering its result.
+  await f.host.deltas([
+    {
+      op: "state.updated",
+      patch: { backgroundWorks: [work("resultPending")] },
+    },
+  ]);
+  expect(await canStop()).toBe(true);
+  const subagents = (running: number) => ({
+    revision: running + 1,
+    childSessionIds: ["child-1"],
+    running: Array.from({ length: running }, () => ({
+      childSessionId: "child-1",
+      subagentType: "explore",
+      title: "Explore",
+      status: "running" as const,
+    })),
+    endedTotal: 1 - running,
+  });
+  await f.host.deltas([
+    { op: "state.updated", patch: { subagents: subagents(1) } },
+  ]);
+  expect(await canStop()).toBe(false);
+  await f.host.deltas([
+    { op: "state.updated", patch: { subagents: subagents(0) } },
+  ]);
+  expect(await canStop()).toBe(true);
+  const goal = (status: "active" | "verifying" | "paused") => ({
+    targetId: "goal-1",
+    objective: "Ship it",
+    summaryTitle: null,
+    timeUsedSeconds: 0,
+    activeRunStartedAtMs: null,
+    status,
+    iteration: 1,
+    verifications: [],
+    iterations: [],
+  });
+  for (const status of ["active", "verifying"] as const) {
+    await f.host.deltas([
+      { op: "state.updated", patch: { goal: goal(status) } },
+    ]);
+    expect(await canStop()).toBe(false);
+  }
+  await f.host.deltas([
+    { op: "state.updated", patch: { goal: goal("paused") } },
+  ]);
+  expect(await canStop()).toBe(true);
+  // The reply is the answer; Paseo rejects request.completed for this query.
+  expect(
+    f.events.filter(
+      (e) => e.type === "request.completed" && e.requestId.startsWith("stop-"),
+    ),
+  ).toEqual([]);
+  await f.send({
+    type: "session.can_stop_runtime",
+    requestId: "unknown",
+    sessionId: "missing",
+  });
+  expect(
+    await f.wait((e) => "requestId" in e && e.requestId === "unknown"),
+  ).toMatchObject({ type: "request.failed" });
+});
 it("lists native sessions using the current handle version", async () => {
   const f = await fixture();
   await f.send({ type: "sessions", requestId: "list", cwd: f.cwd });

@@ -111,10 +111,16 @@ const modelServer = createServer(async (req, res) => {
                 command: "rm -r guarded-fixture",
                 description: "Remove the guarded fixture directory",
               }
-            : {
-                command: "printf ZCODE_STDIO_BASH_OK",
-                description: "Verify native shell execution",
-              };
+            : scenario === "background"
+              ? {
+                  command: "sleep 3",
+                  description: "Outlive the foreground turn",
+                  run_in_background: true,
+                }
+              : {
+                  command: "printf ZCODE_STDIO_BASH_OK",
+                  description: "Verify native shell execution",
+                };
     const delta = useTool
       ? {
           tool_calls: [
@@ -355,6 +361,17 @@ try {
         e.type === "session.turn" &&
         ["completed", "canceled", "failed"].includes(e.state),
     );
+  // Paseo's idle runtime cleanup asks this before closing a session.
+  const canStopRuntime = async () => {
+    const requestId = `can-stop-${++seq}`;
+    await send({ type: "session.can_stop_runtime", requestId });
+    return (
+      await wait(
+        (e) =>
+          e.type === "session.can_stop_runtime" && e.requestId === requestId,
+      )
+    ).canStop;
+  };
   await connect();
   await connection.send({
     type: "catalog",
@@ -580,6 +597,21 @@ try {
   assert.ok(!JSON.stringify(quota).includes(QUOTA_MESSAGE));
   await prompt("bash");
   assert.equal((await terminal()).state, "completed");
+  assert.equal(await canStopRuntime(), true);
+  // A background Bash outlives the foreground turn and keeps the runtime until
+  // ZCode delivers its result in a turn of its own.
+  await prompt("background");
+  const foreground = await terminal();
+  assert.equal(foreground.state, "completed");
+  assert.equal(await canStopRuntime(), false);
+  const continuation = await wait(
+    (e) =>
+      e.type === "session.turn" &&
+      e.state === "completed" &&
+      e.turnId !== foreground.turnId,
+  );
+  assert.ok(continuation);
+  assert.equal(await canStopRuntime(), true);
   await prompt("command", "/plan");
   assert.equal(
     events.find((e) => e.type === "session.prompt_result").result.type,
@@ -627,6 +659,13 @@ try {
     owned.every((p) => exited(p.pid)),
     "Owned Agent must exit after its Server is killed",
   );
+  // Paseo can resume an agent interrupted by a host restart: it reopens the
+  // saved session with its settings and sends a prompt.
+  await connection.close();
+  await connect();
+  await open(saved, { mode: "yolo", settings: { plan_mode: false } });
+  await prompt("bash", "Resume working.");
+  assert.equal((await terminal()).state, "completed");
   console.log(
     JSON.stringify(
       {
@@ -650,10 +689,12 @@ try {
           "restart after stop",
           "provider quota failure",
           "restart after failure",
+          "idle runtime kept for background Bash",
           "slash command completion",
           "session listing v3",
           "EOF cleanup",
           "Agent cleanup after Server SIGKILL",
+          "resume after Server SIGKILL",
           patched
             ? "unsupported plugins and tool hidden (patched runtime)"
             : "unsupported tool hidden, plugins visible (unpatched runtime)",

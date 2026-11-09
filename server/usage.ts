@@ -1,6 +1,4 @@
 import { createHash } from "node:crypto";
-// Types only, from the module every supported Paseo resolves; Paseo 0.9–0.10
-// reject `@getpaseo/plugin/server/usage` even as a type import.
 import type {
   UsageReport,
   UsageSourceRegistration,
@@ -234,7 +232,7 @@ export interface UsageSourceOptions {
 }
 
 /**
- * Coding Plan quota for Paseo's Usage screen (Paseo 0.11+), read through
+ * Coding Plan quota for Paseo's Usage screen, read through
  * ZCode's official usage-stats service on the account Server (ADR 18).
  */
 export function createUsageSource(

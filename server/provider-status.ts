@@ -62,9 +62,9 @@ async function check(
 }
 
 /**
- * Availability for Paseo's provider snapshot and diagnostics (Paseo 0.11+;
- * older daemons ignore it). It inspects the runtime without starting a Server,
- * so sign-in problems still surface when a session opens.
+ * Availability for Paseo's provider snapshot and diagnostics. It inspects the
+ * runtime without starting a Server, so sign-in problems still surface when a
+ * session opens.
  */
 export function createRuntimeStatus(options: RuntimeStatusOptions = {}) {
   const environment = options.environment ?? process.env;
