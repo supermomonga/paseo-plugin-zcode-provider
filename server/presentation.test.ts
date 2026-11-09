@@ -257,3 +257,37 @@ it("reports context compaction only when it ends", () => {
     message: "Context compaction: success",
   });
 });
+
+it("reports model changes with providers and without the reasoning level", () => {
+  const marker = (change: object) =>
+    ({
+      rowId: 9,
+      turnId: "p",
+      createdAt: 1,
+      createdAtSeq: 1,
+      kind: "timelineMarker",
+      marker: { type: "modelChange", ...change },
+    }) as any;
+  expect(
+    rowTimeline(
+      marker({ toProvider: "magpie", toModel: "GLM-5.3-Flash", toThought: "" }),
+    ),
+  ).toMatchObject({
+    type: "notification",
+    message: "Using magpie/GLM-5.3-Flash",
+  });
+  expect(
+    rowTimeline(
+      marker({
+        fromProvider: "magpie",
+        fromModel: "GLM-5.3-Flash",
+        toProvider: "magpie",
+        toModel: "auto/glm-5.3-flash",
+        toThought: "max",
+      }),
+    ),
+  ).toMatchObject({
+    type: "notification",
+    message: "Model switched magpie/GLM-5.3-Flash → magpie/auto/glm-5.3-flash",
+  });
+});

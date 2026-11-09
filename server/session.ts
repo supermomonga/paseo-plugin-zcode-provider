@@ -51,6 +51,7 @@ import type {
 import { AdapterError } from "./errors.js";
 import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
 import { turnFailure } from "./turn-failure.js";
+import type { TimelinePreferences } from "../shared/timeline.js";
 interface Admission {
   clientMessageId?: string;
   accepted: boolean;
@@ -77,6 +78,7 @@ export class ZCodeSession {
   private readonly seenTurns = new Set<string>();
   private readonly publicTurns = new Map<string, string>();
   private readonly presented = new Map<string, NativeTimelineEntry>();
+  private readonly omitted = new Set<string>();
   private readonly pending = new Map<string, PresentedInteraction>();
   private readonly answering = new Set<string>();
   private readonly resolvedInteractions = new Set<string>();
@@ -95,6 +97,7 @@ export class ZCodeSession {
     private readonly workspace: string,
     private readonly snapshot: SessionSnapshot,
     private modelCatalog: readonly ModelOption[],
+    private readonly timeline: () => TimelinePreferences,
     private readonly onClose: () => void,
   ) {
     assertSnapshotWorkspace(snapshot, workspace);
@@ -109,6 +112,7 @@ export class ZCodeSession {
     workspace: string;
     snapshot: SessionSnapshot;
     modelCatalog: readonly ModelOption[];
+    timeline: () => TimelinePreferences;
     onClose: () => void;
   }): Promise<ZCodeSession> {
     const session = new ZCodeSession(
@@ -117,6 +121,7 @@ export class ZCodeSession {
       options.workspace,
       options.snapshot,
       options.modelCatalog,
+      options.timeline,
       options.onClose,
     );
     session.unlistenFailure = options.bridge.onFailure((error) =>
@@ -134,7 +139,7 @@ export class ZCodeSession {
         if (row.kind === "turnHeader")
           session.seenTurns.add(session.productTurn(row));
         const item = rowTimeline(row);
-        if (item)
+        if (item && !session.omits(row, item.id))
           session.presented.set(item.id, {
             item,
             timestamp: new Date(row.createdAt).toISOString(),
@@ -168,6 +173,22 @@ export class ZCodeSession {
         "ZCode V4 row has no product turn ID",
       );
     return row.productTurnId;
+  }
+  // The setting decides when a marker is first seen. Paseo keeps the items it
+  // has received, and a marker shown after a later change would land at the
+  // end of the timeline.
+  private omits(row: ConversationRow, id: string): boolean {
+    if (
+      row.kind !== "timelineMarker" ||
+      row.marker.type !== "modelChange" ||
+      this.presented.has(id)
+    )
+      return false;
+    if (this.omitted.has(id) || !this.timeline().showModelChanges) {
+      this.omitted.add(id);
+      return true;
+    }
+    return false;
   }
   private newRun(): Run {
     return {
@@ -224,7 +245,7 @@ export class ZCodeSession {
           ? this.admissions.get(row.sourceCommandId)?.clientMessageId
           : undefined;
       const item = rowTimeline(row, clientMessageId);
-      if (!item) continue;
+      if (!item || this.omits(row, item.id)) continue;
       const entry = { item, timestamp: new Date(row.createdAt).toISOString() };
       if (isDeepStrictEqual(entry, this.presented.get(item.id))) continue;
       this.presented.set(item.id, entry);

@@ -3,10 +3,12 @@ import { Pressable, Text, View } from "react-native";
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { AccountTab } from "./account";
 import { RuntimeTab } from "./runtime";
+import { TimelineTab } from "./timeline";
 
 const TABS = [
   { id: "runtime", label: "Runtime" },
   { id: "account", label: "Account" },
+  { id: "timeline", label: "Timeline" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -76,8 +78,10 @@ export function SettingsScreen(props: PluginSurfaceProps) {
       <Tabs value={tab} onChange={setTab} theme={props.theme} />
       {tab === "runtime" ? (
         <RuntimeTab {...props} />
-      ) : (
+      ) : tab === "account" ? (
         <AccountTab {...props} onOpenRuntime={() => setTab("runtime")} />
+      ) : (
+        <TimelineTab {...props} />
       )}
     </View>
   );

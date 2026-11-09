@@ -6,8 +6,8 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
-async function fixture() {
-  const f = await providerFixture();
+async function fixture(...args: Parameters<typeof providerFixture>) {
+  const f = await providerFixture(...args);
   cleanups.push(f.close);
   return f;
 }
@@ -378,27 +378,94 @@ it("keeps the generic turn failure when ZCode reports no error", async () => {
     error: { code: "NATIVE_TURN_FAILED", message: "ZCode turn failed." },
   });
 });
-it("renders configuration markers without inventing a product turn", async () => {
-  const f = await fixture();
+it("shows model change markers only while the setting is on when first seen", async () => {
+  const preferences = { showModelChanges: false };
+  const f = await fixture(() => preferences);
   await f.open();
-  const { productTurnId, turnId, ...base } = f.host.rowBase();
+  const marker = async (toModel: string) => {
+    const { productTurnId, turnId, ...base } = f.host.rowBase();
+    await f.host.append({
+      ...base,
+      turnId: "",
+      kind: "timelineMarker",
+      marker: {
+        type: "modelChange",
+        toProvider: "provider",
+        toModel,
+        toThought: "high",
+      },
+    });
+  };
+  const shown = () =>
+    f.events.flatMap((e) =>
+      e.type === "timeline.item" && e.item.type === "notification"
+        ? [e.item.message]
+        : [],
+    );
+  await marker("hidden");
+  preferences.showModelChanges = true;
+  // A configuration marker does not invent a product turn.
+  await marker("shown");
+  await f.wait(
+    (e) => e.type === "timeline.item" && e.item.type === "notification",
+  );
+  preferences.showModelChanges = false;
+  await marker("hidden-again");
   await f.host.append({
+    ...f.host.rowBase(),
+    kind: "timelineMarker",
+    marker: { type: "compact", origin: "auto", status: "success" },
+  });
+  await f.wait(
+    (e) =>
+      e.type === "timeline.item" &&
+      e.item.type === "notification" &&
+      e.item.message.startsWith("Context compaction"),
+  );
+  expect(shown()).toEqual([
+    "Using provider/shown",
+    "Context compaction: success",
+  ]);
+  expect(f.events.some((e) => e.type === "session.runtime_failed")).toBe(false);
+});
+it("replays model change markers with the setting current at reopening", async () => {
+  const preferences = { showModelChanges: false };
+  const f = await fixture(() => preferences);
+  const { productTurnId, turnId, ...base } = f.host.rowBase();
+  const marker = {
     ...base,
     turnId: "",
-    kind: "timelineMarker",
+    kind: "timelineMarker" as const,
     marker: {
-      type: "modelChange",
+      type: "modelChange" as const,
       toProvider: "provider",
       toModel: "model",
       toThought: "high",
     },
-  });
-  expect(f.events.some((e) => e.type === "session.runtime_failed")).toBe(false);
+  };
+  const id = `zcode:row:${marker.rowId}`;
+  await f.host.append(marker);
+  await f.open();
+  await f.prompt();
+  await completeTurn(f.host);
+  await f.wait((e) => e.type === "session.turn" && e.state === "completed");
   expect(
-    f.events.some(
-      (e) => e.type === "timeline.item" && e.item.type === "notification",
-    ),
-  ).toBe(true);
+    f.events.some((e) => e.type === "timeline.item" && e.item.id === id),
+  ).toBe(false);
+  const persisted = f.events.find((e) => e.type === "session.opened");
+  if (persisted?.type !== "session.opened")
+    throw new Error("Missing persistence");
+  await f.send({
+    type: "session.close",
+    sessionId: "public",
+    requestId: "close",
+  });
+  f.events.length = 0;
+  preferences.showModelChanges = true;
+  await f.open({}, persisted.persistence);
+  expect(
+    await f.wait((e) => e.type === "timeline.item" && e.item.id === id),
+  ).toMatchObject({ item: { message: "Using provider/model" } });
 });
 it("lists native sessions using the current handle version", async () => {
   const f = await fixture();

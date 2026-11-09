@@ -10,7 +10,7 @@ This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai.
 
 | Setting        | Requirement                                                                                                                             |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Paseo          | 0.8.0 or later; development SDK 0.12.0                                                                                                  |
+| Paseo          | 0.9.0 or later; development SDK 0.12.0                                                                                                  |
 | Plugin Node.js | 22.12.0 or later (the Paseo daemon's runtime)                                                                                           |
 | Managed setup  | darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64                                                                                |
 | ZCode          | Managed: 3.16.2 (release `3.16.2-paseo.1`) with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
@@ -30,7 +30,7 @@ To follow the `main` branch instead, install the Git repository with `paseo plug
 
 ## Setup
 
-Open **Settings → Plugins → zcode-provider → Settings**. The screen has two tabs: **Runtime** installs and removes the runtime, and **Account** signs in and manages model providers.
+Open **Settings → Plugins → zcode-provider → Settings**. The screen has three tabs: **Runtime** installs and removes the runtime, **Account** signs in and manages model providers, and **Timeline** chooses what ZCode agents add to the timeline.
 
 On the **Runtime** tab, choose **Download and install**. The screen lists every download, its SHA-256, size and license before you start. Setup runs on the machine hosting the daemon:
 
@@ -56,6 +56,10 @@ The **Account** tab uses ZCode's own account and provider services, the same one
 - **Model providers**: add any number of providers that use an API key, from a ZCode template (Z.ai, BigModel, Kimi, MiniMax, DeepSeek, Alibaba Cloud, OpenAI, Anthropic, xAI, OpenRouter and others) or a custom endpoint with its base URL, API format and model IDs. Providers and models can be turned off, edited and deleted.
 
 API keys are sent to ZCode, which stores them as Desktop does, and are never shown again. The plugin itself stores no credentials. Afterwards, choose **ZCode** when creating an agent; the model list is refreshed after each change on Paseo 0.9 or later.
+
+### Timeline
+
+ZCode adds a line when a turn runs on a different model than the previous turn, such as `Model switched magpie/GLM-5.3-Flash → magpie/auto/glm-5.3-flash`. These lines are hidden by default; turn on **Show model changes** on the **Timeline** tab to show them. The setting is stored by Paseo on the daemon host. It decides each line when the line first arrives: lines already shown stay, and lines that arrived while it was off are not added later. A reopened agent shows its history with the current setting (ADR 24).
 
 ### Coding Plan usage
 
@@ -84,7 +88,7 @@ The source baseline is `3c5b227649371507ddc4eb46ac5133afe6db1cab` (ZCode 3.16.2,
 - Paseo sends every message typed in the app during a run as a steer that asks to clear pending permissions. The plugin queues it first, then declines pending permissions, questions and Plan approvals with their deny action until ZCode reads the message, including requests opened in the meantime. Requests that appear after it is read are left to the user. Declining a Plan approval in Plan mode ends ZCode's turn; the message then starts the next native turn in the same Paseo run (ADR 22).
 - A failed turn reports a code classified from the attribution of ZCode's error: `MODEL_RATE_LIMITED`, `MODEL_AUTH_FAILED`, `MODEL_CONTEXT_EXCEEDED`, `MODEL_NETWORK_ERROR`, `MODEL_PROVIDER_ERROR` or `MODEL_REQUEST_FAILED` when the model provider or network failed, and `NATIVE_TURN_FAILED` otherwise. The message is the plugin's own text with the HTTP status and the provider's error code when known. The provider's own message, which can include a quota reset time, is not shown; Coding Plan reset times appear on Paseo 0.11's Usage screen (ADR 23).
 - Acceptance is reported once, after the native acknowledgement. Unknown delivery results are never automatically resent. Stop identifies the current native execution, disables automatic queue execution and removes pending input. A new explicit run enables the queue again.
-- As in ZCode Desktop, successful hooks are not shown. A finished hook invocation appears once, as a notification, only when a hook was blocked, failed, timed out or was cancelled; context compaction also appears once, when it ends. Paseo appends every notification it receives, so progress is not reported.
+- As in ZCode Desktop, successful hooks are not shown. A finished hook invocation appears once, as a notification, only when a hook was blocked, failed, timed out or was cancelled; context compaction also appears once, when it ends. Paseo appends every notification it receives, so progress is not reported. Model changes appear only when turned on (see [Timeline](#timeline)).
 - Native permission IDs, option values, questions and Plan approval retain their meanings. Question auto-resolution is disabled for each owned Server. Workspace hook trust is reviewed through the official CLI; it is not represented as “allow once.”
 - Each session owns its Server process and environment. Metadata requests use temporary Servers. Closing stdin gives ZCode time to clean up before process termination.
 
