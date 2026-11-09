@@ -50,13 +50,21 @@ try {
     platform: "node",
     format: "esm",
     nodePaths: [join(root, "node_modules")],
+    // Bundled CommonJS dependencies (such as `which`) require Node builtins.
+    banner: {
+      js: 'import { createRequire as createBannerRequire } from "node:module"; const require = createBannerRequire(import.meta.url);',
+    },
   };
+  // Paseo runs these in a compiler worker; load the work itself, as the worker does.
   const sources = {
-    compiler: join(upstream, "packages/server/src/server/plugins/compiler.ts"),
+    compiler: join(
+      upstream,
+      "packages/server/src/server/plugins/compiler-build.ts",
+    ),
     manifest: join(upstream, "packages/server/src/server/plugins/manifest.ts"),
     preparation: join(
       upstream,
-      "packages/server/src/server/plugins/preparation.ts",
+      "packages/server/src/server/plugins/preparation-build.ts",
     ),
     icon: join(upstream, "packages/server/src/server/plugins/provider-icon.ts"),
     adapter: join(
@@ -76,12 +84,13 @@ try {
     });
   const load = (name) =>
     import(pathToFileURL(join(directory, `${name}.mjs`)).href);
-  const { compilePlugin } = await load("compiler");
+  const { compileDirectoryPlugin } = await load("compiler");
   const { readPluginManifest } = await load("manifest");
   const { runPluginBuild } = await load("preparation");
   const { readPluginProviderIcon } = await load("icon");
   const plugin = {
-    compilePlugin,
+    compileDirectoryPlugin,
+    daemonVersion: upstreamPackage.version,
     readPluginManifest,
     readPluginProviderIcon,
     runPluginBuild,
@@ -128,7 +137,7 @@ try {
   registry.replace([registration()]);
   try {
     const client = registry.clients().zcode;
-    // Paseo 0.11 asks the registration's status() instead of connecting.
+    // Paseo asks the registration's status() instead of connecting.
     assert.equal(await client.isAvailable(), true);
     assert.deepEqual(await client.getDiagnostic(), {
       diagnostic: available.diagnostic,
@@ -190,6 +199,24 @@ try {
       "hello",
     );
     assert.equal(events.filter((e) => e.type === "turn_completed").length, 1);
+    // Paseo asks before releasing an idle runtime; ZCode background work keeps it.
+    assert.equal(typeof session.canStopRuntime, "function");
+    assert.equal(await session.canStopRuntime(), true);
+    const backgroundWork = {
+      workId: "work-1",
+      kind: "bash",
+      title: "npm run dev",
+      status: "running",
+      startedAt: 1,
+      anchorRowId: null,
+    };
+    await host.deltas([
+      { op: "state.updated", patch: { backgroundWorks: [backgroundWork] } },
+    ]);
+    assert.equal(await session.canStopRuntime(), false);
+    await host.deltas([
+      { op: "state.updated", patch: { backgroundWorks: [] } },
+    ]);
     await session.setFeature("plan_mode", true);
     assert.equal(host.state.config.planEnabled, true);
     const persistence = session.describePersistence();
@@ -302,6 +329,7 @@ try {
           textSteering: "passed",
           attachmentQueue: "passed",
           singleCompletion: "passed",
+          idleRuntimeVeto: "passed",
           turnFailure: "passed",
           providerReplacement: "passed",
           persistenceResume: "passed",
@@ -322,7 +350,8 @@ try {
 }
 
 async function checkGitPreparation({
-  compilePlugin,
+  compileDirectoryPlugin,
+  daemonVersion,
   readPluginManifest,
   readPluginProviderIcon,
   runPluginBuild,
@@ -347,17 +376,15 @@ async function checkGitPreparation({
     });
 
     const manifest = await readPluginManifest(candidate);
-    const previousNodeEnv = process.env.NODE_ENV;
-    try {
-      if (nodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = nodeEnv;
-      await runPluginBuild(candidate, manifest.build, {
-        info: logPreparation,
-      });
-    } finally {
-      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = previousNodeEnv;
-    }
+    const environment = { ...process.env };
+    if (nodeEnv === undefined) delete environment.NODE_ENV;
+    else environment.NODE_ENV = nodeEnv;
+    await runPluginBuild(
+      candidate,
+      manifest.build,
+      { info: logPreparation },
+      environment,
+    );
 
     await access(join(candidate, "server/build-info.ts"));
     assert.ok(
@@ -369,7 +396,8 @@ async function checkGitPreparation({
     return {
       nodeEnv: nodeEnv ?? "unset",
       ...(await checkContributions({
-        compilePlugin,
+        compileDirectoryPlugin,
+        daemonVersion,
         readPluginProviderIcon,
         candidate,
         requireModule: nodeRequire,
@@ -381,7 +409,8 @@ async function checkGitPreparation({
 }
 
 async function checkNpmInstallation({
-  compilePlugin,
+  compileDirectoryPlugin,
+  daemonVersion,
   readPluginManifest,
   readPluginProviderIcon,
   runPluginBuild,
@@ -435,12 +464,18 @@ async function checkNpmInstallation({
     );
     const candidate = join(installation, "node_modules", name);
     const manifest = await readPluginManifest(candidate);
-    await runPluginBuild(candidate, manifest.build, { info: logPreparation });
+    await runPluginBuild(
+      candidate,
+      manifest.build,
+      { info: logPreparation },
+      { ...process.env },
+    );
     return {
       package: filename,
       // Development dependencies are not installed: Paseo supplies the SDK and zod.
       ...(await checkContributions({
-        compilePlugin,
+        compileDirectoryPlugin,
+        daemonVersion,
         readPluginProviderIcon,
         candidate,
         requireModule: createRequire(join(root, "package.json")),
@@ -480,24 +515,33 @@ function logPreparation(fields, message) {
 
 // Compiles both entries with Paseo's compiler and registers them like Paseo.
 async function checkContributions({
-  compilePlugin,
+  compileDirectoryPlugin,
+  daemonVersion,
   readPluginProviderIcon,
   candidate,
   requireModule,
 }) {
-  const { serverBundle, clientBundle } = await compilePlugin({
-    server: join(candidate, "index.server.ts"),
-    client: join(candidate, "index.client.tsx"),
+  // The daemon checks requirements.paseo against its own version first.
+  await assert.rejects(compileDirectoryPlugin(candidate, "0.14.0"), {
+    message: /requires Paseo >=0\.15\.0/u,
   });
+  const { serverBundle, clientBundle } = await compileDirectoryPlugin(
+    candidate,
+    daemonVersion,
+  );
   assert.ok(clientBundle, "The client entry must compile");
+  assert.ok(
+    !clientBundle.includes('"@getpaseo/plugin/client/react-native"'),
+    "Import Paseo UI from the current entry",
+  );
   assert.ok(
     serverBundle.includes('require("@getpaseo/plugin/server/provider")'),
   );
   const contribution = runInThisContext(serverBundle)((name) =>
     name === "@getpaseo/plugin/server/provider" ? sdk : requireModule(name),
   );
-  // Paseo 0.9+ returns a settings handle; the plugin follows the timeline
-  // settings with it.
+  // Paseo returns a settings handle; the plugin follows the timeline settings
+  // with it.
   const settings = [];
   const registerSettings = (definition) => {
     settings.push(definition.id);
@@ -510,11 +554,14 @@ async function checkContributions({
       subscribe: () => () => {},
     };
   };
-  // Paseo 0.9–0.10 offer no registerUsageSource; the plugin must still load.
   let registered;
+  const sources = [];
   const dispose = contribution.default({
     registerProvider(provider) {
       registered = provider;
+    },
+    registerUsageSource(source) {
+      sources.push(source);
     },
     registerSettings,
     handle() {},
@@ -523,18 +570,7 @@ async function checkContributions({
   assert.equal(registered.id, "zcode");
   assert.equal(typeof registered.status, "function");
   await readPluginProviderIcon(candidate, registered.icon);
-  assert.equal(typeof dispose, "function");
-  await dispose();
-  // Paseo 0.11 checks these fields and the icon when registering a source.
-  const sources = [];
-  const disposeWithUsage = contribution.default({
-    registerProvider() {},
-    registerUsageSource(source) {
-      sources.push(source);
-    },
-    registerSettings,
-    handle() {},
-  });
+  // Paseo checks these fields and the icon when registering a source.
   assert.equal(sources.length, 1);
   const [source] = sources;
   assert.equal(source.id, "zcode");
@@ -543,7 +579,8 @@ async function checkContributions({
   assert.equal(typeof source.fetch, "function");
   assert.equal(typeof source.input.parseAsync, "function");
   await readPluginProviderIcon(candidate, source.icon);
-  await disposeWithUsage();
+  assert.equal(typeof dispose, "function");
+  await dispose();
 
   const clientContribution = runInThisContext(clientBundle)((name) => {
     if (name === "react")
@@ -556,7 +593,6 @@ async function checkContributions({
       return { jsx: () => null, jsxs: () => null };
     if (name === "react-native")
       return {
-        Linking: {},
         Platform: { select: () => undefined },
         Pressable: () => null,
         Text: () => null,
@@ -568,10 +604,9 @@ async function checkContributions({
         useRpc: () => async () => ({}),
         useSettings: () => ({ status: "loading" }),
       };
-    if (name === "@getpaseo/plugin/client/react-native")
-      return { copyText: async () => {} };
     if (name === "@getpaseo/plugin/client/ui")
       return {
+        copyText: async () => {},
         SettingsAction: () => null,
         SettingsCard: () => null,
         SettingsInput: () => null,
@@ -599,6 +634,7 @@ async function checkContributions({
   return {
     compiledBytes: Buffer.byteLength(serverBundle),
     clientCompiledBytes: Buffer.byteLength(clientBundle),
+    paseoRequirement: "passed",
     registration: "passed",
     settingsRegistration: "passed",
     usageSourceRegistration: "passed",

@@ -1,3 +1,37 @@
+# Paseo 0.15.3 への追従（2026-11-09）
+
+Issue #69、#75〜#82、#85、#87〜#89 の対応。Paseo 0.13.0-beta.1 から 0.15.3 までの変更履歴を読んだ。あわせて v0.12.0 と v0.15.3（`d91ae138cb931447635e94296023414a58bedcc5`）の差分を確認した。対象は `packages/plugin`、`plugin-provider.ts`、`agent-manager.ts`、アイドル時の解放、プラグインのコンパイラと準備処理である。判断は [ADR 25](adr/0025-paseo-0-15を最低要件にしzcodeの作業が残る間はアイドル時のランタイム解放を拒否する.md) に記録した。
+
+## 変更履歴とこのプロバイダ
+
+- **Provider の契約**：0.14 で `session.can_stop_runtime` の入力とイベントが加わった。それ以外の入力・イベント・capabilities と usage source の契約は変わっていない。
+- **アイドル時の解放（#7782）**：既定でオンで、1 時間アイドルのセッションを close する。拒否するには、プロバイダーが capability を宣言する必要がある。プラグインのバックグラウンドの作業は `tool_call` として出しているので、Paseo の基本条件では守られない。`session.can_stop_runtime` を実装した。
+- **再起動後の再開（#8127、#8619、既定はオフ）**：既存の `session.open` の再開経路を使い、保存された `modeId` と `featureValues` を渡してから `Resume working.` を送る。実ランタイムで確認した（下記）。
+- **UI の入口（#7474）**：`@getpaseo/plugin/client/react-native` は非推奨になった。`copyText` を `@getpaseo/plugin/client/ui` から読むように変えた。0.15.3 のアプリの `client/ui`（`packages/app/src/plugins/react-native/ui.ts`）も `copyText` を出している。
+- **コンパイラ**：0.15 ではコンパイルと準備を worker で行う。`test:upstream` は、worker が読むモジュール（`compiler-build.ts`、`preparation-build.ts`）を直接使うように変えた。アダプターは CommonJS の `which` を取り込むので、バンドルに `require` を用意した。
+- **確認したが変更しない項目**：次の項目は、このプロバイダの経路に関係しないか、Paseo の中だけで完結する。
+  - プラグインがエージェントに渡すツール（#7938）は、Paseo の MCP サーバーのツールとして登録される（`registerPluginTools`）。
+  - turn-ended フックの `timeline` が空になった変更（#7477）と、worktree のフック（#8117、#8081）。プラグインはフックを使わない。
+  - プラグインの会話を rewind した後の修正（#8368）。プラグインは rewind を宣言しない。
+  - 表示中だけ利用量を取得し、**Check usage** で止められる変更（#8181）。usage source の呼び出しは、この設定で止まる要求からだけ行われる。
+  - 翻訳・ファイルパネル・SVG アイコンは採用しない。
+- **残る制約**：0.15.3 でも、プラグイン Provider のセッションには `usageSession()` が無い。ready より前のイベントは、アダプターの履歴に積まれるだけで購読者へ流れない。
+
+## ZCode の挙動（3c5b227、管理下ランタイム 3.16.2-paseo.1）
+
+- `run_in_background` の Bash は、フォアグラウンドのターンが終わった後も `backgroundWorks` に `running` で残る。終わると `resultPending` になり、ZCode が結果を届けるターンを自分から始める。
+- 結果を届けたターンが完了した後も、20 秒以上 `resultPending` のまま残った。`product-projection.ts` の `onBackgroundTaskLifecycle` には、項目を消す経路が無い。このため `resultPending` は拒否の条件に入れない。
+- 実行中に Server を SIGKILL した会話も、別の接続から保存した設定で開き直せる。プラグインの「再開した会話にフォアグラウンドの作業が残っている」という拒否には当たらなかった。続けて送った `Resume working.` のターンも完了した。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-09）
+
+- **テスト**：`test/provider.test.ts` に拒否の条件のテストを加えた。条件をフォアグラウンドのアイドルだけに弱めると、このテストが失敗することを確かめた。`npm run typecheck`、`npm test`（24 ファイル、234 tests）、`npm run build`、`npm run format:check` が成功した。
+- **上流**：`git clone --shared` で作った別の clone を v0.15.3 にし、`NODE_PATH` を外して `npm run test:upstream` を実行し、成功した。Git と npm からの導入で、Paseo の `compileDirectoryPlugin` が 0.14.0 を拒否し 0.15.3 を受け入れることを確かめた。クライアントのバンドルが `client/react-native` を読まないことも確かめた。実アダプターの `canStopRuntime()` は、`running` の作業がある間だけ `false` を返した。
+- **実ランタイム**：管理下ランタイム 3.16.2-paseo.1 を一時的な `XDG_DATA_HOME` に導入し、`npm run test:stdio-runtime` を実行して成功した。加えた確認は二つある。`sleep 3` のバックグラウンドの Bash で、動いている間は拒否し、結果を届けたターンの後は拒否しないこと。SIGKILL 後に開き直して再開すること。
+- **実 daemon**：`@getpaseo/cli@0.15.3` を一時ディレクトリに入れた。一時 daemon（`--home` は一時ディレクトリ、loopback、relay と MCP は無効、plugins は有効）に、作業ツリーを複製して準備したディレクトリを導入した。プラグインは `running` になり、ZCode は available で、診断は Server 3.16.2 / Agent 0.17.0 を示した。ヘッドレス Chrome で Settings → Plugins → zcode-provider → Settings を開くと、Runtime・Account・Timeline の各タブが表示された。HOME は隔離していないので、モデル一覧と Account タブはこの端末の既存の ZCode のデータを読んだ。会話は作っていない。
+
+未検証：実 daemon でのアイドル時の解放と再起動後の再開（1 時間の待機と、ZCode のセッションの作成が要る）。サインイン中の Account タブの Copy ボタン。Paseo 0.15.0 の実 daemon。完了したがまだ届いていないバックグラウンドの結果が、解放で失われるか。macOS と Windows での `test:stdio-runtime` の追加項目（CI で確認する）。
+
 # モデル切り替えの行を設定で出し分ける（2026-11-09）
 
 [Issue #83](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/83) で、ZCode のエージェントのタイムラインに `Model: GLM-5.3-Flash ()` と `Model: auto/glm-5.3-flash (max)` がターンごとに交互に増えると報告された。

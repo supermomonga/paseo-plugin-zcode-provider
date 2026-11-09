@@ -62,6 +62,7 @@ export const CAPABILITIES = [
   "prompt.command",
   "prompt.image",
   "prompt.steer",
+  "session.can_stop_runtime",
   "session.configure",
   "session.list",
   "session.persistence",
@@ -478,6 +479,15 @@ export class ZCodeConnection implements ProviderConnection {
       case "session.interrupt":
         await entry.native.interrupt();
         break;
+      // Paseo asks before releasing an idle runtime; the answer is the reply.
+      case "session.can_stop_runtime":
+        this.emit({
+          type: "session.can_stop_runtime",
+          requestId: input.requestId,
+          sessionId: input.sessionId,
+          canStop: entry.native.canStopRuntime(),
+        });
+        return;
       case "session.permission":
         await entry.native.respondToPermission(
           input.permissionId,

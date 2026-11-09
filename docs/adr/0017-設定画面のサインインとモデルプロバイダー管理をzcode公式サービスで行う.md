@@ -8,6 +8,8 @@ links:
     kind: amends
   - target: 18
     kind: amendedby
+  - target: 25
+    kind: amendedby
 ---
 
 # 設定画面のサインインとモデルプロバイダー管理をZCode公式サービスで行う
