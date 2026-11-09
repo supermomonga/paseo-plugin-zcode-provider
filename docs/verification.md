@@ -7,16 +7,46 @@
 - この行はプラグインが ZCode の `modelChange` マーカーから作っていた。括弧の中は推論レベルで、ZCode は選択に推論レベルが無いと空文字を入れる（3c5b227 の `product-projection.ts` の `onModelSelected`）。
 - ZCode がこのマーカーを出すのは、ターンのプロバイダーとモデルが直前のターンと違うときだけである（同 `onTurnStarted`）。
 - 行の文言を ZCode Desktop に合わせ、`Using provider/model` と `Model switched provider/model → provider/model` にした。推論レベルは出さない。
-- 設定画面に Timeline タブを加え、**Show model changes**（既定はオフ）で表示を選べるようにした。Paseo のホスト単位の設定文書 `timeline` に保存し、サーバーは `registerSettings()` のハンドルで追う。表示するかどうかはマーカーを最初に見た時点で決める。最低要件を Paseo 0.9.0 に上げた。判断は [ADR 23](adr/0023-モデル切り替えの表示をpaseoの設定apiで選べるようにし最低要件を0-9-0に上げる.md) に記録した。
+- 設定画面に Timeline タブを加え、**Show model changes**（既定はオフ）で表示を選べるようにした。Paseo のホスト単位の設定文書 `timeline` に保存し、サーバーは `registerSettings()` のハンドルで追う。表示するかどうかはマーカーを最初に見た時点で決める。最低要件を Paseo 0.9.0 に上げた。判断は [ADR 24](adr/0024-モデル切り替えの表示をpaseoの設定apiで選べるようにし最低要件を0-9-0に上げる.md) に記録した。
 
 ## 検証（Linux x64、Node.js 26.8.1、2026-11-09）
 
 - **再現の試み**：管理下ランタイム（ZCode 3.16.2）と、ローカルで固定の応答を返すモデルを使った。カスタムの API キープロバイダー（モデル ID `auto/glm-5.3-flash`、推論レベル low/high/max）で、ターンの前後にセッションを閉じて開き直す操作を 2 回行い、サブエージェントを呼ぶ場合も試した。マーカーは一度も出ず、モデルへのリクエストはすべて `auto/glm-5.3-flash` と `max` だった。ターンごとに交互に出る状態は再現していない。
-- **テスト**：追加したテストのうち、表示の判定を外すと `test/provider.test.ts` の 2 件が失敗することを確かめた。`npm run typecheck`、`npm test`（23 ファイル、215 tests）、`npm run build`、`npm run format:check`、`git diff --check` が成功した。
+- **テスト**：追加したテストのうち、表示の判定を外すと `test/provider.test.ts` の 2 件が失敗することを確かめた。`npm run typecheck`、`npm test`（main の #91 をマージした後、24 ファイル、233 tests）、`npm run build`、`npm run format:check`、`git diff --check` が成功した。
 - **上流**：Paseo 0.12.0（`cafe4b01c8522ff39560241c5deb01427dc8dc5b`）に対する `npm run test:upstream` が成功した。設定 `timeline` の登録も確認している。ローカルでは `NODE_PATH` を外して実行した。
 - **実 UI**：`@getpaseo/cli@0.15.1` の一時 daemon（`--home` は一時ディレクトリ、loopback、relay と MCP は無効、Web UI と plugins は有効）にこの worktree を導入し、ヘッドレス Chrome で Settings → Plugins → zcode-provider → Settings → Timeline を開いた。スイッチは既定でオフで、切り替えると `plugin-settings/zcode-provider/timeline.json` に保存され、再読み込み後も値が残った。
 
 未検証：実 daemon でのエージェントの会話への反映（ZCode のセッションは作っていない）。最低要件 0.9.0 の実コンパイラでの `test:upstream`。報告者の環境でモデルが交互に切り替わる原因。
+
+# ターンの失敗が原因を問わず `NATIVE_PROTOCOL_ERROR` になる（2026-11-09）
+
+[Issue #86](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/86) の対応。ZCode のターンが失敗すると、原因が利用上限・認証・ネットワークのどれであっても、Paseo には `[System Error] ZCode turn failed` と `code: NATIVE_PROTOCOL_ERROR` だけが表示されていた。
+
+## 原因
+
+- `server/session.ts` の `maybeComplete()` は失敗した turnHeader だけを見て、固定の文言と `NATIVE_PROTOCOL_ERROR` を返していた。`server/provider.ts` も文言を `ZCode turn failed` に固定していた。
+- ZCode は失敗の内容を V4 の `control.lastError` に入れていたが、プラグインはこれを読んでいなかった。
+
+## 修正
+
+- ターンが失敗したら `control.lastError` の `attribution` を読み、`MODEL_RATE_LIMITED` などのコードとプラグインの固定の英文で伝える。HTTP ステータスとプロバイダーのエラーコードを添え、診断には許可リストに一致した項目だけを加える。プロバイダーの原文は出さない。判断は [ADR 23](adr/0023-ターンの失敗はv4のlasterrorのattributionで分類したコードと固定の文言で伝える.md) に記録した。
+- `lastError` が無い失敗と、`runtime`・`tool` の失敗は `NATIVE_TURN_FAILED` とする。
+- `test:stdio-runtime` に、ローカルのモデルが 429 を返すシナリオを加えた。`test:upstream` に、Paseo の実際のアダプターでの失敗したターンの確認を加えた。
+
+## ZCode の挙動（3c5b227、管理下ランタイム 3.16.2-paseo.1）
+
+- TurnError では、turnHeader を `failed` にするのと同じフレームで `control.lastError` を設定し、次のターンの開始時に `null` に戻す（`product-projection.ts`）。
+- ローカルのモデルから GLM の 429（エラーコード 1310）を返すと、モデルへの要求は 1 回だけで、再試行されなかった。`lastError` は `code: "1310"`、`message` はプロバイダーの原文、`source: "provider"`、`recoverable: true` だった。`attribution` は `reason: "rate_limited"`、`statusCode: 429`、`providerErrorCode: "1310"`、`retryable: false`、`errorPhase: "stream"`、`exceptionKind: "provider_business"` だった。`detail` にはプロバイダー ID・モデル・リクエスト ID が入っていた。
+- Desktop の `ChatErrorBanner` は、ローカライズした文言がある code ならその文言を、無ければ `lastError.message` を表示する。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-09）
+
+- 追加したテストが修正前に失敗することを確認した。429 の `lastError` があっても、Paseo には `NATIVE_PROTOCOL_ERROR` が届いた。
+- `npm run typecheck`、`npm test`（23 ファイル、227 tests）、`npm run build`、`npm run format:check`、`npm run check:zcode-source` が成功した。
+- 管理下ランタイム 3.16.2-paseo.1 に対する `npm run test:stdio-runtime` が成功した。追加した 429 のシナリオでは、`MODEL_RATE_LIMITED` が原文を含まずに届き、続くプロンプトが完了した。
+- Paseo 0.12.0（`cafe4b01c8522ff39560241c5deb01427dc8dc5b`）に対する `npm run test:upstream` が成功した。ローカルの Paseo のチェックアウトは新しいコミットにあるため、`git clone --shared` で作った別の clone を `cafe4b01` にして、`NODE_PATH` を外して実行した。
+
+未検証：実モデルでの利用上限・認証・ネットワークの失敗。実 daemon と実 UI での表示。Linux x64 以外のプラットフォーム。
 
 # アプリからの Steer が `Duplicate ZCode clientMessageId` で失敗する（2026-10-24）
 

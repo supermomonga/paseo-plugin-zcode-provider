@@ -1,5 +1,5 @@
 ---
-number: 23
+number: 24
 title: モデル切り替えの表示をPaseoの設定APIで選べるようにし最低要件を0.9.0に上げる
 status: accepted
 date: 2026-11-09

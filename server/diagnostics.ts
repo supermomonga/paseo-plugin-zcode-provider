@@ -15,6 +15,50 @@ const stages = [
   "notification",
   "transport",
   "session",
+  "turn",
+] as const;
+// ZCode's ModelFailureReason (apps/zcode-cli/packages/contracts/src/model/index.ts at 3c5b227).
+export const modelFailureReasons = [
+  "rate_limited",
+  "provider_overloaded",
+  "server_error",
+  "network_error",
+  "timeout",
+  "stream_idle_timeout",
+  "stale_connection",
+  "auth_refresh",
+  "reasoning_signature_repair",
+  "offpeak_queued",
+  "auth_failed",
+  "cancelled",
+  "context_exceeded",
+  "invalid_request",
+  "provider_not_configured",
+  "proxy_error",
+  "tls_error",
+  "unknown",
+] as const;
+export type ModelFailureReason = (typeof modelFailureReasons)[number];
+// V4 errorAttributionSchema enums.
+const failureSources = ["provider", "runtime", "tool", "network"] as const;
+const errorPhases = [
+  "prepare",
+  "configuration",
+  "connect",
+  "response",
+  "stream",
+  "parse",
+  "validation",
+  "unhandled",
+] as const;
+const exceptionKinds = [
+  "api_call",
+  "generic",
+  "protocol",
+  "provider_business",
+  "transport",
+  "type_error",
+  "validation",
 ] as const;
 const checks = [
   "bundle-metadata",
@@ -146,6 +190,44 @@ export interface RuntimeDiagnostic {
   readonly nativeCode?: number;
   readonly exitCode?: number;
   readonly validation?: readonly { path: string; code: string }[];
+  readonly failure?: TurnFailureDiagnostic;
+}
+
+/** Attribution of a failed turn from V4 `control.lastError`; never its message. */
+export interface TurnFailureDiagnostic {
+  readonly source?: string;
+  readonly reason?: string;
+  readonly errorPhase?: string;
+  readonly exceptionKind?: string;
+  readonly statusCode?: number;
+  readonly providerErrorCode?: string;
+  readonly retryable?: boolean;
+}
+
+export function reportableStatusCode(
+  value: number | undefined,
+): number | undefined {
+  return Number.isInteger(value) && value! >= 100 && value! <= 599
+    ? value
+    : undefined;
+}
+
+/** Provider error codes are free text. Only numeric or word codes such as `1310` or `insufficient_quota` are reported. */
+export function reportableProviderErrorCode(
+  value: string | undefined,
+): string | undefined {
+  return value &&
+    value.length <= 64 &&
+    /^(?:\d+|[A-Za-z]+(?:[_.][A-Za-z]+)*)$/u.test(value)
+    ? value
+    : undefined;
+}
+
+function allowed(
+  values: readonly string[],
+  value: string | undefined,
+): string | undefined {
+  return value !== undefined && values.includes(value) ? value : undefined;
 }
 
 export function runtimeDiagnostic(
@@ -221,6 +303,21 @@ export function formatDiagnostic(error: unknown): string {
     }
     for (const key of ["nativeCode", "exitCode"] as const) {
       if (Number.isSafeInteger(context[key])) result[key] = context[key];
+    }
+    if (context.failure) {
+      const f = context.failure;
+      const failure = Object.fromEntries(
+        Object.entries({
+          source: allowed(failureSources, f.source),
+          reason: allowed(modelFailureReasons, f.reason),
+          errorPhase: allowed(errorPhases, f.errorPhase),
+          exceptionKind: allowed(exceptionKinds, f.exceptionKind),
+          statusCode: reportableStatusCode(f.statusCode),
+          providerErrorCode: reportableProviderErrorCode(f.providerErrorCode),
+          retryable: typeof f.retryable === "boolean" ? f.retryable : undefined,
+        }).filter(([, value]) => value !== undefined),
+      );
+      if (Object.keys(failure).length) result.failure = failure;
     }
     if (context.validation)
       result.validation = context.validation.slice(0, 10).map((issue) => ({

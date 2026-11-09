@@ -735,7 +735,7 @@ export class ZCodeConnection implements ProviderConnection {
             state: "failed",
             error: {
               code: event.code,
-              message: "ZCode turn failed",
+              message: event.error,
               diagnostic: event.diagnostic,
             },
           });

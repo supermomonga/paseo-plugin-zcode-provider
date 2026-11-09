@@ -312,6 +312,72 @@ it("cancels unconsumed queue input after a native failure and finishes once", as
     f.events.filter((e) => e.type === "session.turn" && e.state === "failed"),
   ).toHaveLength(1);
 });
+it("reports a provider quota failure by its attribution without ZCode's text", async () => {
+  const f = await fixture();
+  await f.open();
+  await f.prompt();
+  // The shape the 3.16.2 runtime reported for a GLM weekly quota (429/1310).
+  const providerText =
+    "您已达到每周/每月使用上限，您的限额将在 2026-11-07 16:34:13 重置。";
+  await f.host.finish("failed", {
+    code: "1310",
+    message: providerText,
+    recoverable: true,
+    at: 2,
+    source: "provider",
+    traceId: "trace-1",
+    detail: `Turn execution failed\nprovider=account:bigmodel model=GLM-5.3-Flash request=request-1 reason=rate_limited status=429`,
+    underlyingErrorMessage: providerText,
+    attribution: {
+      source: "provider",
+      reason: "rate_limited",
+      errorPhase: "stream",
+      exceptionKind: "provider_business",
+      providerId: "account:bigmodel",
+      modelId: "GLM-5.3-Flash",
+      statusCode: 429,
+      providerErrorCode: "1310",
+      retryable: false,
+    },
+  });
+  const failed = await f.wait(
+    (e) => e.type === "session.turn" && e.state === "failed",
+  );
+  if (failed.type !== "session.turn" || !failed.error)
+    throw new Error("Expected a failed turn");
+  expect(failed.error.code).toBe("MODEL_RATE_LIMITED");
+  expect(failed.error.message).toMatch(
+    /^The model provider's usage or rate limit was reached \(HTTP 429, provider code 1310\)\./u,
+  );
+  expect(JSON.parse(failed.error.diagnostic!)).toMatchObject({
+    code: "MODEL_RATE_LIMITED",
+    stage: "turn",
+    failure: {
+      source: "provider",
+      reason: "rate_limited",
+      errorPhase: "stream",
+      exceptionKind: "provider_business",
+      statusCode: 429,
+      providerErrorCode: "1310",
+      retryable: false,
+    },
+  });
+  const output = JSON.stringify(failed);
+  for (const native of [providerText, "bigmodel", "request-1", "trace-1"])
+    expect(output).not.toContain(native);
+});
+it("keeps the generic turn failure when ZCode reports no error", async () => {
+  const f = await fixture();
+  await f.open();
+  await f.prompt();
+  await f.host.finish("failed");
+  const failed = await f.wait(
+    (e) => e.type === "session.turn" && e.state === "failed",
+  );
+  expect(failed).toMatchObject({
+    error: { code: "NATIVE_TURN_FAILED", message: "ZCode turn failed." },
+  });
+});
 it("shows model change markers only while the setting is on when first seen", async () => {
   const preferences = { showModelChanges: false };
   const f = await fixture(() => preferences);

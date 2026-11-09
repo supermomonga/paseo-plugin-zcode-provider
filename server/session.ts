@@ -50,6 +50,7 @@ import type {
 } from "./session-types.js";
 import { AdapterError } from "./errors.js";
 import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
+import { turnFailure } from "./turn-failure.js";
 import type { TimelinePreferences } from "../shared/timeline.js";
 interface Admission {
   clientMessageId?: string;
@@ -399,23 +400,29 @@ export class ZCodeSession {
       headers.some((h) => h.state === "failed") ||
       this.state.control.phase === "error";
     this.active = undefined;
-    this.emit(
-      failed
-        ? {
-            type: "turn_failed",
-            turnId: run.id,
-            error: "ZCode execution failed",
-            code: "NATIVE_PROTOCOL_ERROR",
-          }
-        : {
-            type:
-              run.cancelled ||
-              headers.some((h) => h.state === "completedInterrupted")
-                ? "turn_canceled"
-                : "turn_completed",
-            turnId: run.id,
-          },
-    );
+    if (failed) {
+      // ZCode sets lastError in the frame that fails the turn and clears it
+      // when the next turn starts.
+      const failure = turnFailure(
+        this.state.control.lastError,
+        this.bridge.diagnostic,
+      );
+      this.emit({
+        type: "turn_failed",
+        turnId: run.id,
+        error: failure.message,
+        code: failure.code,
+        diagnostic: formatDiagnostic(failure),
+      });
+    } else
+      this.emit({
+        type:
+          run.cancelled ||
+          headers.some((h) => h.state === "completedInterrupted")
+            ? "turn_canceled"
+            : "turn_completed",
+        turnId: run.id,
+      });
     this.changed();
   }
   private changed(): void {
