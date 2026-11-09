@@ -28,9 +28,10 @@ Issue #69、#75〜#82、#85、#87〜#89 の対応。Paseo 0.13.0-beta.1 から 0
 - **テスト**：`test/provider.test.ts` に拒否の条件のテストを加えた。条件をフォアグラウンドのアイドルだけに弱めると、このテストが失敗することを確かめた。`npm run typecheck`、`npm test`（24 ファイル、234 tests）、`npm run build`、`npm run format:check` が成功した。
 - **上流**：`git clone --shared` で作った別の clone を v0.15.3 にし、`NODE_PATH` を外して `npm run test:upstream` を実行し、成功した。Git と npm からの導入で、Paseo の `compileDirectoryPlugin` が 0.14.0 を拒否し 0.15.3 を受け入れることを確かめた。クライアントのバンドルが `client/react-native` を読まないことも確かめた。実アダプターの `canStopRuntime()` は、`running` の作業がある間だけ `false` を返した。
 - **実ランタイム**：管理下ランタイム 3.16.2-paseo.1 を一時的な `XDG_DATA_HOME` に導入し、`npm run test:stdio-runtime` を実行して成功した。加えた確認は二つある。`sleep 3` のバックグラウンドの Bash で、動いている間は拒否し、結果を届けたターンの後は拒否しないこと。SIGKILL 後に開き直して再開すること。
+- **CI**：[run 42562005991](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/42562005991) の管理下ランタイムの契約（darwin-arm64、linux-x64、linux-arm64、win32-x64、win32-arm64）で、追加した二つの確認を含めて `test:stdio-runtime` が成功した。実モデルの E2E も成功した。
 - **実 daemon**：`@getpaseo/cli@0.15.3` を一時ディレクトリに入れた。一時 daemon（`--home` は一時ディレクトリ、loopback、relay と MCP は無効、plugins は有効）に、作業ツリーを複製して準備したディレクトリを導入した。プラグインは `running` になり、ZCode は available で、診断は Server 3.16.2 / Agent 0.17.0 を示した。ヘッドレス Chrome で Settings → Plugins → zcode-provider → Settings を開くと、Runtime・Account・Timeline の各タブが表示された。HOME は隔離していないので、モデル一覧と Account タブはこの端末の既存の ZCode のデータを読んだ。会話は作っていない。
 
-未検証：実 daemon でのアイドル時の解放と再起動後の再開（1 時間の待機と、ZCode のセッションの作成が要る）。サインイン中の Account タブの Copy ボタン。Paseo 0.15.0 の実 daemon。完了したがまだ届いていないバックグラウンドの結果が、解放で失われるか。macOS と Windows での `test:stdio-runtime` の追加項目（CI で確認する）。
+未検証：実 daemon でのアイドル時の解放と再起動後の再開（1 時間の待機と、ZCode のセッションの作成が要る）。サインイン中の Account タブの Copy ボタン。Paseo 0.15.0 の実 daemon。完了したがまだ届いていないバックグラウンドの結果が、解放で失われるか。
 
 # モデル切り替えの行を設定で出し分ける（2026-11-09）
 
