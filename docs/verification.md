@@ -56,6 +56,7 @@
 - **PR #95 の CI**：[run 42575658183](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/42575658183) で、test（`test:upstream` を含む）、固定前の 3.16.2-paseo.1 での 5 プラットフォームの契約試験、実モデル E2E が成功した。リリース用ワークフローは PR 上でパッチ済み 3.17.2 を作り（[run 42575657986](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/42575657986)、未公開）、5 プラットフォームで、追加した三つの確認と「隠れる」側の ADR 19 を含む契約試験が通った。
 - **タグのリリース**：run 42576870272 で、ビルド、5 プラットフォームの検証、署名、公開（latest ではない）が成功した。
 - **導入**：`pins.ts` を更新した状態で、一時 `XDG_DATA_HOME` の `npm run setup:managed-runtime` が公開版を取得・検証して導入した。その管理下ランタイムで `test:stdio-runtime` が全項目を通った（`source: managed`、Server 3.17.2、Agent 0.17.1）。
+- **固定後の CI**：[run 42578515911](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/42578515911) で、5 プラットフォームの管理下ランタイム契約試験が公開版（`source: managed`、Server 3.17.2）で、追加した三つの確認と「隠れる」側を含めて通った。実モデル E2E も公開版（`zcode-3.17.2-24e3a9b03260`）で passed だった。同じコミットの PR 上のリリース用ワークフロー（[run 42578515834](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/42578515834)）は、ビルドの `pnpm install` が `ERR_PNPM_ENOENT`（`node_modules/tsup/node_modules/esbuild` への改名）で 2 回失敗し、3 回目で通った。ランナーのイメージは成功した回と同じで、同じソースのビルドはそれまでに 2 回成功している。上流の `node-linker=hoisted` での pnpm の競合とみられる。
 
 未検証：Account タブでの実際のサインインと Coding Plan の利用量（3.17.2）、ZCode Sites のデプロイ、Desktop で付けた MCP の信頼がプラグインのセッションに効くこと、Desktop 3.16.3 と管理下ランタイム 3.17.2 が共有データを使う場合。既存の利用者は、固定値が変わるので Runtime タブから導入し直す。
 
