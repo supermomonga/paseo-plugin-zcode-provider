@@ -1,3 +1,33 @@
+# ターンの失敗が原因を問わず `NATIVE_PROTOCOL_ERROR` になる（2026-11-09）
+
+[Issue #86](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/86) の対応。ZCode のターンが失敗すると、原因が利用上限・認証・ネットワークのどれであっても、Paseo には `[System Error] ZCode turn failed` と `code: NATIVE_PROTOCOL_ERROR` だけが表示されていた。
+
+## 原因
+
+- `server/session.ts` の `maybeComplete()` は失敗した turnHeader だけを見て、固定の文言と `NATIVE_PROTOCOL_ERROR` を返していた。`server/provider.ts` も文言を `ZCode turn failed` に固定していた。
+- ZCode は失敗の内容を V4 の `control.lastError` に入れていたが、プラグインはこれを読んでいなかった。
+
+## 修正
+
+- ターンが失敗したら `control.lastError` の `attribution` を読み、`MODEL_RATE_LIMITED` などのコードとプラグインの固定の英文で伝える。HTTP ステータスとプロバイダーのエラーコードを添え、診断には許可リストに一致した項目だけを加える。プロバイダーの原文は出さない。判断は [ADR 23](adr/0023-ターンの失敗はv4のlasterrorのattributionで分類したコードと固定の文言で伝える.md) に記録した。
+- `lastError` が無い失敗と、`runtime`・`tool` の失敗は `NATIVE_TURN_FAILED` とする。
+- `test:stdio-runtime` に、ローカルのモデルが 429 を返すシナリオを加えた。`test:upstream` に、Paseo の実際のアダプターでの失敗したターンの確認を加えた。
+
+## ZCode の挙動（3c5b227、管理下ランタイム 3.16.2-paseo.1）
+
+- TurnError では、turnHeader を `failed` にするのと同じフレームで `control.lastError` を設定し、次のターンの開始時に `null` に戻す（`product-projection.ts`）。
+- ローカルのモデルから GLM の 429（エラーコード 1310）を返すと、モデルへの要求は 1 回だけで、再試行されなかった。`lastError` は `code: "1310"`、`message` はプロバイダーの原文、`source: "provider"`、`recoverable: true` だった。`attribution` は `reason: "rate_limited"`、`statusCode: 429`、`providerErrorCode: "1310"`、`retryable: false`、`errorPhase: "stream"`、`exceptionKind: "provider_business"` だった。`detail` にはプロバイダー ID・モデル・リクエスト ID が入っていた。
+- Desktop の `ChatErrorBanner` は、ローカライズした文言がある code ならその文言を、無ければ `lastError.message` を表示する。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-09）
+
+- 追加したテストが修正前に失敗することを確認した。429 の `lastError` があっても、Paseo には `NATIVE_PROTOCOL_ERROR` が届いた。
+- `npm run typecheck`、`npm test`（23 ファイル、227 tests）、`npm run build`、`npm run format:check`、`npm run check:zcode-source` が成功した。
+- 管理下ランタイム 3.16.2-paseo.1 に対する `npm run test:stdio-runtime` が成功した。追加した 429 のシナリオでは、`MODEL_RATE_LIMITED` が原文を含まずに届き、続くプロンプトが完了した。
+- Paseo 0.12.0（`cafe4b01c8522ff39560241c5deb01427dc8dc5b`）に対する `npm run test:upstream` が成功した。ローカルの Paseo のチェックアウトは新しいコミットにあるため、`git clone --shared` で作った別の clone を `cafe4b01` にして、`NODE_PATH` を外して実行した。
+
+未検証：実モデルでの利用上限・認証・ネットワークの失敗。実 daemon と実 UI での表示。Linux x64 以外のプラットフォーム。
+
 # アプリからの Steer が `Duplicate ZCode clientMessageId` で失敗する（2026-10-24）
 
 ZCode の実行中にアプリからメッセージを送ると、`[System Error] Duplicate ZCode clientMessageId` になり、メッセージが届かなかった。

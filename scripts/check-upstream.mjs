@@ -249,6 +249,33 @@ try {
     await completeTurn(current);
     await queuedDone;
     current.deferConsumption = false;
+    // A classified model failure reaches Paseo's turn_failed without ZCode's text (ADR 23).
+    const failRun = await resumed.startTurn("Fail", {
+      clientMessageId: "fail",
+    });
+    const failedEvent = waitForCompletion(
+      resumed,
+      failRun.turnId,
+      "turn_failed",
+    );
+    await current.finish("failed", {
+      code: "1310",
+      message: "native-provider-text",
+      recoverable: true,
+      at: 3,
+      source: "provider",
+      attribution: {
+        source: "provider",
+        reason: "rate_limited",
+        statusCode: 429,
+        providerErrorCode: "1310",
+      },
+    });
+    const failed = await failedEvent;
+    assert.equal(failed.code, "MODEL_RATE_LIMITED");
+    assert.match(failed.error, /\(HTTP 429, provider code 1310\)/u);
+    assert.equal(JSON.parse(failed.diagnostic).failure.reason, "rate_limited");
+    assert.ok(!JSON.stringify(failed).includes("native-provider-text"));
     const stopRun = await resumed.startTurn("Stop", {
       clientMessageId: "stop",
     });
@@ -275,6 +302,7 @@ try {
           textSteering: "passed",
           attachmentQueue: "passed",
           singleCompletion: "passed",
+          turnFailure: "passed",
           providerReplacement: "passed",
           persistenceResume: "passed",
           planSettingsResume: "passed",
@@ -559,13 +587,13 @@ async function checkContributions({
   };
 }
 
-function waitForCompletion(session, turnId) {
+function waitForCompletion(session, turnId, type = "turn_completed") {
   return new Promise((resolve, reject) => {
     const unsubscribe = session.subscribe((event) => {
-      if (event.type === "turn_completed" && event.turnId === turnId) {
+      if (event.type === type && event.turnId === turnId) {
         clearTimeout(timer);
         unsubscribe();
-        resolve();
+        resolve(event);
       }
     });
     const timer = setTimeout(() => {

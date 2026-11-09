@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { HostBridge, HostSubscription } from "../server/host/bridge.js";
 import { AdapterError } from "../server/errors.js";
 import { applyConversationDeltas } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/apply.js";
-import { conversationSnapshotSchema } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/snapshot.js";
+import {
+  conversationSnapshotSchema,
+  type SessionErrorInfo,
+} from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/snapshot.js";
 import type { ConversationDelta } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/delta.js";
 import type {
   ConversationRow,
@@ -200,7 +203,10 @@ export class FakeBridge implements HostBridge {
       },
     ]);
   }
-  async finish(state: TurnHeaderRow["state"] = "completedSuccess") {
+  async finish(
+    state: TurnHeaderRow["state"] = "completedSuccess",
+    lastError?: SessionErrorInfo,
+  ) {
     const header = this.state.rows.window.find(
       (r): r is TurnHeaderRow =>
         r.kind === "turnHeader" && r.productTurnId === this.activeProductTurn,
@@ -222,6 +228,7 @@ export class FakeBridge implements HostBridge {
                   : state,
             canStop: false,
             activeWorks: [],
+            ...(lastError ? { lastError } : {}),
           },
           usage: {
             contextWindow: {
