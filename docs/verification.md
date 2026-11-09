@@ -44,6 +44,19 @@
 - **`test:e2e`**：`GLM_API_KEY` と隔離したデータで、このローカルビルドに対して実行した。モデルと推論レベル、独立した Plan と承認・拒否、Plan とモデルの復元、ガイダンス、添付キュー、単一完了、停止と再開が passed だった。
 - **`test:usage-runtime`**：実行していない。この端末の Desktop は 3.16.3 で、3.17.2 の Server を実データで起動すると、共有データを Desktop より先に移行するおそれがある。
 
+## 公開と固定
+
+| 項目               | 実測値                                                                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| リリース           | [`zcode-runtime-v3.17.2-paseo.1`](https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/tag/zcode-runtime-v3.17.2-paseo.1)（PR #95 の `f0dd526`）、`zcode-runtime-3.17.2-paseo.1.tar.gz`、83,086,942 bytes |
+| 成果物 SHA-256     | `24e3a9b03260d7b800958ccba4cfdc8233eee67936170636da79d440245bd15d`。`gh attestation verify` で、タグ `zcode-runtime-v3.17.2-paseo.1` のリリース用ワークフローによる署名（ソース `f0dd526`）を確認                         |
+| `BUILD-INFO.json`  | `release: 3.17.2-paseo.1`、ソース `a9fe401`（3.17.2）、`modified: true`、パッチ `6f670f8…`。同梱のパッチはリポジトリのものとバイト単位で一致。`agent/provider/zcode-builtin.json` は本番用ファイルと一致                  |
+| 公式ビルドの成果物 | `7d70a382c7fa030a48ddecff08670d8f0b9995f6f9ef878d06bf52c976375570`（Node.js 24.21.0、[run 42576870272](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/42576870272)）                            |
+
+- **PR #95 の CI**：[run 42575658183](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/42575658183) で、test（`test:upstream` を含む）、固定前の 3.16.2-paseo.1 での 5 プラットフォームの契約試験、実モデル E2E が成功した。リリース用ワークフローは PR 上でパッチ済み 3.17.2 を作り（[run 42575657986](https://github.com/supermomonga/paseo-plugin-zcode-provider/actions/runs/42575657986)、未公開）、5 プラットフォームで、追加した三つの確認と「隠れる」側の ADR 19 を含む契約試験が通った。
+- **タグのリリース**：run 42576870272 で、ビルド、5 プラットフォームの検証、署名、公開（latest ではない）が成功した。
+- **導入**：`pins.ts` を更新した状態で、一時 `XDG_DATA_HOME` の `npm run setup:managed-runtime` が公開版を取得・検証して導入した。その管理下ランタイムで `test:stdio-runtime` が全項目を通った（`source: managed`、Server 3.17.2、Agent 0.17.1）。
+
 未検証：Account タブでの実際のサインインと Coding Plan の利用量（3.17.2）、ZCode Sites のデプロイ、Desktop で付けた MCP の信頼がプラグインのセッションに効くこと、Desktop 3.16.3 と管理下ランタイム 3.17.2 が共有データを使う場合。既存の利用者は、固定値が変わるので Runtime タブから導入し直す。
 
 # Paseo 0.15.3 への追従（2026-11-09）
