@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, posix, resolve } from "node:path";
 import ts from "typescript";
 
-export const ZCODE_SOURCE_COMMIT = "3c5b227649371507ddc4eb46ac5133afe6db1cab";
+export const ZCODE_SOURCE_COMMIT = "a9fe401eede6e6e5e01be9048679c206fe6f02d9";
 const checkout = resolve(
   process.argv.slice(2).find((arg) => arg !== "--write") ??
     `${process.env.HOME}/ghq/github.com/zai-org/ZCode`,
@@ -142,14 +142,20 @@ const actual = await readdir(destination, {
   recursive: true,
   withFileTypes: true,
 });
+const removed = [];
 for (const entry of actual)
   if (entry.isFile()) {
     const path = posix.join(
       entry.parentPath.slice(destination.length + 1).replaceAll("\\", "/"),
       entry.name,
     );
-    if (!files.has(path)) throw new Error(`Unexpected vendored file: ${path}`);
+    if (files.has(path)) continue;
+    // A new baseline can drop a dependency; only --write deletes it.
+    if (!write) throw new Error(`Unexpected vendored file: ${path}`);
+    await rm(join(destination, path));
+    removed.push(path);
   }
+for (const path of removed) console.log(`Removed ${path}`);
 for (const [path, { content }] of files) {
   const output = join(destination, path);
   if (write) {
