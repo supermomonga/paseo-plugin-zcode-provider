@@ -1,3 +1,51 @@
+# ZCode 3.17.2 への追従（2026-11-09）
+
+[Issue #70](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/70)（3.16.3）と [Issue #84](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/84)（3.17.2）の対応。ソース基準をタグ `v3.17.2`（`a9fe401eede6e6e5e01be9048679c206fe6f02d9`）に進め、パッチ済みランタイム `3.17.2-paseo.1` を公開して固定する。
+
+## 上流のソース
+
+- `git ls-remote https://github.com/zai-org/ZCode.git`：`main` = `a9fe401`、`feat/ui-plugin` = `662c30b`。タグは `v3.14.3`（`29628c9`）、`v3.15.1`（`aac4755`）、`v3.17.1`（`a60ba6a`）、`v3.17.2`（`a9fe401`）。GitHub Release は `v3.14.3`、`v3.17.1`、`v3.17.2`（latest）。
+- `main` の履歴は `3c5b227`（3.16.2）→ `a60ba6a`（3.17.1、`chore: sync ZCode source`、2026-10-30）→ `a9fe401`（3.17.2、`chore: sync ZCode source v3.17.2`、2026-11-03）。各コミットのルート `package.json` の版を `git show` で確かめた。
+- 公式変更履歴で 3.16.2 より新しい版は 3.16.3 と 3.17.2 だけである。3.16.3 に対応するソースもタグも無いので、変更履歴だけを確認した。3.17.1 はタグだけがあり、変更履歴に載っていない。その差分は 3.16.2 から 3.17.2 への差分に含めて確認した。
+- 上流がタグを付け直したので、タグを基準にした（ADR 20 に追記）。
+
+## 変更履歴とこのプロバイダ
+
+`3c5b227` と `a9fe401` の差分（5,315 ファイル）のうち、Server・Agent・V4・サービス・公式プラグイン・ビルドを読んだ。
+
+- **モデル要求のアプリの版（修正）**：Agent はモデル要求の `User-Agent` と `X-ZCode-App-Version` に `ZCODE_APP_VERSION` を使い、無ければ CLI の版を使う（`apps/zcode-cli/packages/bootstrap/src/model-config.ts`）。Desktop は Server の環境にこれを入れる（`packages/desktop/src/main/desktopRuntimeEnv.ts`、3.16.2 から同じ）。3.17.2 は、版でクライアントを拒むゲートウェイがあるとして、リモート Core にも入れた（`packages/zcode-server-cli/src/server-core/core.ts`）。プラグインの stdio Server の入口は入れないので、プラグインのモデル要求は `ZCode/0.17.1` を名乗っていた。ZCode Sites の CLI も同じ値を使う。Desktop と同じく、ランタイムの版を Server の環境に入れた（`server/host/bridge.ts`）。
+- **内容フィルターで止まった応答（3.17.1）**：本文もツール呼び出しも無く、終了理由が `content-filter`・`content_filter`・`sensitive` の応答は、再試行されずにすぐ失敗する（`core/src/runtime/helpers/model-errors.ts`）。`attribution` は `source: "provider"`、`reason: "content_filter"` になる。この値は `ModelFailureReason` に無いので、プラグインは `MODEL_REQUEST_FAILED` を返し、診断の `reason` も落としていた。`MODEL_CONTENT_FILTERED` を加えた（ADR 23 に追記）。
+- **プロジェクトの MCP の信頼（3.17.1）**：プロジェクトが宣言した MCP サーバーは、信頼が記録されるまで接続されない（`bootstrap/src/workspace-mcp-trust/index.ts`）。対話は出ず、V4 の `workspaceMcpAdmission` に保留の件数が入るだけである。CLI のコマンドは無く、Desktop の Settings → MCP Servers で信頼する。
+  - 保留の件数は、セッションが実際に使う設定ではなく、プロジェクトの宣言から数える。プラグインが MCP サーバーを渡すと、その一覧が ZCode の設定ファイルを置き換える（`bootstrap/src/app/runtime-config.ts`、従来どおり）。警告は、Paseo が MCP サーバーを渡さないセッションにだけ出す。
+  - `source` の無いサーバーは、プロジェクトが同じ名前を宣言しているとき、または設定にエラーがあるときに、信頼の確認の対象になって止まる。プロトコルの MCP サーバーに `scope`（3.17.1 から、`user` か `workspace`）が加わり、`source.kind` に写される。Desktop はユーザー設定の MCP に `user` を付ける。Paseo が渡すサーバーに、3.17.1 以降の Server でだけ `scope: "user"` を付ける。それより古い Server は、strict なスキーマでこの項目を拒む。
+- **ZCode Sites（3.17.2、`zcode-site@zcode-plugins-official` 0.4.2、既定で有効）**：統合 CLI には含まれず、Desktop が共有の `~/.zcode` のキャッシュに置くと見える。モデルが使うのは `site-deploy` スキルと `/site-*` コマンドで、Bash から `node scripts/zcode-site.mjs` を実行する。認証は Agent ごとのローカルの経路が Server に身元のヘッダーを求める仕組みで、stdio Server でも組み立てられる（`services/src/node.ts` の `createLocalServices`）。Desktop 専用なのはパネルだけで、そのツールは `_meta.ui.visibility: ["app"]` によりモデルから外れる。動く見込みがあるので隠していない。実際のデプロイは試していない（[todo](todo.md)）。
+- **Plan モードの権限（3.17.2）**：Plan は基本のモードを厳しくするだけになった。破壊的でない MCP ツールも Plan では確認を求め、guarded の危険コマンドの確認は Plan が ON でも働く。サブエージェントは親のモード・Plan・権限を引き継ぎ、確認は親の `pendingInteractions` に出る。新しい対話の種類や選択肢は無い。build と Plan の組み合わせでは確認が増える。
+- **カスタムコマンドのスクリプト**：`!` のブロックは通常の Bash 呼び出しに書き換えられ、通常の確認を通る。
+- **利用上限で止まったワークフローの再開**：run は `stopped(provider)` のまま残り、リセット時刻の後に自動で再開する。ZCode 自身が、止まった run はセッションの回収を妨げないとしており、回収された後は次に開いたときに再開する（`bootstrap/src/app/dynamic-workflow-quota-resume.ts`）。ADR 25 の拒否の条件は変えない。
+- **バックグラウンドの作業**：`backgroundWorks` の `resultPending` は届けた後も消えない（変更なし）。ADR 25 のとおりである。
+- **ガイダンス**：待っているガイダンスは一つの区切りでまとめて読まれ、`toolDisallowlist` も合わせて適用される。各ガイダンスの `userInput` 行と `sourceCommandId` は従来どおりなので、受付と ADR 22 の扱いは変わらない。
+- **アカウントと利用量**：`oauth`、`setting`（CAS を含む）、`provider-settings`、`usage-stats.getEntitlementSnapshot` のうち、プラグインが使う範囲に変更は無い。`provider-settings` のビューに `logo` が加わった。組み込みのプロバイダー設定は revision 33 から 43 になり、Kimi・MiniMax M3.1 Flash などのテンプレートが加わった。3.16.3 の「ログインのリンクをコピーできる」は Desktop の画面の変更で、Account タブはすでにリンクを表示している。「壊れた設定ファイルを上書きしない」は `~/.zcode/cli/config.json` が対象で、`setting.json` の扱いは変わっていない。
+- **V4 と RPC**：V4 の追加はすべて任意の項目（`sendText.genUiContext`、`inputOrigin`、`compact.modelSelection`、`workspaceMcpAdmission`、キューの `automationId`、`originMeta.subagentResult`）と問い合わせのメソッドである。RPC に購読の失敗を伝える `EventError`（205）が加わった。stdio の hello / hello-ack は変わらず、起動時の移行は小さい。
+- **その他**：Desktop に登録されていないワークスペースは一つの共有の Agent に送られるが、プラグインはセッションごとに Server を起動するので影響しない。Computer Use の複数カーソルは Helper の中の変更で、`ZCODE_CUA_PRODUCT_HELPER` と `mcp__node_repl__js` は変わらない。Node なしで MCP を起動する仕組みは Electron で動く Agent だけのもので、プラグインは通常の Node を使う。
+
+## ビルドと vendored ソース
+
+- 同期は 126 ファイル（追加 3、削除 1、変更 28）。`gen-ui/contract.ts`・`gen-ui/tweakProtocol.ts`・`local-ttft/contract.ts` が加わり、`localTtft.ts` が無くなった。`scripts/sync-zcode-source.mjs` は不要になったファイルで失敗していたので、`--write` のときは削除するようにした。型エラーは無かった。
+- パッチの対象ファイルは 3.16.2 と同じ（blob `0a9b571`）で、無修正で当たる。ヘッダーの対象コミットを書き換えたので、SHA-256 は `6f670f8edf863e020a9bc9a3cfd0550f172b9cb539141a42c10dbd9a0ade9985` になった。
+- `scripts/build-zcode.mjs`、`scripts/builtin-provider-config.mjs`、アーカイブの構成、Node.js 24.14.0 以上と pnpm 10.33.2 の要件は変わっていない。
+
+## 検証（macOS arm64、2026-11-09）
+
+- **自動試験（Node.js 26.9.0）**：`npm run typecheck`、`npm test`（24 ファイル、238 tests）、`npm run build`、`npm run format:check`、`npm run check:zcode-source`（126 ファイル）、`npm run check:zcode-patches`（`v3.17.2` の別の checkout）が成功した。追加したテストのうち、ブリッジの版のテストは修正前に失敗し、MCP の警告のテストは条件を外しても常に出しても失敗することを確かめた。
+- **上流**：`git clone --shared` で作った別の clone を Paseo v0.15.3（`d91ae138`）にし、`NODE_PATH` を外して `npm run test:upstream` を実行し、全項目が成功した。
+- **ローカルビルド**：別の作業ディレクトリに `v3.17.2` を取得し、パッチを当て、Node.js 24.21.0、pnpm 10.33.2、`ZCODE_ENV=production` で公式手順どおりにビルドした。公式アーカイブ `68721ac9eda21d137e7c6b50db99adffa36c83ef9e9169045775d7ea848f0af6`。`package-zcode-runtime.mjs` で `3.17.2-paseo.0`（`8f18ab6b13abf99e7d167d12b912a8e2d0f97f5b046c6ebe6b1e6a28fa9ad092`、87,228,975 bytes）を作った。この成果物は公開しない。Server 3.17.2、Agent 0.17.1。
+- **`test:stdio-runtime`**：このローカルビルド（override）で全項目が成功した。加えた確認は三つある。モデル要求の `X-ZCode-App-Version` がランタイムの版であること（修正前は `0.17.1` で失敗）。ローカルのモデルが `sensitive` で止めた応答が、再試行されずに `MODEL_CONTENT_FILTERED` で届くこと（3.17.1 以降）。プロジェクトが同じ名前を宣言していても、Paseo の MCP サーバーのツールがモデルに届くこと（`scope` を外すと 3.17.2 で失敗）。新しいコードで、固定中の 3.16.2-paseo.1（一時 `XDG_DATA_HOME` に導入）も全項目が成功した。
+- **`test:native-restore`**：3.17.2 でも失敗した（期待 `edit` + Plan ON に対し、`yolo` + Plan OFF）。保証範囲外の上流の不具合は残る（ADR 14）。
+- **`test:e2e`**：`GLM_API_KEY` と隔離したデータで、このローカルビルドに対して実行した。モデルと推論レベル、独立した Plan と承認・拒否、Plan とモデルの復元、ガイダンス、添付キュー、単一完了、停止と再開が passed だった。
+- **`test:usage-runtime`**：実行していない。この端末の Desktop は 3.16.3 で、3.17.2 の Server を実データで起動すると、共有データを Desktop より先に移行するおそれがある。
+
+未検証：Account タブでの実際のサインインと Coding Plan の利用量（3.17.2）、ZCode Sites のデプロイ、Desktop で付けた MCP の信頼がプラグインのセッションに効くこと、Desktop 3.16.3 と管理下ランタイム 3.17.2 が共有データを使う場合。既存の利用者は、固定値が変わるので Runtime タブから導入し直す。
+
 # Paseo 0.15.3 への追従（2026-11-09）
 
 Issue #69、#75〜#82、#85、#87〜#89 の対応。Paseo 0.13.0-beta.1 から 0.15.3 までの変更履歴を読んだ。あわせて v0.12.0 と v0.15.3（`d91ae138cb931447635e94296023414a58bedcc5`）の差分を確認した。対象は `packages/plugin`、`plugin-provider.ts`、`agent-manager.ts`、アイドル時の解放、プラグインのコンパイラと準備処理である。判断は [ADR 25](adr/0025-paseo-0-15を最低要件にしzcodeの作業が残る間はアイドル時のランタイム解放を拒否する.md) に記録した。

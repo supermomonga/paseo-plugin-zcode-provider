@@ -178,19 +178,22 @@ describe("ZCode prompt and MCP mapping", () => {
 
   it("losslessly maps supported MCP transports and rejects unsupported fields", () => {
     expect(
-      mapMcpServers({
-        local: {
-          type: "stdio",
-          command: "/usr/bin/env",
-          args: ["node"],
-          env: { A: "B" },
+      mapMcpServers(
+        {
+          local: {
+            type: "stdio",
+            command: "/usr/bin/env",
+            args: ["node"],
+            env: { A: "B" },
+          },
+          remote: {
+            type: "http",
+            url: "https://example.test/mcp",
+            headers: { Authorization: "placeholder" },
+          },
         },
-        remote: {
-          type: "http",
-          url: "https://example.test/mcp",
-          headers: { Authorization: "placeholder" },
-        },
-      }),
+        "3.16.2",
+      ),
     ).toEqual([
       {
         name: "local",
@@ -206,14 +209,31 @@ describe("ZCode prompt and MCP mapping", () => {
       },
     ]);
     expect(() =>
-      mapMcpServers({
-        unsupported: {
-          type: "stdio",
-          command: "/bin/echo",
-          alwaysLoad: true,
+      mapMcpServers(
+        {
+          unsupported: {
+            type: "stdio",
+            command: "/bin/echo",
+            alwaysLoad: true,
+          },
         },
-      }),
+        "3.16.2",
+      ),
     ).toThrow(/alwaysLoad/u);
+  });
+
+  it("marks Paseo's MCP servers as user servers where ZCode accepts a scope", () => {
+    const servers = {
+      local: { type: "stdio" as const, command: "/usr/bin/env" },
+      remote: { type: "sse" as const, url: "https://example.test/mcp" },
+    };
+    const scopes = (appVersion: string | undefined) =>
+      mapMcpServers(servers, appVersion).map((server) => server.scope);
+    expect(scopes("3.17.2")).toEqual(["user", "user"]);
+    expect(scopes("3.17.1")).toEqual(["user", "user"]);
+    // Older Servers reject the field, and an unknown version is not assumed new.
+    expect(scopes("3.16.2")).toEqual([undefined, undefined]);
+    expect(scopes(undefined)).toEqual([undefined, undefined]);
   });
 });
 

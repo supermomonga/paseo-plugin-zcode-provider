@@ -52,6 +52,29 @@ let connection,
   modelCalls = 0;
 const responses = new Set();
 const modelRequests = [];
+// A stdio MCP server with one tool, as Paseo would pass to a session.
+const MCP_FIXTURE = `import { createInterface } from "node:readline";
+const send = (message) =>
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
+for await (const line of createInterface({ input: process.stdin })) {
+  const { id, method, params } = JSON.parse(line);
+  if (id === undefined) continue;
+  if (method === "initialize")
+    send({ id, result: {
+      protocolVersion: params.protocolVersion,
+      capabilities: { tools: {} },
+      serverInfo: { name: "paseofixture", version: "1.0.0" },
+    } });
+  else if (method === "tools/list")
+    send({ id, result: { tools: [{
+      name: "probe",
+      description: "Paseo fixture tool",
+      inputSchema: { type: "object", properties: {} },
+    }] } });
+  else if (method === "ping") send({ id, result: {} });
+  else send({ id, error: { code: -32601, message: "Method not found" } });
+}
+`;
 // GLM's weekly or monthly quota response (business code 1310).
 const QUOTA_MESSAGE =
   "您已达到每周/每月使用上限，您的限额将在 2026-11-07 16:34:13 重置。";
@@ -63,6 +86,7 @@ const modelServer = createServer(async (req, res) => {
     modelRequests.push({
       tools: (input.tools ?? []).map((t) => t.function.name),
       messages: JSON.stringify(input.messages ?? []),
+      appVersion: req.headers["x-zcode-app-version"],
     });
     if (scenario === "quota") {
       res.writeHead(429, { "content-type": "application/json" });
@@ -141,6 +165,12 @@ const modelServer = createServer(async (req, res) => {
       choices: [{ index: 0, delta, finish_reason }],
       usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
     });
+    if (scenario === "filtered") {
+      // GLM ends a reply that its output safety review blocked with "sensitive".
+      res.write(`data: ${JSON.stringify(chunk({}, "sensitive"))}\n\n`);
+      res.end("data: [DONE]\n\n");
+      return;
+    }
     res.write(`data: ${JSON.stringify(chunk(delta, null))}\n\n`);
     res.write(
       `data: ${JSON.stringify(chunk({}, useTool ? "tool_calls" : "stop"))}\n\n`,
@@ -382,6 +412,7 @@ try {
   assert.ok(catalog.models.length);
   // Guarded ("Autonomous mode") exists from ZCode 3.15.1.
   const guarded = gte(identity.appVersion, "3.15.1");
+  const contentFilter = gte(identity.appVersion, "3.17.1");
   assert.equal(
     catalog.modes.some((m) => m.id === "guarded"),
     guarded,
@@ -414,6 +445,11 @@ try {
   // that the fixture caches are discovered at all.
   const turnRequest = modelRequests.find((r) => r.tools.includes("Bash"));
   assert.ok(turnRequest, "The Bash turn must reach the model");
+  assert.equal(
+    turnRequest.appVersion,
+    identity.appVersion,
+    "Model requests must report the ZCode app version, as Desktop's do",
+  );
   assert.ok(
     !turnRequest.tools.includes("mcp__node_repl__js"),
     "The shared Browser and Computer Use tool must be hidden from every turn",
@@ -595,6 +631,18 @@ try {
     "rate_limited",
   );
   assert.ok(!JSON.stringify(quota).includes(QUOTA_MESSAGE));
+  if (contentFilter) {
+    // Since 3.17.1 ZCode fails a blocked reply at once instead of retrying it.
+    await prompt("filtered");
+    const filtered = await terminal();
+    assert.equal(filtered.state, "failed");
+    assert.equal(filtered.error.code, "MODEL_CONTENT_FILTERED");
+    assert.equal(
+      JSON.parse(filtered.error.diagnostic).failure.reason,
+      "content_filter",
+    );
+    assert.equal(modelCalls, 1, "ZCode must not retry a blocked reply");
+  }
   await prompt("bash");
   assert.equal((await terminal()).state, "completed");
   assert.equal(await canStopRuntime(), true);
@@ -666,6 +714,40 @@ try {
   await open(saved, { mode: "yolo", settings: { plan_mode: false } });
   await prompt("bash", "Resume working.");
   assert.equal((await terminal()).state, "completed");
+  // Paseo's MCP servers reach the model even when the project declares one of
+  // the same name, which ZCode 3.17 keeps until the project is trusted.
+  await send({ type: "session.close", requestId: "close-mcp" });
+  await wait((e) => e.type === "session.closed");
+  await connection.close();
+  await connect();
+  const mcpWorkspace = join(directory, "mcp-workspace");
+  await mkdir(join(mcpWorkspace, ".agents"), { recursive: true });
+  await writeFile(
+    join(mcpWorkspace, ".agents/mcp.json"),
+    JSON.stringify({
+      mcpServers: { paseofixture: { command: process.execPath, args: [] } },
+    }),
+  );
+  await writeFile(join(directory, "mcp-fixture.mjs"), MCP_FIXTURE);
+  await open(undefined, {
+    cwd: mcpWorkspace,
+    mode: "yolo",
+    mcpServers: {
+      paseofixture: {
+        type: "stdio",
+        command: process.execPath,
+        args: [join(directory, "mcp-fixture.mjs")],
+      },
+    },
+  });
+  await prompt("bash");
+  assert.equal((await terminal()).state, "completed");
+  // Title generation for the new session also reaches the model, without tools.
+  const mcpTurn = modelRequests.findLast((r) => r.tools.includes("Bash"));
+  assert.ok(
+    mcpTurn.tools.includes("mcp__paseofixture__probe"),
+    `Paseo's MCP server must reach the model: ${mcpTurn.tools}`,
+  );
   console.log(
     JSON.stringify(
       {
@@ -679,6 +761,7 @@ try {
           "catalog",
           "draft",
           "Bash",
+          "app version in model requests",
           "single ACK/completion",
           "cold resume with Paseo mode and Plan settings",
           "history replay",
@@ -688,6 +771,7 @@ try {
           "targeted stop",
           "restart after stop",
           "provider quota failure",
+          ...(contentFilter ? ["content-filtered reply"] : []),
           "restart after failure",
           "idle runtime kept for background Bash",
           "slash command completion",
@@ -695,6 +779,7 @@ try {
           "EOF cleanup",
           "Agent cleanup after Server SIGKILL",
           "resume after Server SIGKILL",
+          "Paseo's MCP server beside a project declaration",
           patched
             ? "unsupported plugins and tool hidden (patched runtime)"
             : "unsupported tool hidden, plugins visible (unpatched runtime)",

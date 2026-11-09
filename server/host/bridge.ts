@@ -144,6 +144,9 @@ export class ZCodeHostBridge implements HostBridge {
       env: {
         ...runtimeEnvironment(environment),
         ...UNSUPPORTED_CAPABILITY_ENVIRONMENT,
+        // The Agent inherits this and reports it in model request headers, or
+        // its CLI version without it. Desktop and the remote Core set it too.
+        ZCODE_APP_VERSION: runtime.identity.appVersion,
         ZCODE_SERVICE_AUTHORITY_MODE: "standalone-server",
         ZCODE_AGENT_SERVER_COMMAND: runtime.paths.executable,
         ZCODE_AGENT_SERVER_ARGS_JSON: JSON.stringify([

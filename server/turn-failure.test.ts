@@ -29,6 +29,7 @@ test.each([
   ["tls_error", "MODEL_NETWORK_ERROR"],
   ["server_error", "MODEL_PROVIDER_ERROR"],
   ["provider_overloaded", "MODEL_PROVIDER_ERROR"],
+  ["content_filter", "MODEL_CONTENT_FILTERED"],
   ["invalid_request", "MODEL_REQUEST_FAILED"],
   ["unknown", "MODEL_REQUEST_FAILED"],
   ["secret-reason", "MODEL_REQUEST_FAILED"],
