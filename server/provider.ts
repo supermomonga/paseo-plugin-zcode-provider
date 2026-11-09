@@ -52,6 +52,10 @@ import {
 import { SessionSnapshotSchema, SessionListSchema } from "./host/schemas.js";
 import { TimelineSnapshots } from "./timeline.js";
 import type { NativeSessionEvent } from "./session-types.js";
+import {
+  defaultTimelinePreferences,
+  type TimelinePreferences,
+} from "../shared/timeline.js";
 
 export const CAPABILITIES = [
   "prompt.message",
@@ -117,6 +121,7 @@ export function createZCodeProvider(
   bridgeFactory: BridgeFactory = createHost,
   persistenceStore = new SessionPersistenceStore(),
   status: ProviderRegistration["status"] = createRuntimeStatus(),
+  timeline: () => TimelinePreferences = () => defaultTimelinePreferences,
 ): ProviderRegistration {
   return {
     id: "zcode",
@@ -134,6 +139,7 @@ export function createZCodeProvider(
         negotiateProviderCapabilities(request.capabilities, CAPABILITIES),
         bridgeFactory,
         persistenceStore,
+        timeline,
       );
     },
   };
@@ -154,6 +160,7 @@ export class ZCodeConnection implements ProviderConnection {
     readonly capabilities: readonly string[],
     private readonly bridgeFactory: BridgeFactory,
     private readonly persistenceStore: SessionPersistenceStore,
+    private readonly timeline: () => TimelinePreferences,
   ) {}
 
   onEvent(listener: (event: ProviderEvent) => void): () => void {
@@ -559,6 +566,7 @@ export class ZCodeConnection implements ProviderConnection {
         workspace: cwd,
         snapshot,
         modelCatalog: selection.models,
+        timeline: this.timeline,
         onClose() {},
       });
       if (

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-// Types only, from the module every supported Paseo resolves; Paseo 0.8–0.10
+// Types only, from the module every supported Paseo resolves; Paseo 0.9–0.10
 // reject `@getpaseo/plugin/server/usage` even as a type import.
 import type {
   UsageReport,

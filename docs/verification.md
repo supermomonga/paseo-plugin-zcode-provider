@@ -1,3 +1,23 @@
+# モデル切り替えの行を設定で出し分ける（2026-11-09）
+
+[Issue #83](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/83) で、ZCode のエージェントのタイムラインに `Model: GLM-5.3-Flash ()` と `Model: auto/glm-5.3-flash (max)` がターンごとに交互に増えると報告された。
+
+## 原因と変更
+
+- この行はプラグインが ZCode の `modelChange` マーカーから作っていた。括弧の中は推論レベルで、ZCode は選択に推論レベルが無いと空文字を入れる（3c5b227 の `product-projection.ts` の `onModelSelected`）。
+- ZCode がこのマーカーを出すのは、ターンのプロバイダーとモデルが直前のターンと違うときだけである（同 `onTurnStarted`）。
+- 行の文言を ZCode Desktop に合わせ、`Using provider/model` と `Model switched provider/model → provider/model` にした。推論レベルは出さない。
+- 設定画面に Timeline タブを加え、**Show model changes**（既定はオフ）で表示を選べるようにした。Paseo のホスト単位の設定文書 `timeline` に保存し、サーバーは `registerSettings()` のハンドルで追う。表示するかどうかはマーカーを最初に見た時点で決める。最低要件を Paseo 0.9.0 に上げた。判断は [ADR 23](adr/0023-モデル切り替えの表示をpaseoの設定apiで選べるようにし最低要件を0-9-0に上げる.md) に記録した。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-09）
+
+- **再現の試み**：管理下ランタイム（ZCode 3.16.2）と、ローカルで固定の応答を返すモデルを使った。カスタムの API キープロバイダー（モデル ID `auto/glm-5.3-flash`、推論レベル low/high/max）で、ターンの前後にセッションを閉じて開き直す操作を 2 回行い、サブエージェントを呼ぶ場合も試した。マーカーは一度も出ず、モデルへのリクエストはすべて `auto/glm-5.3-flash` と `max` だった。ターンごとに交互に出る状態は再現していない。
+- **テスト**：追加したテストのうち、表示の判定を外すと `test/provider.test.ts` の 2 件が失敗することを確かめた。`npm run typecheck`、`npm test`（23 ファイル、215 tests）、`npm run build`、`npm run format:check`、`git diff --check` が成功した。
+- **上流**：Paseo 0.12.0（`cafe4b01c8522ff39560241c5deb01427dc8dc5b`）に対する `npm run test:upstream` が成功した。設定 `timeline` の登録も確認している。ローカルでは `NODE_PATH` を外して実行した。
+- **実 UI**：`@getpaseo/cli@0.15.1` の一時 daemon（`--home` は一時ディレクトリ、loopback、relay と MCP は無効、Web UI と plugins は有効）にこの worktree を導入し、ヘッドレス Chrome で Settings → Plugins → zcode-provider → Settings → Timeline を開いた。スイッチは既定でオフで、切り替えると `plugin-settings/zcode-provider/timeline.json` に保存され、再読み込み後も値が残った。
+
+未検証：実 daemon でのエージェントの会話への反映（ZCode のセッションは作っていない）。最低要件 0.9.0 の実コンパイラでの `test:upstream`。報告者の環境でモデルが交互に切り替わる原因。
+
 # アプリからの Steer が `Duplicate ZCode clientMessageId` で失敗する（2026-10-24）
 
 ZCode の実行中にアプリからメッセージを送ると、`[System Error] Duplicate ZCode clientMessageId` になり、メッセージが届かなかった。

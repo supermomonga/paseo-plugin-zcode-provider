@@ -9,13 +9,17 @@ import type {
 import { createZCodeProvider, CAPABILITIES } from "../server/provider.js";
 import { SessionPersistenceStore } from "../server/persistence.js";
 import { FakeBridge, snapshot } from "./fake-host.js";
-export async function providerFixture() {
+import type { TimelinePreferences } from "../shared/timeline.js";
+export async function providerFixture(timeline?: () => TimelinePreferences) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), "zcode-v4-test-")));
   const host = new FakeBridge(snapshot(cwd));
   const store = new SessionPersistenceStore(join(cwd, "state"));
-  const connection = await createZCodeProvider(async () => host, store).connect(
-    { versions: [1], capabilities: CAPABILITIES },
-  );
+  const connection = await createZCodeProvider(
+    async () => host,
+    store,
+    undefined,
+    timeline,
+  ).connect({ versions: [1], capabilities: CAPABILITIES });
   const events: ProviderEvent[] = [];
   connection.onEvent((e) => events.push(e));
   const wait = async (predicate: (e: ProviderEvent) => boolean) => {

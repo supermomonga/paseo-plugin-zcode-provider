@@ -468,14 +468,30 @@ async function checkContributions({
   const contribution = runInThisContext(serverBundle)((name) =>
     name === "@getpaseo/plugin/server/provider" ? sdk : requireModule(name),
   );
-  // Paseo 0.8–0.10 offer no registerUsageSource; the plugin must still load.
+  // Paseo 0.9+ returns a settings handle; the plugin follows the timeline
+  // settings with it.
+  const settings = [];
+  const registerSettings = (definition) => {
+    settings.push(definition.id);
+    return {
+      read: async () => ({
+        status: "ready",
+        revision: "1",
+        values: definition.schema.parse({}),
+      }),
+      subscribe: () => () => {},
+    };
+  };
+  // Paseo 0.9–0.10 offer no registerUsageSource; the plugin must still load.
   let registered;
   const dispose = contribution.default({
     registerProvider(provider) {
       registered = provider;
     },
+    registerSettings,
     handle() {},
   });
+  assert.deepEqual(settings, ["timeline"]);
   assert.equal(registered.id, "zcode");
   assert.equal(typeof registered.status, "function");
   await readPluginProviderIcon(candidate, registered.icon);
@@ -488,6 +504,7 @@ async function checkContributions({
     registerUsageSource(source) {
       sources.push(source);
     },
+    registerSettings,
     handle() {},
   });
   assert.equal(sources.length, 1);
@@ -521,6 +538,7 @@ async function checkContributions({
       return {
         openExternalUrl: async () => {},
         useRpc: () => async () => ({}),
+        useSettings: () => ({ status: "loading" }),
       };
     if (name === "@getpaseo/plugin/client/react-native")
       return { copyText: async () => {} };
@@ -554,6 +572,7 @@ async function checkContributions({
     compiledBytes: Buffer.byteLength(serverBundle),
     clientCompiledBytes: Buffer.byteLength(clientBundle),
     registration: "passed",
+    settingsRegistration: "passed",
     usageSourceRegistration: "passed",
     clientRegistration: "passed",
   };

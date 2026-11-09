@@ -6,7 +6,7 @@ This plugin connects Paseo's public Provider API to the official stdio Services 
 
 - `index.server.ts` / `index.client.tsx`: Server and settings UI registration.
 - `server/`: Provider, sessions, and persistence. `discovery/` locates installations; `runtime/` pins and installs the managed runtime; `host/` and `protocol/` handle startup, communication, and validation.
-- `client/`: React Native Settings (Runtime and Account tabs) and Diagnostics screens. `shared/` contains types and contracts shared by the server and client.
+- `client/`: React Native Settings (Runtime, Account and Timeline tabs) and Diagnostics screens. `shared/` contains types and contracts shared by the server and client.
 - `test/`: Integration tests and `fake-host.ts`. Unit tests also live in `server/`.
 - `scripts/`: Build, upstream integration, and runtime verification scripts. `docs/` contains development procedures, verification records, and ADRs. Images live in `images/` and `icon.svg`.
 
@@ -61,5 +61,6 @@ Identify the root cause and do not add ad hoc workarounds. Add backward compatib
 - Account and provider settings go only through the official `oauth`, `setting` and `provider-settings` services of a plugin-owned Server, as Desktop does (ADR 17). Never read or write ZCode's credential or configuration files directly, store credentials in the plugin, or return API keys or native error messages to clients.
 - On Paseo 0.11+, the provider's `status()` reports runtime discovery without starting a Server, and the `zcode` usage source reads Coding Plan quota only through `usage-stats.getEntitlementSnapshot` on the same Server (ADR 18). Register Paseo 0.11 APIs only when the daemon provides them, and import their types only from `@getpaseo/plugin/server`: older compilers reject `@getpaseo/plugin/server/usage`, even for types.
 - Computer Use and Browser Use cannot run in the provider's standalone Server (ADR 19), and Visualize renders only in Desktop (ADR 21). `server/unsupported-capabilities.ts` defines what the bridge passes to every Server (`ZCODE_CUA_PRODUCT_HELPER=0` and `PASEO_ZCODE_SUPPRESSED_PLUGINS`) and the per-turn `toolDisallowlist`. Keep the official switches as well as the patch: `PASEO_ZCODE_RUNTIME` runtimes are unpatched.
+- Plugin preferences are Paseo host settings defined in `shared/` and followed on the server through the `registerSettings()` handle (ADR 23). Paseo 0.9.0 is the minimum because older daemons cannot read them. Model change markers are hidden by default; whether one is shown is decided when it is first seen.
 - Persistence handles use version 3. Do not migrate old Paseo handles or introduce Plan restoration storage.
 - The plugin is published to npm only through the Version Bump and Release workflows (ADR 16); see `docs/development.md`. npm installation omits development dependencies, so keep runtime libraries other than Paseo's host modules (`@getpaseo/plugin/*`, `zod`) in `dependencies`. The `build` commands in `paseo-plugin.json` prepare Git checkouts only; `prepack` removes them from the npm package.

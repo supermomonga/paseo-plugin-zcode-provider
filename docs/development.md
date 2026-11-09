@@ -12,7 +12,7 @@ npm run check:zcode-source -- ~/ghq/github.com/zai-org/ZCode
 npm run test:upstream -- /absolute/path/to/paseo
 ```
 
-`test:upstream` uses Paseo's actual plugin compiler, Git preparation and Provider adapter. Use commit `cafe4b01c8522ff39560241c5deb01427dc8dc5b` (0.12.0), matching the installed development SDK. It checks clean npm preparation of a Git checkout both with `NODE_ENV` unset and `production`, installation of the `npm pack` tarball with Paseo's npm acquisition options, server/client registration and the provider icon of both, V4 timeline, guidance, attachment queue aggregation, stop, provider replacement, history and Plan configuration on resume. The adapter fixture uses the official V4 schemas and delta application; it does not prove native behavior.
+`test:upstream` uses Paseo's actual plugin compiler, Git preparation and Provider adapter. Use commit `cafe4b01c8522ff39560241c5deb01427dc8dc5b` (0.12.0), matching the installed development SDK. It checks clean npm preparation of a Git checkout both with `NODE_ENV` unset and `production`, installation of the `npm pack` tarball with Paseo's npm acquisition options, server/client registration (including the timeline settings document) and the provider icon of both, V4 timeline, guidance, attachment queue aggregation, stop, provider replacement, history and Plan configuration on resume. The adapter fixture uses the official V4 schemas and delta application; it does not prove native behavior.
 
 ## Source of truth
 
