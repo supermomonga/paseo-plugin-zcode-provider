@@ -52,6 +52,9 @@ let connection,
   modelCalls = 0;
 const responses = new Set();
 const modelRequests = [];
+// GLM's weekly or monthly quota response (business code 1310).
+const QUOTA_MESSAGE =
+  "您已达到每周/每月使用上限，您的限额将在 2026-11-07 16:34:13 重置。";
 const modelServer = createServer(async (req, res) => {
   try {
     let body = "";
@@ -61,6 +64,13 @@ const modelServer = createServer(async (req, res) => {
       tools: (input.tools ?? []).map((t) => t.function.name),
       messages: JSON.stringify(input.messages ?? []),
     });
+    if (scenario === "quota") {
+      res.writeHead(429, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({ error: { code: "1310", message: QUOTA_MESSAGE } }),
+      );
+      return;
+    }
     res.writeHead(200, { "content-type": "text/event-stream" });
     responses.add(res);
     res.on("close", () => responses.delete(res));
@@ -557,6 +567,19 @@ try {
   await configure({ mode: "yolo" });
   await prompt("bash");
   assert.equal((await terminal()).state, "completed");
+  // A provider failure reaches Paseo classified, without the provider's text (ADR 23).
+  await prompt("quota");
+  const quota = await terminal();
+  assert.equal(quota.state, "failed");
+  assert.equal(quota.error.code, "MODEL_RATE_LIMITED");
+  assert.match(quota.error.message, /\(HTTP 429, provider code 1310\)/u);
+  assert.equal(
+    JSON.parse(quota.error.diagnostic).failure.reason,
+    "rate_limited",
+  );
+  assert.ok(!JSON.stringify(quota).includes(QUOTA_MESSAGE));
+  await prompt("bash");
+  assert.equal((await terminal()).state, "completed");
   await prompt("command", "/plan");
   assert.equal(
     events.find((e) => e.type === "session.prompt_result").result.type,
@@ -625,6 +648,8 @@ try {
           ...(guarded ? ["guarded risky-command approval"] : []),
           "targeted stop",
           "restart after stop",
+          "provider quota failure",
+          "restart after failure",
           "slash command completion",
           "session listing v3",
           "EOF cleanup",

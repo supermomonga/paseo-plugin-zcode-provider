@@ -20,3 +20,4 @@
 * [20. タグの無い上流の同期コミットをpackage versionで特定してZCodeのソース基準にする](0020-タグの無い上流の同期コミットをpackage-versionで特定してzcodeのソース基準にする.md)
 * [21. Desktop専用のvisualizeプラグインもADR 19の抑止対象に加える](0021-desktop専用のvisualizeプラグインもadr-19の抑止対象に加える.md)
 * [22. Paseoが求めるときは受け付けたSteerが読まれるまで保留中の権限確認を拒否する](0022-paseoが求めるときは受け付けたsteerが読まれるまで保留中の権限確認を拒否する.md)
+* [23. ターンの失敗はV4のlastErrorのattributionで分類したコードと固定の文言で伝える](0023-ターンの失敗はv4のlasterrorのattributionで分類したコードと固定の文言で伝える.md)
