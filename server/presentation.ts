@@ -458,8 +458,14 @@ function markerText(marker: TimelineMarkerPayload): string {
   switch (marker.type) {
     case "compact":
       return `Context compaction: ${marker.status}`;
-    case "modelChange":
-      return `Model: ${marker.toModel} (${marker.toThought})`;
+    case "modelChange": {
+      // Worded as in ZCode Desktop, which also omits the reasoning level: it
+      // does not count as a model change and may be empty.
+      const to = `${marker.toProvider}/${marker.toModel}`;
+      return marker.fromProvider === undefined || marker.fromModel === undefined
+        ? `Using ${to}`
+        : `Model switched ${marker.fromProvider}/${marker.fromModel} → ${to}`;
+    }
     case "forkNotice":
       return "Conversation continued from a parent conversation.";
     case "forkCreated":
