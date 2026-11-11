@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { load } from "cheerio";
+import semver from "semver";
 import {
   cliOptions,
   collectRelease,
@@ -35,8 +36,11 @@ export function parsePaseoPage(html) {
 
 export async function fetchNewPaseoReleases(currentVersion, fetchImpl = fetch) {
   validateVersion(currentVersion);
+  // Only stable releases need support work; betas and other prereleases are not tracked.
   return newerReleases(
-    parsePaseoPage(await fetchHtml(PASEO_CHANGELOG_URL, fetchImpl)),
+    parsePaseoPage(await fetchHtml(PASEO_CHANGELOG_URL, fetchImpl)).filter(
+      ({ version }) => semver.prerelease(version) === null,
+    ),
     currentVersion,
   );
 }

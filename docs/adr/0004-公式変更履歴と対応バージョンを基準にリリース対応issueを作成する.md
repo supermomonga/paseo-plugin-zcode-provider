@@ -6,6 +6,8 @@ date: 2026-09-08
 links:
   - target: 7
     kind: amendedby
+  - target: 26
+    kind: amendedby
 ---
 
 # 公式変更履歴と対応バージョンを基準にリリース対応Issueを作成する

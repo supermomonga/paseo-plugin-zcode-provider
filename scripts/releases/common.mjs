@@ -78,6 +78,7 @@ export function buildIssueDraft(product, release) {
   const body = [
     `${product.name} ${release.version} has been released. Please verify that paseo-plugin-zcode-provider remains compatible and make any necessary changes.`,
     `Changelog: ${release.url}`,
+    ...(release.sourceUrl ? [`Source: ${release.sourceUrl}`] : []),
     "## Changelog",
     release.markdown.trim(),
     issueMarker(product, release.version),
@@ -94,9 +95,12 @@ export function hasMatchingIssue(product, draft, issues) {
   );
 }
 
-export function runGh(args, input) {
+export function runCommand(command, args, { input, env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn("gh", args, { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      env: { ...process.env, ...env },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (chunk) => {
@@ -110,12 +114,18 @@ export function runGh(args, input) {
     child.on("close", (code) => {
       if (code !== 0)
         reject(
-          new Error(`gh ${args[0]} failed: ${stderr.trim() || `exit ${code}`}`),
+          new Error(
+            `${command} ${args[0]} failed: ${stderr.trim() || `exit ${code}`}`,
+          ),
         );
       else resolve(stdout.trim());
     });
     child.stdin.end(input);
   });
+}
+
+export function runGh(args, input) {
+  return runCommand("gh", args, { input });
 }
 
 export function parseIssuePages(pages) {
@@ -177,13 +187,21 @@ export async function runReleaseCheck({
   log = console.log,
 }) {
   const releases = await product.fetchNewReleases(currentVersion, fetchImpl);
-  const drafts = releases.map((release) => buildIssueDraft(product, release));
+  const candidates = releases.map((release) => ({
+    pending: release.pending,
+    draft: buildIssueDraft(product, release),
+  }));
   // Dry runs preview candidates without requiring GitHub credentials or writing issues.
   const issues = dryRun ? [] : await issueClient.listIssues(repository);
   const created = [];
-  for (const draft of drafts) {
+  for (const { pending, draft } of candidates) {
     if (hasMatchingIssue(product, draft, issues)) {
       log(`Skipping ${product.name} ${draft.version}: issue already exists`);
+      continue;
+    }
+    // Products mark a release pending when it is listed but not yet actionable.
+    if (pending) {
+      log(`Waiting for ${product.name} ${draft.version}: ${pending}`);
       continue;
     }
     if (dryRun) {
@@ -195,7 +213,7 @@ export async function runReleaseCheck({
     created.push(url);
     log(`Created ${product.name} ${draft.version}: ${url}`);
   }
-  if (!drafts.length)
+  if (!candidates.length)
     log(`No ${product.name} release newer than ${currentVersion}`);
   return created;
 }
