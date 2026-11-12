@@ -56,7 +56,7 @@ Chosen option: "GitHub App のトークンで PR を作る", because 利用者�
 
 2026-11-12 に App を作成し、変数と secret を登録した。秘密鍵で App として認証し、インストール先がこのリポジトリだけであること、権限が Contents と Pull requests の書き込みと Metadata の読み取りであること、Webhook が設定されていないことを API で確認した。
 
-Version Bump を実行して、リリース PR の `pull_request` の CI が承認待ちにならずに始まること、PR のチェック一覧に結果が出ること、`workflow_dispatch` の CI が起動されないことを確認する。この確認は変更を `main` に入れたあとに行うもので、この ADR の記録時点では未実施である。
+同じ日に変更を `main` に入れて Version Bump を実行し、v0.5.1 のリリース PR（#101）で確認した。PR は `supermomonga-release` の名義で作られ、`pull_request` の CI は承認待ちにならずに始まり、`workflow_dispatch` の CI は起動されなかった。CI の 7 件のジョブ（実モデルの E2E を含む）は成功し、その結果は PR のチェック一覧に出た。
 
 ## Pros and Cons of the Options
 
