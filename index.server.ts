@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { AccountService } from "./server/account.js";
+import { GoalDirectory } from "./server/goal.js";
 import { createHost, createZCodeProvider } from "./server/provider.js";
 import { ManagedRuntimeInstaller } from "./server/runtime/managed.js";
 import { createRuntimeSetupHandlers } from "./server/runtime-setup.js";
@@ -9,6 +10,7 @@ import { followTimelineSettings } from "./server/timeline-settings.js";
 import { createUsageSource } from "./server/usage.js";
 import { zcodeAccountChange, zcodeAccountView } from "./shared/account.js";
 import { zcodeDiagnostics } from "./shared/diagnostics.js";
+import { zcodeGoals } from "./shared/goal.js";
 import {
   zcodeRuntimeInstall,
   zcodeRuntimeRemove,
@@ -20,9 +22,17 @@ export default function contribute(server: PluginServerContext): () => void {
   const timeline = followTimelineSettings(
     server.registerSettings(zcodeTimelineSettings),
   );
+  const goals = new GoalDirectory();
   server.registerProvider(
-    createZCodeProvider(undefined, undefined, undefined, timeline.current),
+    createZCodeProvider(
+      undefined,
+      undefined,
+      undefined,
+      timeline.current,
+      goals,
+    ),
   );
+  server.handle(zcodeGoals, () => ({ goals: goals.views() }));
   server.handle(zcodeDiagnostics, createDiagnosticsHandler());
   const setup = createRuntimeSetupHandlers(new ManagedRuntimeInstaller());
   server.handle(zcodeRuntimeStatus, setup.status);

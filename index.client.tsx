@@ -1,5 +1,7 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { DiagnosticsScreen } from "./client/diagnostics";
+import { GoalPopover } from "./client/goal";
+import { followGoals } from "./client/goal-pills";
 import { SettingsScreen } from "./client/settings";
 
 export default function contribute(client: PluginClientContext): () => void {
@@ -15,8 +17,10 @@ export default function contribute(client: PluginClientContext): () => void {
     icon: "Activity",
     Component: DiagnosticsScreen,
   });
+  const stopGoals = followGoals(client, GoalPopover);
   return () => {
     removeSettings();
     removeDiagnostics();
+    stopGoals();
   };
 }

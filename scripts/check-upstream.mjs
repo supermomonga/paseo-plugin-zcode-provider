@@ -73,6 +73,7 @@ try {
     ),
     provider: join(root, "server/provider.ts"),
     persistence: join(root, "server/persistence.ts"),
+    goal: join(root, "server/goal.ts"),
     fake: join(root, "test/fake-host.ts"),
   };
   for (const [name, entry] of Object.entries(sources))
@@ -104,7 +105,9 @@ try {
   const { PluginAgentClientRegistry } = await load("adapter");
   const { createZCodeProvider } = await load("provider");
   const { SessionPersistenceStore } = await load("persistence");
+  const { GoalDirectory } = await load("goal");
   const { FakeBridge, snapshot, completeTurn } = await load("fake");
+  const goals = new GoalDirectory();
   const hosts = [],
     warnings = [];
   let savedState;
@@ -133,6 +136,8 @@ try {
       },
       new SessionPersistenceStore(join(directory, "provider-state")),
       status,
+      undefined,
+      goals,
     );
   registry.replace([registration()]);
   try {
@@ -226,9 +231,14 @@ try {
       session.startTurn("Stale", { clientMessageId: "stale" }),
       { name: "StaleProviderSessionError" },
     );
+    // Paseo names the agent in the launch environment of every session.
     const resumed = await registry
       .clients()
-      .zcode.resumeSession(persistence, { cwd: directory, modeId: "edit" });
+      .zcode.resumeSession(
+        persistence,
+        { cwd: directory, modeId: "edit" },
+        { env: { PASEO_AGENT_ID: "agent-1" } },
+      );
     const current = hosts.at(-1);
     assert.equal(current.state.config.planEnabled, true);
     assert.ok(
@@ -303,6 +313,26 @@ try {
     assert.match(failed.error, /\(HTTP 429, provider code 1310\)/u);
     assert.equal(JSON.parse(failed.diagnostic).failure.reason, "rate_limited");
     assert.ok(!JSON.stringify(failed).includes("native-provider-text"));
+    // Paseo sends a listed command as a command; /goal reaches the Server as
+    // its goal command, and the launch environment names the agent (ADR 27).
+    assert.deepEqual(goals.views(), []);
+    const goalRun = await resumed.startTurn("/goal Ship it", {
+      clientMessageId: "goal",
+    });
+    const sent = (type) =>
+      current.calls
+        .filter((c) => c.params?.envelope?.type === type)
+        .map((c) => c.params.envelope.payload.text);
+    assert.deepEqual(sent("sendGoalCommand"), ["Ship it"]);
+    assert.ok(!sent("sendText").some((text) => text.startsWith("/goal")));
+    assert.deepEqual(
+      goals.views().map((goal) => [goal.agentId, goal.status]),
+      [["agent-1", "active"]],
+    );
+    const goalDone = waitForCompletion(resumed, goalRun.turnId);
+    await current.verifyGoal("pass");
+    await goalDone;
+    assert.equal(goals.views()[0].status, "verified");
     const stopRun = await resumed.startTurn("Stop", {
       clientMessageId: "stop",
     });
@@ -336,6 +366,7 @@ try {
           planSettingsResume: "passed",
           targetedStop: "passed",
           providerStatus: "passed",
+          goalCommand: "passed",
         },
         null,
         2,
@@ -555,7 +586,8 @@ async function checkContributions({
     };
   };
   let registered;
-  const sources = [];
+  const sources = [],
+    handlers = [];
   const dispose = contribution.default({
     registerProvider(provider) {
       registered = provider;
@@ -564,9 +596,12 @@ async function checkContributions({
       sources.push(source);
     },
     registerSettings,
-    handle() {},
+    handle(contract) {
+      handlers.push(contract.name);
+    },
   });
   assert.deepEqual(settings, ["timeline"]);
+  assert.ok(handlers.includes("zcode.goals"));
   assert.equal(registered.id, "zcode");
   assert.equal(typeof registered.status, "function");
   await readPluginProviderIcon(candidate, registered.icon);
@@ -614,23 +649,72 @@ async function checkContributions({
         SettingsSection: () => null,
         SettingsSelect: () => null,
         SettingsSwitch: () => null,
+        Icon: () => null,
       };
     return requireModule(name);
   });
   // Like Paseo's client runtime, each registration returns its own cleanup.
   const screens = new Map();
+  // The Goal pill follows the agent directory and the plugin's RPC (ADR 27).
+  const pills = new Map();
+  let agents, observation;
   const disposeClient = clientContribution.default({
     addSettingsScreen(screen) {
       screens.set(screen.id, screen);
       return () => screens.delete(screen.id);
     },
+    addComposerPill(pill) {
+      const key = `${pill.workspaceId}/${pill.agentId}/${pill.id}`;
+      pills.set(key, pill.button);
+      return { update() {}, remove: () => pills.delete(key) };
+    },
+    rpc: async (contract) => {
+      assert.equal(contract.name, "zcode.goals");
+      return {
+        goals: [
+          {
+            agentId: "agent-1",
+            status: "paused",
+            elapsedSeconds: 3780,
+            running: false,
+            iterations: [],
+          },
+        ],
+      };
+    },
+    paseo: {
+      agents: {
+        list: async (options) => {
+          assert.deepEqual(options.subscribe, {});
+          observation = options.signal;
+          return {
+            subscription: { subscribe: (observer) => (agents = observer) },
+          };
+        },
+      },
+    },
   });
   assert.deepEqual([...screens.keys()], ["settings", "diagnostics"]);
   for (const screen of screens.values())
     assert.equal(typeof screen.Component, "function");
+  await new Promise((resolve) => setImmediate(resolve));
+  agents.snapshot({
+    entries: [
+      { agent: { id: "agent-1", provider: "zcode", workspaceId: "w-1" } },
+      { agent: { id: "agent-2", provider: "claude", workspaceId: "w-1" } },
+    ],
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual([...pills.keys()], ["w-1/agent-1/goal"]);
+  const [pill] = pills.values();
+  assert.equal(pill.label, "Goal 1h 3m");
+  assert.equal(pill.behavior.kind, "popover");
+  assert.equal(typeof pill.behavior.Content, "function");
   assert.equal(typeof disposeClient, "function");
   await disposeClient();
   assert.equal(screens.size, 0);
+  assert.equal(pills.size, 0);
+  assert.equal(observation.aborted, true);
   return {
     compiledBytes: Buffer.byteLength(serverBundle),
     clientCompiledBytes: Buffer.byteLength(clientBundle),
@@ -639,6 +723,7 @@ async function checkContributions({
     settingsRegistration: "passed",
     usageSourceRegistration: "passed",
     clientRegistration: "passed",
+    goalPill: "passed",
   };
 }
 

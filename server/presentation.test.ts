@@ -258,6 +258,25 @@ it("reports context compaction only when it ends", () => {
   });
 });
 
+it("reports a goal verification only when it ends", () => {
+  const marker = (outcome: string, detail?: string) =>
+    ({
+      rowId: 9,
+      turnId: "p",
+      createdAt: 1,
+      createdAtSeq: 1,
+      kind: "timelineMarker",
+      marker: { type: "goalVerify", iteration: 1, outcome, detail },
+    }) as any;
+  expect(rowTimeline(marker("running"))).toBeUndefined();
+  expect(rowTimeline(marker("notSatisfied", "goal.txt is missing"))).toEqual({
+    id: "zcode:row:9",
+    type: "notification",
+    level: "info",
+    message: "Goal verification: notSatisfied — goal.txt is missing",
+  });
+});
+
 it("reports model changes with providers and without the reasoning level", () => {
   const marker = (change: object) =>
     ({

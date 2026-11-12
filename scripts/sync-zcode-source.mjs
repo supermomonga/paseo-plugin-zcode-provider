@@ -19,7 +19,14 @@ const entries = [
   ...["apply", "command", "transport", "wire", "wire-assembler"].map(
     (name) => `packages/shared/src/zcode-protocol-v4/${name}.ts`,
   ),
+  // Desktop's Goal section: the rows per iteration and the elapsed time.
+  "packages/ui/src/v4/conversationGoalSummaryModel.ts",
 ];
+// packages/shared/package.json exports this as src/zcode-protocol-v4/index.ts,
+// which re-exports the whole protocol. A type needs only its declaring module.
+const V4_TYPE_MODULES = {
+  GoalState: "packages/shared/src/zcode-protocol-v4/snapshot.ts",
+};
 const files = new Map();
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 function readSource(path) {
@@ -59,7 +66,24 @@ function collect(path) {
         target = alias = posix
           .join("packages/shared/src", specifier.slice(5))
           .replace(/\.js$/, ".ts");
-      else if (specifier !== "zod" && !specifier.startsWith("node:"))
+      else if (specifier === "@zcode/shared/zcode-protocol-v4") {
+        const names =
+          ts.isImportDeclaration(node) &&
+          node.importClause?.isTypeOnly &&
+          node.importClause.namedBindings &&
+          ts.isNamedImports(node.importClause.namedBindings)
+            ? node.importClause.namedBindings.elements.map((e) =>
+                (e.propertyName ?? e.name).getText(ast),
+              )
+            : [];
+        const modules = new Set(names.map((name) => V4_TYPE_MODULES[name]));
+        if (modules.size !== 1 || modules.has(undefined))
+          throw new Error(
+            `Unexpected use of ${specifier} in ${path}: ${names.join(", ") || "not a named type import"}`,
+          );
+        [target] = modules;
+        alias = target;
+      } else if (specifier !== "zod" && !specifier.startsWith("node:"))
         throw new Error(
           `Unexpected upstream dependency ${specifier} in ${path}`,
         );
@@ -124,6 +148,7 @@ const manifest = {
   modifications: [
     "Resolve the private @zcode/model-option-map workspace import to its vendored relative path.",
     "Resolve packages/shared's #src/* subpath imports to their vendored relative paths.",
+    "Resolve type-only imports from @zcode/shared/zcode-protocol-v4 to the vendored module that declares the type.",
     `Select Visual Studio Code notice ${noticeId} from THIRD-PARTY-NOTICES.md and add a scope explanation; sourceSha256 hashes the complete upstream file. LICENSE and NOTICE.md are unchanged.`,
   ],
   files: Object.fromEntries(

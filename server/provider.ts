@@ -51,6 +51,8 @@ import {
 } from "./session.js";
 import { SessionSnapshotSchema, SessionListSchema } from "./host/schemas.js";
 import { TimelineSnapshots } from "./timeline.js";
+import { GoalDirectory } from "./goal.js";
+import { parseGoalCommand } from "./goal-command.js";
 import type { NativeSessionEvent } from "./session-types.js";
 import {
   defaultTimelinePreferences,
@@ -116,6 +118,8 @@ interface SessionEntry {
   messages: Map<string, boolean>;
   inputGeneration: number;
   queue: Promise<void>;
+  /** Removes the session from the goal directory. */
+  forgetGoal: () => void;
 }
 
 export function createZCodeProvider(
@@ -123,6 +127,7 @@ export function createZCodeProvider(
   persistenceStore = new SessionPersistenceStore(),
   status: ProviderRegistration["status"] = createRuntimeStatus(),
   timeline: () => TimelinePreferences = () => defaultTimelinePreferences,
+  goals = new GoalDirectory(),
 ): ProviderRegistration {
   return {
     id: "zcode",
@@ -141,6 +146,7 @@ export function createZCodeProvider(
         bridgeFactory,
         persistenceStore,
         timeline,
+        goals,
       );
     },
   };
@@ -162,6 +168,7 @@ export class ZCodeConnection implements ProviderConnection {
     private readonly bridgeFactory: BridgeFactory,
     private readonly persistenceStore: SessionPersistenceStore,
     private readonly timeline: () => TimelinePreferences,
+    private readonly goals = new GoalDirectory(),
   ) {}
 
   onEvent(listener: (event: ProviderEvent) => void): () => void {
@@ -418,6 +425,25 @@ export class ZCodeConnection implements ProviderConnection {
             ? prompt.arguments.trim()
             : (text?.match(/^\/plan(?:\s+([\s\S]*))?$/)?.[1]?.trim() ??
               (text === "/plan" ? "" : undefined));
+        // The command ran without a turn.
+        const completed = () => {
+          entry.messages.set(input.prompt.clientMessageId, true);
+          this.emit({
+            type: "session.prompt_result",
+            sessionId: input.sessionId,
+            clientMessageId: input.prompt.clientMessageId,
+            result: { type: "completed" },
+          });
+        };
+        const beforeSend = async () => {
+          if (!entry.submitted) {
+            await this.persistenceStore.save(
+              entry.persistence,
+              entry.native.id,
+            );
+            entry.submitted = true;
+          }
+        };
         if (planTask !== undefined) {
           if (prompt.type === "message" && prompt.content.length !== 1)
             throw new AdapterError(
@@ -426,34 +452,51 @@ export class ZCodeConnection implements ProviderConnection {
             );
           await entry.native.configureMode(undefined, true);
           if (!planTask) {
-            entry.messages.set(input.prompt.clientMessageId, true);
-            this.emit({
-              type: "session.prompt_result",
-              sessionId: input.sessionId,
-              clientMessageId: input.prompt.clientMessageId,
-              result: { type: "completed" },
-            });
+            completed();
             return;
           }
         }
+        const command =
+          prompt.type === "command"
+            ? `/${prompt.name}${prompt.arguments ? ` ${prompt.arguments}` : ""}`
+            : undefined;
+        // Like /plan, /goal is not text to the Server: ZCode Desktop sends the
+        // V4 goal commands for it (ADR 27).
+        const goalText =
+          command ??
+          (prompt.type === "message" && prompt.content.length === 1
+            ? text
+            : undefined);
+        const goal =
+          planTask === undefined && goalText !== undefined
+            ? parseGoalCommand(goalText)
+            : undefined;
+        if (goal?.kind === "empty" || goal?.kind === "unsupported")
+          throw new AdapterError(
+            "INVALID_CONFIGURATION",
+            goal.kind === "empty"
+              ? "Usage: /goal <objective>, /goal pause or /goal resume"
+              : `ZCode's Server has no /goal ${goal.action}. Use /goal <objective> to replace the goal, or /goal pause.`,
+          );
+        if (goal?.kind === "pause") {
+          await entry.native.pauseGoal();
+          completed();
+          return;
+        }
+        if (goal) {
+          await entry.native.startGoal(goal, {
+            clientMessageId: input.prompt.clientMessageId,
+            beforeSend,
+          });
+          return;
+        }
         await entry.native.startTurn(
-          planTask ??
-            (prompt.type === "command"
-              ? `/${prompt.name}${prompt.arguments ? ` ${prompt.arguments}` : ""}`
-              : prompt.content),
+          planTask ?? (prompt.type === "command" ? command! : prompt.content),
           {
             clientMessageId: input.prompt.clientMessageId,
             delivery: input.prompt.delivery,
             clearPendingPermissions: input.prompt.clearPendingPermissions,
-            beforeSend: async () => {
-              if (!entry.submitted) {
-                await this.persistenceStore.save(
-                  entry.persistence,
-                  entry.native.id,
-                );
-                entry.submitted = true;
-              }
-            },
+            beforeSend,
           },
         );
         return;
@@ -531,6 +574,7 @@ export class ZCodeConnection implements ProviderConnection {
     const nativeId = await this.persistenceStore.resolve(persistence);
     const host = await this.host(config.env, cwd);
     let native: ZCodeSession | undefined;
+    let forgetGoal = () => {};
     try {
       const { selection } = await initializeWorkspace(host, cwd);
       const requested = nativeId
@@ -621,8 +665,17 @@ export class ZCodeConnection implements ProviderConnection {
         messages: new Map(),
         inputGeneration: 0,
         queue: Promise.resolve(),
+        forgetGoal() {},
       };
       this.sessions.set(input.sessionId, entry);
+      // Paseo sets PASEO_AGENT_ID in the launch environment of every session.
+      const agentId = config.env.PASEO_AGENT_ID;
+      if (agentId) {
+        const session = native;
+        forgetGoal = entry.forgetGoal = this.goals.register(agentId, () =>
+          session.goal(),
+        );
+      }
       this.emit({
         type: "session.opened",
         requestId: input.requestId,
@@ -666,6 +719,7 @@ export class ZCodeConnection implements ProviderConnection {
       });
     } catch (error) {
       this.sessions.delete(input.sessionId);
+      forgetGoal();
       try {
         await native?.close();
       } finally {
@@ -802,6 +856,7 @@ export class ZCodeConnection implements ProviderConnection {
   private async closeSession(id: string): Promise<void> {
     const entry = this.requireSession(id);
     this.sessions.delete(id);
+    entry.forgetGoal();
     try {
       await entry.native.close();
     } finally {

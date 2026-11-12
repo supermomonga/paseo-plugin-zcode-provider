@@ -15,6 +15,7 @@ import type {
   ConversationRow,
   TurnHeaderRow,
 } from "./vendor/zcode/packages/shared/src/zcode-protocol-v4/rows.js";
+import type { GoalState } from "./vendor/zcode/packages/shared/src/zcode-protocol-v4/snapshot.js";
 import { Conversation, conversationCommand } from "./conversation.js";
 import {
   rowTimeline,
@@ -24,6 +25,7 @@ import {
 } from "./presentation.js";
 import { readModelSelection, resolveModelSelection } from "./models.js";
 import { uploadAttachments } from "./attachments.js";
+import { parseGoalCommand, type GoalCommand } from "./goal-command.js";
 import {
   catalogModels,
   decodeModel,
@@ -638,14 +640,210 @@ export class ZCodeSession {
         "SESSION_BUSY",
         "ZCode cannot accept this input in its current execution state",
       );
+    return this.admit(
+      previous,
+      {
+        clientMessageId: options?.clientMessageId,
+        releasesInteractions: options?.clearPendingPermissions === true,
+      },
+      async ({ commandId, assertSending, sending }) => {
+        const native = await mapPrompt(prompt, this.workspace);
+        if (!native.content.trim() && !native.attachments.length)
+          throw new AdapterError(
+            "UNSUPPORTED_CONTENT",
+            "ZCode requires nonempty input",
+          );
+        if (previous && native.content.trimStart().startsWith("/"))
+          throw new AdapterError(
+            "SESSION_BUSY",
+            "ZCode commands require an idle session",
+          );
+        // Text input does not interpret /goal; the model would read it as is.
+        if (parseGoalCommand(native.content))
+          throw new AdapterError(
+            "INVALID_CONFIGURATION",
+            "The /goal command requires a single text input without attachments",
+          );
+        await options?.beforeSend?.();
+        assertSending();
+        if (!previous && !this.state.queue.autoDrain)
+          await this.control("setAutoDrain", { autoDrain: true });
+        const attachments = await uploadAttachments(
+          this.bridge,
+          this.workspace,
+          this.id,
+          native.attachments,
+          assertSending,
+        );
+        assertSending();
+        const config = this.state.config;
+        if (!config.modelSelection?.options?.reasoningLevel)
+          throw new AdapterError(
+            "INVALID_CONFIGURATION",
+            "Select a ZCode model and reasoning level before sending",
+          );
+        sending();
+        const ack = await conversationCommand(
+          this.bridge,
+          this.workspace,
+          this.id,
+          "sendText",
+          {
+            text: native.content,
+            attachments,
+            modelSelection: config.modelSelection,
+            mode: config.mode,
+            planEnabled: config.planEnabled === true,
+            toolDisallowlist: [...UNSUPPORTED_TOOLS],
+            requestedDelivery: previous
+              ? attachments.length
+                ? "queue"
+                : "guide"
+              : "startNow",
+          },
+          { commandId },
+        );
+        if (["failed", "rejected", "stale", "noop"].includes(ack.status))
+          throw new AdapterError(
+            "NATIVE_INPUT_REJECTED",
+            "ZCode rejected the input",
+          );
+        if (
+          ack.status !== "accepted" ||
+          ack.result?.type !== "inputAccepted" ||
+          ack.result.inputId !== commandId
+        )
+          throw new AdapterError(
+            "NATIVE_PROTOCOL_ERROR",
+            "ZCode input acknowledgement is inconsistent",
+          );
+      },
+    );
+  }
+  /**
+   * `/goal <objective>` and `/goal resume`. ZCode records the goal and starts
+   * the turn that works toward it; that turn and its verification belong to
+   * this run. ZCode starts later iterations itself, as turns of their own.
+   */
+  async startGoal(
+    command: Extract<GoalCommand, { kind: "set" | "resume" }>,
+    options: { clientMessageId: string; beforeSend?: () => Promise<void> },
+  ): Promise<{ turnId: string }> {
+    this.assertIdle();
+    // The Server rejects the two together, in any order.
+    if (this.state.config.planEnabled)
+      throw new AdapterError(
+        "INVALID_CONFIGURATION",
+        "ZCode cannot work toward a goal in Plan mode. Turn Plan mode off first.",
+      );
+    if (
+      command.kind === "resume" &&
+      !this.state.availability.resumeGoal.allowed
+    )
+      throw new AdapterError(
+        "INVALID_CONFIGURATION",
+        "ZCode has no paused goal to resume",
+      );
+    return this.admit(
+      undefined,
+      {
+        clientMessageId: options.clientMessageId,
+        // Resuming adds no user input row; the turn it starts is the evidence.
+        consumed: command.kind === "resume",
+      },
+      async ({ commandId, assertSending, sending }) => {
+        await options.beforeSend?.();
+        assertSending();
+        if (!this.state.queue.autoDrain)
+          await this.control("setAutoDrain", { autoDrain: true });
+        assertSending();
+        const config = this.state.config;
+        if (!config.modelSelection?.options?.reasoningLevel)
+          throw new AdapterError(
+            "INVALID_CONFIGURATION",
+            "Select a ZCode model and reasoning level before sending",
+          );
+        sending();
+        // sendGoalCommand takes no toolDisallowlist; see ADR 27.
+        const ack =
+          command.kind === "resume"
+            ? await this.cas("resumeGoal", {})
+            : await conversationCommand(
+                this.bridge,
+                this.workspace,
+                this.id,
+                "sendGoalCommand",
+                {
+                  text: command.objective,
+                  displayText: command.displayText,
+                  modelSelection: config.modelSelection,
+                  mode: config.mode,
+                  planEnabled: false,
+                },
+                { commandId },
+              );
+        if (ack.status !== "accepted")
+          throw new AdapterError(
+            "NATIVE_INPUT_REJECTED",
+            "ZCode rejected the goal command",
+          );
+      },
+    );
+  }
+  /**
+   * `/goal pause`, for a goal that stays active without a turn. Stopping a
+   * turn pauses its goal in ZCode itself.
+   */
+  async pauseGoal(): Promise<void> {
+    this.assertIdle();
+    // Typed during a turn, the command arrives after Paseo stopped that turn,
+    // which paused the goal already.
+    if (this.state.goal?.status === "paused") return;
+    if (!this.state.availability.pauseGoal.allowed)
+      throw new AdapterError(
+        "INVALID_CONFIGURATION",
+        "ZCode has no active goal to pause",
+      );
+    const ack = await this.cas("pauseGoal", {});
+    if (ack.status !== "accepted")
+      throw new AdapterError(
+        "NATIVE_INPUT_REJECTED",
+        "ZCode rejected the goal command",
+      );
+    await this.conversation.waitFor(
+      () => !this.state.availability.pauseGoal.allowed,
+    );
+  }
+  /** The goal of the conversation, for the Goal pill (ADR 27). */
+  goal(): GoalState | null {
+    return this.conversation.state?.goal ?? null;
+  }
+  /**
+   * Admits one input into a run. `send` prepares and issues the command; it
+   * calls `sending` before the command leaves and throws
+   * NATIVE_INPUT_REJECTED when ZCode refuses it.
+   */
+  private async admit(
+    previous: Run | undefined,
+    options: {
+      clientMessageId?: string;
+      releasesInteractions?: boolean;
+      consumed?: boolean;
+    },
+    send: (context: {
+      commandId: string;
+      assertSending: () => void;
+      sending: () => void;
+    }) => Promise<void>,
+  ): Promise<{ turnId: string }> {
     const run = previous ?? this.newRun();
     this.active = run;
     run.inFlight++;
     const commandId = randomUUID(),
       input: Admission = {
-        clientMessageId: options?.clientMessageId,
+        clientMessageId: options.clientMessageId,
         accepted: false,
-        consumed: false,
+        consumed: options.consumed === true,
       };
     run.inputs.set(commandId, input);
     this.admissions.set(commandId, input);
@@ -659,74 +857,17 @@ export class ZCodeSession {
         );
     };
     try {
-      const native = await mapPrompt(prompt, this.workspace);
-      if (!native.content.trim() && !native.attachments.length)
-        throw new AdapterError(
-          "UNSUPPORTED_CONTENT",
-          "ZCode requires nonempty input",
-        );
-      if (previous && native.content.trimStart().startsWith("/"))
-        throw new AdapterError(
-          "SESSION_BUSY",
-          "ZCode commands require an idle session",
-        );
-      await options?.beforeSend?.();
-      assertSending();
-      if (!previous && !this.state.queue.autoDrain)
-        await this.control("setAutoDrain", { autoDrain: true });
-      const attachments = await uploadAttachments(
-        this.bridge,
-        this.workspace,
-        this.id,
-        native.attachments,
+      await send({
+        commandId,
         assertSending,
-      );
-      assertSending();
-      const config = this.state.config;
-      if (!config.modelSelection?.options?.reasoningLevel)
-        throw new AdapterError(
-          "INVALID_CONFIGURATION",
-          "Select a ZCode model and reasoning level before sending",
-        );
-      sent = true;
-      const ack = await conversationCommand(
-        this.bridge,
-        this.workspace,
-        this.id,
-        "sendText",
-        {
-          text: native.content,
-          attachments,
-          modelSelection: config.modelSelection,
-          mode: config.mode,
-          planEnabled: config.planEnabled === true,
-          toolDisallowlist: [...UNSUPPORTED_TOOLS],
-          requestedDelivery: previous
-            ? attachments.length
-              ? "queue"
-              : "guide"
-            : "startNow",
+        sending: () => {
+          sent = true;
         },
-        { commandId },
-      );
-      if (["failed", "rejected", "stale", "noop"].includes(ack.status))
-        throw new AdapterError(
-          "NATIVE_INPUT_REJECTED",
-          "ZCode rejected the input",
-        );
-      if (
-        ack.status !== "accepted" ||
-        ack.result?.type !== "inputAccepted" ||
-        ack.result.inputId !== commandId
-      )
-        throw new AdapterError(
-          "NATIVE_PROTOCOL_ERROR",
-          "ZCode input acknowledgement is inconsistent",
-        );
+      });
       this.assertOpen();
       input.accepted = true;
-      input.releasesInteractions = options?.clearPendingPermissions === true;
-      if (options?.clientMessageId)
+      input.releasesInteractions = options.releasesInteractions === true;
+      if (options.clientMessageId)
         this.emit({
           type: "prompt_accepted",
           clientMessageId: options.clientMessageId,
@@ -754,6 +895,15 @@ export class ZCodeSession {
     }
   }
   private async control(type: string, payload: unknown): Promise<void> {
+    const ack = await this.cas(type, payload);
+    if (ack.status !== "accepted" && ack.status !== "noop")
+      throw new AdapterError(
+        "NATIVE_PROTOCOL_ERROR",
+        `ZCode ${type} was rejected`,
+      );
+  }
+  /** Sends a command that carries the revision it was decided on. */
+  private async cas(type: string, payload: unknown) {
     this.assertOpen();
     // A stale CAS proves no mutation occurred. No input is retried here.
     let revision = this.state.revision;
@@ -766,12 +916,7 @@ export class ZCodeSession {
         payload,
         { revision },
       );
-      if (ack.status === "accepted" || ack.status === "noop") return;
-      if (ack.status !== "stale")
-        throw new AdapterError(
-          "NATIVE_PROTOCOL_ERROR",
-          `ZCode ${type} was rejected`,
-        );
+      if (ack.status !== "stale") return ack;
       revision = ack.revisionAtDecision;
     }
     throw new AdapterError(

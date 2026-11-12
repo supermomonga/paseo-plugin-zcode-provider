@@ -22,11 +22,13 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 - Desktop でアーカイブした会話。ZCode 3.16 の `session/list` はアーカイブを除かなくなり、Paseo の一覧にも出る。アーカイブはサービス側のタスク索引（`zcodeTaskService`）にあるので、公式サービスで除外できるか確認する。
 - プロジェクトの MCP の信頼（ZCode 3.17）。Desktop の Settings → MCP Servers で付けた信頼が、プラグインの Server のセッションにも効くか。保存先は共有の `~/.zcode/security/workspace-mcp-trust-v1.json` で、ローカルのワークスペースは解決済みのパスで識別される（ソースからの推定）。シンボリックリンク経由のフォルダーでは一致しない可能性がある。
 - ZCode Sites（3.17.2 の公式プラグイン `zcode-site`）でのデプロイ。CLI は Bash から `node` で動き、認証は Server の公式の経路を使うので、プラグインからも使えるとみて隠していない。サインインした実ランタイムで `zcode-site list` を試していない。
+- Goal のピル（ADR 27）の、Desktop ネイティブ画面とモバイル実機での表示。確認したのは一時 daemon の Web UI（1400px と 420px）である。実モデルでのゴールの実行（検証の応答は固定のモデルで確かめた）、複数のクライアントを同時に開いた場合、200 件を超えるエージェントがあるホストも未確認。
+- **`/compact` のターンが完了しない（未修正）**：プラグインは `/compact` を `sendText` で送る。管理下ランタイム 3.17.2 と固定の応答を返すモデルで確かめると、圧縮は実行されて `Context compaction: success` が出るが、Paseo のターンは `started` のまま完了しない（35 秒後も会話はアイドルで、実行だけが残る。停止すれば戻る）。圧縮の入力は `userInput` 行として投影されないので、ADR 9 の「受け付けた入力がすべて読まれた」という完了条件を満たさないためである。変更前の `94cd37a` でも同じだった。Desktop は `/compact` を V4 の `compact` コマンドで送る（a9fe401 の `packages/ui/src/v4/slashCommands.ts`）。`/goal`（ADR 27）と同じ形での対応を検討する。`workflow` と `init` は確かめていない。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 
 ## 今回追加しない機能
 
-Browser/Computer Use（このプロバイダでは動かないため、ADR 19 でモデルから隠す。[検証記録](verification.md)）、一般的な rewind、独立した Paseo 子エージェント管理、Hook 信頼レビュー画面、Goal/Workflow 操作 UI、カスタム system prompt、非永続会話、モデルへの JSON Schema 出力制約。通常の ZCode tools / skills / MCP は native に委ねる。
+Browser/Computer Use（このプロバイダでは動かないため、ADR 19 でモデルから隠す。[検証記録](verification.md)）、一般的な rewind、独立した Paseo 子エージェント管理、Hook 信頼レビュー画面、Workflow 操作 UI、Goal の操作ボタン（一時停止・再開は `/goal` コマンドと停止で行う。表示はピルで対応済み、ADR 27）、ゴールを消す操作（V4 にコマンドが無い）、カスタム system prompt、非永続会話、モデルへの JSON Schema 出力制約。通常の ZCode tools / skills / MCP は native に委ねる。
 
 Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグイン API の範囲でのみ対応する。本体変更や別の表示への置き換えは提案・実装しない。新しい公開 API が導入された時に契約と実 UI の両方を再評価する。
 

@@ -8,17 +8,20 @@ import type {
 } from "@getpaseo/plugin/server/provider";
 import { createZCodeProvider, CAPABILITIES } from "../server/provider.js";
 import { SessionPersistenceStore } from "../server/persistence.js";
+import { GoalDirectory } from "../server/goal.js";
 import { FakeBridge, snapshot } from "./fake-host.js";
 import type { TimelinePreferences } from "../shared/timeline.js";
 export async function providerFixture(timeline?: () => TimelinePreferences) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), "zcode-v4-test-")));
   const host = new FakeBridge(snapshot(cwd));
   const store = new SessionPersistenceStore(join(cwd, "state"));
+  const goals = new GoalDirectory();
   const connection = await createZCodeProvider(
     async () => host,
     store,
     undefined,
     timeline,
+    goals,
   ).connect({ versions: [1], capabilities: CAPABILITIES });
   const events: ProviderEvent[] = [];
   connection.onEvent((e) => events.push(e));
@@ -75,6 +78,7 @@ export async function providerFixture(timeline?: () => TimelinePreferences) {
     cwd,
     host,
     store,
+    goals,
     connection,
     events,
     wait,

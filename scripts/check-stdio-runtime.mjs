@@ -50,6 +50,8 @@ const directory = await realpath(
 let connection,
   scenario = "bash",
   modelCalls = 0;
+// What the completion verifier answers next in the goal scenarios.
+let goalVerdicts = [];
 const responses = new Set();
 const modelRequests = [];
 // A stdio MCP server with one tool, as Paseo would pass to a session.
@@ -95,10 +97,40 @@ const modelServer = createServer(async (req, res) => {
       );
       return;
     }
+    if (scenario.startsWith("goal") && input.stream !== true) {
+      // ZCode titles a goal and verifies its completion without streaming.
+      const last = JSON.stringify(input.messages?.at(-1)?.content ?? "");
+      const content = last.includes("Verify whether the active session goal")
+        ? JSON.stringify({
+            passed: goalVerdicts.shift() ?? true,
+            reason: "fixture verdict",
+            nextAction: "Finish the fixture goal",
+          })
+        : "Fixture goal";
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-fixture",
+          object: "chat.completion",
+          created: 0,
+          model: "GLM-5.3-Flash",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
+        }),
+      );
+      return;
+    }
     res.writeHead(200, { "content-type": "text/event-stream" });
     responses.add(res);
     res.on("close", () => responses.delete(res));
-    if (scenario === "hold") return; // interrupt must abort this outstanding model stream.
+    // interrupt must abort this outstanding model stream.
+    if (scenario === "hold" || scenario === "goalHold") return;
     const toolName =
       scenario === "question"
         ? "AskUserQuestion"
@@ -106,7 +138,8 @@ const modelServer = createServer(async (req, res) => {
           ? "Write"
           : "Bash";
     const tool = input.tools?.find((t) => t.function.name === toolName);
-    const useTool = modelCalls++ === 0;
+    // Each turn toward a goal only replies; the verifier decides the rest.
+    const useTool = modelCalls++ === 0 && scenario !== "goal";
     if (useTool)
       assert.ok(tool, `${toolName} must be exposed by the real Agent`);
     const args =
@@ -272,7 +305,7 @@ try {
   await build({
     stdin: {
       contents:
-        'export * from "./server/provider.ts"; export * from "./server/persistence.ts"; export * from "./server/discovery/discover.ts"; export {ZCodeHostBridge} from "./server/host/bridge.ts"; export {logger} from "./server/logger.ts";',
+        'export * from "./server/provider.ts"; export * from "./server/persistence.ts"; export * from "./server/discovery/discover.ts"; export {ZCodeHostBridge} from "./server/host/bridge.ts"; export {logger} from "./server/logger.ts"; export {GoalDirectory} from "./server/goal.ts";',
       resolveDir: root,
     },
     outfile: join(directory, "provider.mjs"),
@@ -287,7 +320,10 @@ try {
     discoverRuntime,
     ZCodeHostBridge,
     logger,
+    GoalDirectory,
   } = await import(pathToFileURL(join(directory, "provider.mjs")));
+  // The goals the Goal pill reads, by Paseo agent (ADR 27).
+  const goals = new GoalDirectory();
   const discovered = await discoverRuntime();
   const { identity, source } = discovered;
   // Runtimes built with patches/zcode list them in BUILD-INFO.json (ADR 19).
@@ -311,6 +347,9 @@ try {
       return bridge;
     },
     new SessionPersistenceStore(join(directory, "mapping")),
+    undefined,
+    undefined,
+    goals,
   );
   let events = [];
   const connect = async () => {
@@ -350,7 +389,8 @@ try {
       config: {
         cwd: join(directory, "workspace"),
         persist: true,
-        env: {},
+        // Paseo names the agent in the launch environment of every session.
+        env: { PASEO_AGENT_ID: "fixture-agent" },
         mcpServers: {},
         settings: {},
         providerOptions: {},
@@ -660,6 +700,65 @@ try {
   );
   assert.ok(continuation);
   assert.equal(await canStopRuntime(), true);
+  // /goal is the Server's goal command, not text (ADR 27). ZCode works toward
+  // the goal in turns it starts itself until the verifier passes it.
+  assert.deepEqual(goals.views(), []);
+  goalVerdicts = [false, true];
+  await prompt("goal", "/goal Create the file goal.txt");
+  assert.equal(
+    events.find((e) => e.type === "session.prompt_result").result.type,
+    "turn",
+  );
+  assert.equal((await terminal()).state, "completed");
+  assert.equal(
+    events.filter((e) => e.type === "session.turn" && e.state === "started")
+      .length,
+    1,
+    "An unsatisfied goal continues within the turn that set it",
+  );
+  assert.ok(
+    events.some(
+      (e) =>
+        e.type === "timeline.item" &&
+        e.item.type === "user_message" &&
+        e.item.text === "/goal Create the file goal.txt",
+    ),
+  );
+  const [verified] = goals.views();
+  assert.equal(verified.agentId, "fixture-agent");
+  assert.equal(verified.status, "verified");
+  assert.equal(verified.running, false);
+  assert.deepEqual(
+    verified.iterations.map((row) => [row.iteration, row.title]),
+    [
+      [1, "Fixture goal"],
+      [2, "Finish the fixture goal"],
+    ],
+  );
+  assert.equal(await canStopRuntime(), true);
+  // Stopping the turn pauses the goal; /goal resume continues it.
+  goalVerdicts = [true];
+  await prompt("goalHold", "/goal replace Append DONE to goal.txt");
+  await wait((e) => e.type === "session.turn" && e.state === "started");
+  assert.deepEqual(
+    goals.views().map((goal) => [goal.status, goal.running]),
+    [["active", true]],
+  );
+  assert.equal(await canStopRuntime(), false);
+  await send({ type: "session.interrupt", requestId: "stop-goal" });
+  assert.equal((await terminal()).state, "canceled");
+  assert.deepEqual(
+    goals.views().map((goal) => [goal.status, goal.running]),
+    [["paused", false]],
+  );
+  assert.equal(await canStopRuntime(), true);
+  await prompt("goal", "/goal resume");
+  assert.equal(
+    events.find((e) => e.type === "session.prompt_result").result.type,
+    "turn",
+  );
+  assert.equal((await terminal()).state, "completed");
+  assert.equal(goals.views()[0].status, "verified");
   await prompt("command", "/plan");
   assert.equal(
     events.find((e) => e.type === "session.prompt_result").result.type,
@@ -774,6 +873,8 @@ try {
           ...(contentFilter ? ["content-filtered reply"] : []),
           "restart after failure",
           "idle runtime kept for background Bash",
+          "goal set, continued and verified",
+          "goal paused by stop and resumed",
           "slash command completion",
           "session listing v3",
           "EOF cleanup",

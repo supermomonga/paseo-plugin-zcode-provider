@@ -10,11 +10,13 @@
     "packages/shared/src/zcode-protocol-v4/command.ts",
     "packages/shared/src/zcode-protocol-v4/transport.ts",
     "packages/shared/src/zcode-protocol-v4/wire.ts",
-    "packages/shared/src/zcode-protocol-v4/wire-assembler.ts"
+    "packages/shared/src/zcode-protocol-v4/wire-assembler.ts",
+    "packages/ui/src/v4/conversationGoalSummaryModel.ts"
   ],
   "modifications": [
     "Resolve the private @zcode/model-option-map workspace import to its vendored relative path.",
     "Resolve packages/shared's #src/* subpath imports to their vendored relative paths.",
+    "Resolve type-only imports from @zcode/shared/zcode-protocol-v4 to the vendored module that declares the type.",
     "Select Visual Studio Code notice 9480271317925265e806a9a196aaa33410a962fa9d4d1e248a4a5187bc8c9df9 from THIRD-PARTY-NOTICES.md and add a scope explanation; sourceSha256 hashes the complete upstream file. LICENSE and NOTICE.md are unchanged."
   ],
   "files": {
@@ -517,6 +519,10 @@
     "packages/shared/src/zcodeEndpoint.ts": {
       "sourceSha256": "5e191377bdfd8c84cf8588251359fa2e1f64f7600ee220bb1cf2ddde563e9eac",
       "vendoredSha256": "5e191377bdfd8c84cf8588251359fa2e1f64f7600ee220bb1cf2ddde563e9eac"
+    },
+    "packages/ui/src/v4/conversationGoalSummaryModel.ts": {
+      "sourceSha256": "fdaa5f72e7f30cbec61493c8063a8408c5f08de7a35b053ad4374b5717bce7b8",
+      "vendoredSha256": "3ede801dca1122a78738461cbe263b92074c7720b44e6b09c4ea4e0e461924e9"
     }
   }
 }

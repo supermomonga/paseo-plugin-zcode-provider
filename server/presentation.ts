@@ -165,7 +165,10 @@ export function rowTimeline(
     case "timelineMarker":
       // Paseo appends every notification it receives, so a changing row is
       // reported once, in its final state.
-      if (row.marker.type === "compact" && row.marker.status === "running")
+      if (
+        (row.marker.type === "compact" && row.marker.status === "running") ||
+        (row.marker.type === "goalVerify" && row.marker.outcome === "running")
+      )
         return;
       return {
         id,

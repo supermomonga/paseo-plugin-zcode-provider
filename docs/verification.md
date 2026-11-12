@@ -1,3 +1,38 @@
+# `/goal` の送信と Goal のピル（2026-11-12）
+
+利用者から、ZCode Desktop の右上に出る Goal と Progress に当たる表示が、このプラグインにあるかを問われた。Progress は、V4 の `plan` を Paseo の todo として送っており、Paseo の Tasks のピルに出ていた。Goal は、検証のマーカーがタイムラインに出るだけだった。調べると、Paseo からはゴールを設定することもできていなかった。判断は [ADR 27](adr/0027-goalをv4のゴール用コマンドで送り-ゴールの状態を入力欄上のピルで表示する.md) に記録した。
+
+## 原因と変更
+
+- **`/goal` がモデルにテキストとして渡っていた**：プラグインは ZCode の `slashCommands`（`goal`・`workflow`・`compact`・`init`）を Paseo のコマンド一覧に出し、入力はすべて `sendText` で送っていた。Server のテキスト入力は `/goal` を解釈しない。Desktop は `/goal` を自分で読んで `sendGoalCommand`・`resumeGoal`・`pauseGoal` を送る（a9fe401 の `packages/ui/src/v4/slashCommands.ts`、`SessionPane.tsx` の `dispatchSlashCommand`）。プラグインも同じ規則で読み、同じコマンドを送るようにした。
+- **ピル**：Paseo 0.15.0 の `addComposerPill` で、ゴールがあるエージェントの入力欄の上に Goal のピルを出す。押すと、状態・経過時間・反復ごとの行（題と、その反復のタスクの完了数）が開く。行と経過時間は、Desktop の `conversationGoalSummaryModel.ts` を固定ソースから取り込んで求める。
+- **検証のマーカー**：`Goal verification: running` と結果が 2 行に分かれて出ていた。Paseo は届いた通知を追記するので、圧縮のマーカーと同じく、終わったときに 1 回だけ出すようにした。ゴールを設定できなかったので、これまでは表に出ていなかった。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-12）
+
+- **再現**：管理下ランタイム 3.17.2-paseo.1（Server `9c0ad473…`、Agent 0.17.1 `4221721b…`）と、固定の応答を返すローカルのモデルを使った。HOME と ZCode のデータは一時ディレクトリに隔離した。変更前のコードで `/goal Create the file goal.txt containing OK` を送ると、モデルへのリクエストの最後のユーザーメッセージがその文字列そのものになり、V4 の `goal` は `null` のままだった。
+- **V4 の挙動**：同じ環境で `sendGoalCommand` を直接送って観察した。
+  - Server は、コマンド自体のターン（`origin: "userInput"`、`executionKind: "controlOnly"`、`completedSuccess`）と `userInput` 行（`displayText`）を作り、続けて `origin: "goalContinuation"` のターンを始めた。ACK は `accepted` で結果を持たず、これらの行より後に届いた。
+  - 題（`summaryTitle`）は、ターンの開始より後に、Paseo に見える変化を伴わずに付いた。
+  - ターンが終わると `goalVerifier` が動いた。未達（`notSatisfied`）のときは、会話がアイドルにならずに次の `goalContinuation` のターンが始まり、`iterations` に反復ごとのタスクが入った。達成で `verified` になった。
+  - ターンを止めると `paused` になった。`resumeGoal` は `userInput` 行を作らずに `goalContinuation` のターンを始めた。
+- **テスト**：`server/goal-command.test.ts`（4）、`server/goal.test.ts`（8）、`test/goal.test.ts`（9）、`test/goal-pills.test.ts`（7）、`server/presentation.test.ts` の 1 件を加えた。`/goal` の読み取りを外すと、`test/goal.test.ts` の 9 件のうち 7 件が失敗することを確かめた。`npm run typecheck`、`npm test`（28 ファイル、280 tests）、`npm run build`、`npm run format:check`、`npm run check:zcode-source` が成功した。
+- **上流**：`git clone --depth 1 --branch v0.15.3` で作った別の clone（`d91ae138`）に対し、`NODE_PATH` を外して `npm run test:upstream` を実行し、成功した。Paseo の実コンパイラでビルドしたクライアントの入口が、Git と npm からの導入のどちらでも Goal のピルを登録し、片付けた。実アダプターの `startTurn("/goal Ship it")` は `sendGoalCommand` になり、起動環境の `PASEO_AGENT_ID` でゴールを引けた。
+- **実ランタイム**：この端末の管理下ランタイム 3.17.2-paseo.1 を `XDG_DATA_HOME` で指して `npm run test:stdio-runtime` を実行し、成功した。加えた確認は二つある。`/goal` で設定したゴールが、未達の検証を挟んで達成まで一つのターンで終わること。ターンを止めると `paused` になり、`/goal resume` で再開して達成すること。既存の確認もすべて通った。
+- **実 UI**：`@getpaseo/cli@0.15.4` の一時 daemon（`--home` は一時ディレクトリ、`127.0.0.1` のみ、relay は無効、Web UI と plugins は有効、HOME と ZCode のデータも一時ディレクトリ、モデルは固定の応答を返すローカルのサーバー）に、作業ツリーを複製して `npm ci` で準備したディレクトリを導入した。ヘッドレス Chromium で次を確認した。
+  - `paseo run --provider zcode --mode yolo "/goal …"` で作ったエージェントの入力欄の上に、`0/2 tasks` の隣に `Goal <1m` のピルが出た。押すと `In progress`、秒単位の経過時間、2 行（1 行目は番号つきの丸と `3/3`、2 行目は `0/2`）、案内の一行が出た。
+  - 達成すると、ピルは `Goal: Complete`・`Goal 1m` になった。開いたままのポップオーバーは閉じずに `Complete`・`1m 14s`・`3/3`・`2/2` に変わった。
+  - 入力欄に `/goal` と打つと、コマンドのメニューに ZCode の説明と引数の案内が出た。`/goal replace …` を入力欄から送ると、新しいゴールに置き換わった。停止ボタンを押すと `Paused` と `Send /goal resume to continue.` になり、入力欄から `/goal resume` を送ると再開して `Complete` になった。
+  - 幅 420px では、ポップオーバーの代わりにシートが開いた。
+  - Web UI の console に、プラグインに由来するエラーは無かった。
+- **Paseo の版**：`addComposerPill`・`rpc`・エージェントの一覧の購読は、v0.15.0 と v0.15.3 の `packages/plugin/src/client` で同じ内容だった。プラグインの subscription とエージェントのメタデータは、v0.15.4 に無く、v0.16.0-beta.1 と beta.2 にある。
+
+未検証：実モデルでのゴールの実行（検証の応答は固定のモデルで確かめた）。Desktop ネイティブ画面とモバイル実機でのピル。Paseo 0.15.0 の実 daemon（実 UI は 0.15.4、`test:upstream` は 0.15.3）。CI の 5 プラットフォームでの `test:stdio-runtime` の新しい確認。複数のクライアントを同時に開いた場合。未パッチのランタイムで、ゴールのターンのモデルに渡るツールの一覧。
+
+## `/compact` のターンが完了しない（未修正）
+
+調査の途中で見つけた、別の不具合である。同じ環境で `/compact` を Paseo のコマンドとして送ると、圧縮は実行されて `Context compaction: success` が出たが、Paseo のターンは `started` のまま完了しなかった。35 秒後も会話はアイドルで、プラグインの実行だけが残った。変更前の `94cd37a` を別の worktree に出して試しても同じだった。圧縮の入力は `userInput` 行として投影されないので、受け付けた入力が読まれたとみなされない。今回は直していない（[todo](todo.md)）。
+
 # ZCode 3.17.2 への追従（2026-11-09）
 
 [Issue #70](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/70)（3.16.3）と [Issue #84](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/84)（3.17.2）の対応。ソース基準をタグ `v3.17.2`（`a9fe401eede6e6e5e01be9048679c206fe6f02d9`）に進め、パッチ済みランタイム `3.17.2-paseo.1` を公開して固定する。
