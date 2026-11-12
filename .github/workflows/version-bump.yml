@@ -19,9 +19,7 @@ on:
         type: string
 
 permissions:
-  actions: write
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: version-bump
@@ -61,10 +59,21 @@ jobs:
           fi
           echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      # A pull request opened with GITHUB_TOKEN leaves its CI waiting for a
+      # maintainer's approval; one opened by the release App runs it (ADR 29).
+      - name: Create the release App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Create pull request
-        id: cpr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ steps.app-token.outputs.token }}
           base: main
           branch: release/v${{ steps.bump-version.outputs.version }}
           add-paths: |
@@ -78,11 +87,3 @@ jobs:
             Merging this pull request makes the Release workflow tag `v${{ steps.bump-version.outputs.version }}`, publish the package to npm and create a GitHub release. Confirm that CI passes before merging.
 
             This pull request was created by the Version Bump workflow.
-
-      # Pull requests opened with GITHUB_TOKEN do not trigger CI by themselves.
-      - name: Run CI on the release PR
-        if: steps.cpr.outputs.pull-request-number != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_BRANCH: ${{ steps.cpr.outputs.pull-request-branch }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$PR_BRANCH"

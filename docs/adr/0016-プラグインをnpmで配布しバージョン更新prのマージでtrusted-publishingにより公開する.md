@@ -3,6 +3,9 @@ number: 16
 title: プラグインをnpmで配布しバージョン更新PRのマージでtrusted publishingにより公開する
 status: accepted
 date: 2026-10-06
+links:
+  - target: 29
+    kind: amendedby
 ---
 
 # プラグインをnpmで配布しバージョン更新PRのマージでtrusted publishingにより公開する
