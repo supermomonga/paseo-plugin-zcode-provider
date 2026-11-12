@@ -742,10 +742,13 @@ try {
   goalVerdicts = [true];
   await prompt("goalHold", "/goal replace Append DONE to goal.txt");
   await wait((e) => e.type === "session.turn" && e.state === "started");
-  assert.deepEqual(
-    goals.views().map((goal) => [goal.status, goal.running]),
-    [["active", true]],
-  );
+  // The turn starts on ZCode's acknowledgement; the replaced goal follows on
+  // the event stream and stays in progress while the model request is held.
+  const goalStates = () =>
+    goals.views().map((goal) => [goal.status, goal.running]);
+  for (let i = 0; i < 1500 && goalStates()[0]?.[1] !== true; i++)
+    await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(goalStates(), [["active", true]]);
   assert.equal(await canStopRuntime(), false);
   await send({ type: "session.interrupt", requestId: "stop-goal" });
   assert.equal((await terminal()).state, "canceled");
