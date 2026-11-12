@@ -10,7 +10,7 @@ This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai.
 
 | Setting        | Requirement                                                                                                                             |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Paseo          | 0.15.0 or later; development SDK 0.15.3                                                                                                 |
+| Paseo          | 0.15.0 or later; development SDK 0.15.4                                                                                                 |
 | Plugin Node.js | 22.12.0 or later (the Paseo daemon's runtime)                                                                                           |
 | Managed setup  | darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64                                                                                |
 | ZCode          | Managed: 3.17.2 (release `3.17.2-paseo.1`) with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
@@ -63,7 +63,7 @@ ZCode adds a line when a turn runs on a different model than the previous turn, 
 
 ### Coding Plan usage
 
-Paseo's **Usage** screen and sidebar usage summary show a **ZCode** card for the signed-in account's Individual Coding Plan (Z.ai or BigModel). It lists the 5-hour, weekly, monthly tool-call and ZCode MCP quotas with their reset times, as ZCode Desktop does. The plugin asks ZCode's official usage service for this plan only, on the same ZCode Server as the Account tab. The service never uses an API key from the environment. Team Plan and Start Plan are not shown. Nothing is requested while **Check usage** is off for the host. Paseo 0.15.3 does not yet show usage in a ZCode agent's popover.
+Paseo's **Usage** screen and sidebar usage summary show a **ZCode** card for the signed-in account's Individual Coding Plan (Z.ai or BigModel). It lists the 5-hour, weekly, monthly tool-call and ZCode MCP quotas with their reset times, as ZCode Desktop does. The plugin asks ZCode's official usage service for this plan only, on the same ZCode Server as the Account tab. The service never uses an API key from the environment. Team Plan and Start Plan are not shown. Nothing is requested while **Check usage** is off for the host. Paseo 0.15.4 does not yet show usage in a ZCode agent's popover.
 
 ### Using your own runtime
 

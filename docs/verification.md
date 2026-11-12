@@ -1,3 +1,21 @@
+# Paseo 0.15.4 への追従（2026-11-12）
+
+Issue #98 の対応。Paseo 0.15.4 の変更履歴は、Claude Fable 5.2 と Mythos 5.2 をモデル一覧に加えたこと（getpaseo/paseo#9233）だけである。
+
+## 変更履歴とこのプロバイダ
+
+- **差分**：v0.15.3（`d91ae138cb931447635e94296023414a58bedcc5`）と v0.15.4（`1c00b365c9e0b74c1580eba33d905d693125ae21`）の間のコミットは 4 件である。ソースの変更は `packages/server/src/server/agent/providers/claude` の配下（`model-manifest.ts`、`feature-definitions.ts` とそのテスト）と `packages/cli/tests/15-provider.test.ts` だけで、残りは変更履歴と各パッケージの版番号である。`packages/plugin`・`packages/protocol`・`packages/client` と、`plugin-provider.ts`・`agent-manager.ts`・プラグインのコンパイラと準備処理に変更は無い。
+- **公開された SDK**：npm の `@getpaseo/plugin`・`@getpaseo/client`・`@getpaseo/protocol` の 0.15.3 と 0.15.4 を展開して比べた。違いは各 `package.json` の版番号と依存の版だけだった。
+- **変更**：プラグインのコードは変えていない。開発 SDK を 0.15.4 にし、CI の上流チェックアウトを v0.15.4 に固定した。最低要件は 0.15.0 のままである。
+- **残る制約**：0.15.3 と同じである。プラグイン Provider のセッションには `usageSession()` が無い。ready より前のイベントは、アダプターの履歴に積まれるだけで購読者へ流れない。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-12）
+
+- **テスト**：開発 SDK 0.15.4 で、`npm run typecheck`、`npm test`（29 ファイル、283 tests）、`npm run build`、`npm run format:check` が成功した。
+- **上流**：`git clone --shared` で作った別の clone を v0.15.4（`1c00b365`）にし、`NODE_PATH` を外して `npm run test:upstream` を実行し、全項目が成功した。
+
+未検証：この変更での Paseo 0.15.4 の実 daemon への導入（Goal のピルの確認では `@getpaseo/cli@0.15.4` の一時 daemon を使っている。「`/goal` の送信と Goal のピル」の節を参照）。Paseo 0.15.0 の実 daemon。
+
 # `/compact` のターンが完了せず、圧縮の最中の停止でセッションが閉じる（2026-11-12）
 
 `/goal` の調査（次の節）の途中で見つけた。判断は [ADR 28](adr/0028-入力が読まれた根拠にターンのヘッダーを加え-実行を名乗らない作業は対象を指定せずに停止する.md) に記録した。
