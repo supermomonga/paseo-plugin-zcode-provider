@@ -54,6 +54,11 @@ export function snapshot(workspace: string): SessionSnapshot {
       { name: "plan", description: "Switch to Plan mode", inputHint: "[task]" },
       { name: "review", description: "Review", inputHint: "<path>" },
       { name: "goal", description: "Show or set the current session goal." },
+      {
+        name: "compact",
+        description: "Compact the current conversation.",
+        inputHint: "/compact [instructions]",
+      },
     ],
   };
 }
@@ -245,6 +250,84 @@ export class FakeBridge implements HostBridge {
               cacheReadTokens: 3,
               cacheWriteTokens: 0,
             },
+          },
+        },
+      },
+    ]);
+  }
+  // Manual compaction as the 3.17.2 Server projects it (docs/verification.md):
+  // a turn without a user input row, whose works name no foreground execution.
+  compacting?: { header: TurnHeaderRow; marker: ConversationRow };
+  private async compact(commandId: string) {
+    this.activeProductTurn = `product-${commandId}`;
+    const header: TurnHeaderRow = {
+      ...this.rowBase(),
+      kind: "turnHeader",
+      origin: "userInput",
+      executionKind: "agent",
+      sourceCommandId: commandId,
+      state: "running",
+      startedAt: 1,
+    };
+    await this.append(header);
+    const marker: ConversationRow = {
+      ...this.rowBase(),
+      kind: "timelineMarker",
+      sourceCommandId: commandId,
+      lane: "assistantWork",
+      marker: { type: "compact", origin: "manual", status: "running" },
+    };
+    await this.append(marker);
+    this.compacting = { header, marker };
+    await this.deltas([
+      {
+        op: "state.updated",
+        patch: {
+          control: {
+            ...this.state.control,
+            phase: "running",
+            canStop: true,
+            stopTargetKind: "mixed",
+            activeWorks: [
+              { kind: "primaryTurn", sourceCommandId: commandId, startedAt: 1 },
+              { kind: "compact", startedAt: 1 },
+            ],
+          },
+        },
+      },
+    ]);
+  }
+  async finishCompact(
+    status: "success" | "noop" | "failed" | "cancelled",
+    lastError?: SessionErrorInfo,
+  ) {
+    const { header, marker } = this.compacting!;
+    this.compacting = undefined;
+    const state =
+      status === "failed"
+        ? "failed"
+        : status === "cancelled"
+          ? "completedInterrupted"
+          : "completedSuccess";
+    await this.deltas([
+      { op: "row.upserted", row: { ...header, state } },
+      {
+        op: "row.upserted",
+        row: {
+          ...marker,
+          marker: { type: "compact", origin: "manual", status },
+        } as ConversationRow,
+      },
+      {
+        op: "state.updated",
+        patch: {
+          control: {
+            ...this.state.control,
+            phase: state === "failed" ? "error" : state,
+            canStop: false,
+            stopTargetKind: "unknown",
+            activeWorks: [],
+            ...(lastError ? { lastError } : {}),
           },
         },
       },
@@ -494,6 +577,16 @@ export class FakeBridge implements HostBridge {
             );
           const busy = this.state.control.canStop;
           const delivery = busy ? payload.requestedDelivery : "startNow";
+          if (!busy && /^\/compact(\s|$)/.test(payload.text)) {
+            await this.compact(commandId);
+            result = {
+              commandId,
+              status: "accepted",
+              revisionAtDecision: this.state.revision,
+              result: { type: "inputAccepted", inputId: commandId, delivery },
+            };
+            break;
+          }
           if (delivery === "queue" || this.deferConsumption) {
             await this.deltas([
               {
@@ -590,6 +683,11 @@ export class FakeBridge implements HostBridge {
           ]);
         else if (type === "stop") {
           if (
+            this.compacting &&
+            payload.expectedForegroundExecutionId === undefined
+          )
+            await this.finishCompact("cancelled");
+          else if (
             payload.expectedForegroundExecutionId === this.activeProductTurn
           ) {
             await this.finish("completedInterrupted");

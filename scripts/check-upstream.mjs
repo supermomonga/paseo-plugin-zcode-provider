@@ -313,6 +313,29 @@ try {
     assert.match(failed.error, /\(HTTP 429, provider code 1310\)/u);
     assert.equal(JSON.parse(failed.diagnostic).failure.reason, "rate_limited");
     assert.ok(!JSON.stringify(failed).includes("native-provider-text"));
+    // /compact adds no user input row; the turn completes with its header and
+    // stops although its works name no foreground execution (ADR 28).
+    const compactRun = await resumed.startTurn("/compact", {
+      clientMessageId: "compact",
+    });
+    const compactDone = waitForCompletion(resumed, compactRun.turnId);
+    await current.finishCompact("success");
+    await compactDone;
+    const stoppedCompact = await resumed.startTurn("/compact", {
+      clientMessageId: "compact-stop",
+    });
+    const compactCanceled = waitForCompletion(
+      resumed,
+      stoppedCompact.turnId,
+      "turn_canceled",
+    );
+    await resumed.interrupt();
+    await compactCanceled;
+    assert.deepEqual(
+      current.calls.findLast((c) => c.params?.envelope?.type === "stop").params
+        .envelope.payload,
+      {},
+    );
     // Paseo sends a listed command as a command; /goal reaches the Server as
     // its goal command, and the launch environment names the agent (ADR 27).
     assert.deepEqual(goals.views(), []);
@@ -367,6 +390,7 @@ try {
           targetedStop: "passed",
           providerStatus: "passed",
           goalCommand: "passed",
+          compaction: "passed",
         },
         null,
         2,

@@ -130,7 +130,7 @@ const modelServer = createServer(async (req, res) => {
     responses.add(res);
     res.on("close", () => responses.delete(res));
     // interrupt must abort this outstanding model stream.
-    if (scenario === "hold" || scenario === "goalHold") return;
+    if (["hold", "goalHold", "compactHold"].includes(scenario)) return;
     const toolName =
       scenario === "question"
         ? "AskUserQuestion"
@@ -139,7 +139,9 @@ const modelServer = createServer(async (req, res) => {
           : "Bash";
     const tool = input.tools?.find((t) => t.function.name === toolName);
     // Each turn toward a goal only replies; the verifier decides the rest.
-    const useTool = modelCalls++ === 0 && scenario !== "goal";
+    // A compaction asks for a summary and rejects tool calls.
+    const useTool =
+      modelCalls++ === 0 && !["goal", "compact"].includes(scenario);
     if (useTool)
       assert.ok(tool, `${toolName} must be exposed by the real Agent`);
     const args =
@@ -759,6 +761,51 @@ try {
   );
   assert.equal((await terminal()).state, "completed");
   assert.equal(goals.views()[0].status, "verified");
+  // /compact adds no user input row: the header of its turn carries the
+  // command ID, and its works name no foreground execution (ADR 28).
+  const notifications = () =>
+    events
+      .filter(
+        (e) => e.type === "timeline.item" && e.item.type === "notification",
+      )
+      .map((e) => e.item.message);
+  await prompt("compact", "/compact keep the fixture notes");
+  assert.equal(
+    events.find((e) => e.type === "session.prompt_result").result.type,
+    "turn",
+  );
+  assert.equal((await terminal()).state, "completed");
+  assert.deepEqual(notifications(), ["Context compaction: success"]);
+  assert.ok(
+    modelRequests
+      .at(-1)
+      .messages.includes("Additional Instructions:\\nkeep the fixture notes"),
+    "The instructions of /compact must reach the summary request",
+  );
+  assert.equal(await canStopRuntime(), true);
+  // Stop cancels a compaction in progress and leaves the session usable.
+  await prompt("bash");
+  assert.equal((await terminal()).state, "completed");
+  await prompt("compactHold", "/compact");
+  for (let i = 0; i < 1500 && responses.size === 0; i++)
+    await new Promise((r) => setTimeout(r, 10));
+  assert.ok(responses.size, "The summary request must be outstanding");
+  // The Server projects the compaction shortly after it asks the model.
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(await canStopRuntime(), false);
+  await send({ type: "session.interrupt", requestId: "stop-compact" });
+  assert.equal((await terminal()).state, "canceled");
+  await wait(
+    (e) => e.type === "request.completed" && e.requestId === "stop-compact",
+  );
+  await wait(
+    (e) =>
+      e.type === "timeline.item" &&
+      e.item.message === "Context compaction: cancelled",
+  );
+  assert.equal(notifications().length, 1);
+  await prompt("bash");
+  assert.equal((await terminal()).state, "completed");
   await prompt("command", "/plan");
   assert.equal(
     events.find((e) => e.type === "session.prompt_result").result.type,
@@ -875,6 +922,8 @@ try {
           "idle runtime kept for background Bash",
           "goal set, continued and verified",
           "goal paused by stop and resumed",
+          "compaction with instructions completed",
+          "compaction stopped",
           "slash command completion",
           "session listing v3",
           "EOF cleanup",

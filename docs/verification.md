@@ -1,3 +1,25 @@
+# `/compact` のターンが完了せず、圧縮の最中の停止でセッションが閉じる（2026-11-12）
+
+`/goal` の調査（次の節）の途中で見つけた。判断は [ADR 28](adr/0028-入力が読まれた根拠にターンのヘッダーを加え-実行を名乗らない作業は対象を指定せずに停止する.md) に記録した。
+
+## 原因と変更
+
+- **完了しない**：Paseo から `/compact` を送ると、圧縮は実行されて `Context compaction: success` が出るが、Paseo のターンは `started` のまま残った。35 秒後も会話はアイドルで、プラグインの実行だけが残った。圧縮のターンには `userInput` 行が無く、プラグインは、受け付けた入力が読まれた根拠をその行だけに求めていた。コマンド ID を持つターンのヘッダーも根拠にした。
+- **停止でセッションが閉じる**：圧縮の最中に停止すると、`session.interrupt` が `NATIVE_PROTOCOL_ERROR` で失敗し、セッションが閉じた。圧縮の間の `activeWorks` は `primaryTurn` と `compact` で、どちらも `foregroundExecutionId` を持たない。プラグインはこれを誤りとして扱っていた。Desktop と同じく、対象を指定しない `stop` を送るようにした。
+- **送り方は変えていない**：`/compact` は `sendText` のままである。V4 の `compact` コマンドは指示を受け取らないが、テキストなら `/compact [instructions]` の指示が要約のリクエストに入る。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-12）
+
+- **再現**：管理下ランタイム 3.17.2-paseo.1 と、固定の応答を返すローカルのモデルを使った。HOME と ZCode のデータは一時ディレクトリに隔離した。変更前の `94cd37a` を別の worktree に出して試しても、ターンは完了しなかった。
+- **V4 の挙動**：圧縮のターンは、`origin: "userInput"`・`executionKind: "agent"` のヘッダーと、`compact` のマーカー（`running` から `success`・`noop`・`failed`・`cancelled`）で、どちらも送ったコマンドの ID を `sourceCommandId` に持った。`userInput` 行は無かった。V4 の `compact` コマンドを直接送っても同じ行になった。圧縮の間の `control` は `canStop: true`、`stopTargetKind: "mixed"` だった。対象を指定しない `stop` は `accepted` になり、マーカーは `cancelled`、ヘッダーは `completedInterrupted` になった。
+- **ほかのコマンド**：テキストで送った `/rewind`・`/fork`・`/help`・`/init`・`/workflow` と、一覧に無いコマンドには `userInput` 行があり、変更前でもターンは完了または失敗で終わった。
+- **変更後**：同じ環境で、プラグインを通して次を確かめた。会話が空のときと、圧縮するものが無いときは `Context compaction: noop` で完了した。1 ターンの後は `success` で完了した。`/compact keep the API notes` では、要約のリクエストに `Additional Instructions:\nkeep the API notes` が入った。要約のリクエストに 429 を返すと、ターンは `MODEL_RATE_LIMITED` で失敗し、次のターンは完了した。圧縮の最中に停止すると、ターンは取り消され、`Context compaction: cancelled` が出て、次のターンは完了した。
+- **テスト**：`test/compact.test.ts`（3）を加えた。ヘッダーを根拠から外すと 2 件が、停止の変更を外すと 1 件が失敗することを確かめた。`npm run typecheck`、`npm test`（29 ファイル、283 tests）、`npm run build`、`npm run format:check` が成功した。
+- **上流**：v0.15.3 の clone（`d91ae138`）に対し、`NODE_PATH` を外して `npm run test:upstream` を実行し、成功した。実アダプターを通した `/compact` が完了し、停止で取り消された。
+- **実ランタイム**：`npm run test:stdio-runtime` が成功した。加えた確認は二つある。指示つきの `/compact` が完了し、指示が要約のリクエストに入ること。圧縮の最中の停止でターンが取り消され、次の入力が通ること。停止は、要約のリクエストが届いてから 0.5 秒待って送っている。届いた直後に止めると、Server が圧縮のマーカーを作る前に取り消され、`cancelled` の行が出ないことがあった（ターンの取り消し自体は成功した）。
+
+未検証：実モデルでの圧縮と停止。ターンの途中で ZCode が自動で行う圧縮の最中の停止。Paseo の実 UI からの `/compact`（ゴールの確認に使った一時 daemon では試していない）。CI の 5 プラットフォームでの新しい確認。
+
 # `/goal` の送信と Goal のピル（2026-11-12）
 
 利用者から、ZCode Desktop の右上に出る Goal と Progress に当たる表示が、このプラグインにあるかを問われた。Progress は、V4 の `plan` を Paseo の todo として送っており、Paseo の Tasks のピルに出ていた。Goal は、検証のマーカーがタイムラインに出るだけだった。調べると、Paseo からはゴールを設定することもできていなかった。判断は [ADR 27](adr/0027-goalをv4のゴール用コマンドで送り-ゴールの状態を入力欄上のピルで表示する.md) に記録した。
@@ -29,9 +51,9 @@
 
 未検証：実モデルでのゴールの実行（検証の応答は固定のモデルで確かめた）。Desktop ネイティブ画面とモバイル実機でのピル。Paseo 0.15.0 の実 daemon（実 UI は 0.15.4、`test:upstream` は 0.15.3）。CI の 5 プラットフォームでの `test:stdio-runtime` の新しい確認。複数のクライアントを同時に開いた場合。未パッチのランタイムで、ゴールのターンのモデルに渡るツールの一覧。
 
-## `/compact` のターンが完了しない（未修正）
+## `/compact` のターンが完了しない
 
-調査の途中で見つけた、別の不具合である。同じ環境で `/compact` を Paseo のコマンドとして送ると、圧縮は実行されて `Context compaction: success` が出たが、Paseo のターンは `started` のまま完了しなかった。35 秒後も会話はアイドルで、プラグインの実行だけが残った。変更前の `94cd37a` を別の worktree に出して試しても同じだった。圧縮の入力は `userInput` 行として投影されないので、受け付けた入力が読まれたとみなされない。今回は直していない（[todo](todo.md)）。
+調査の途中で見つけた、別の不具合である。この変更には含めず、続く変更で直した（上の節）。
 
 # ZCode 3.17.2 への追従（2026-11-09）
 

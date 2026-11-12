@@ -14,6 +14,8 @@ links:
     kind: amendedby
   - target: 27
     kind: amendedby
+  - target: 28
+    kind: amendedby
 ---
 
 # V4入力受付とネイティブ待機キューを一つのPaseo実行へ対応付ける

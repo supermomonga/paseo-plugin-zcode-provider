@@ -220,9 +220,16 @@ export class ZCodeSession {
   private observe(): void {
     if (!this.initialized || this.failed || this.closed) return;
     for (const row of this.state.rows.window) {
-      if (row.kind === "userInput" && row.sourceCommandId) {
+      // ZCode has taken up an input once a row carries its command ID: its
+      // user input row, or the header of the turn it started. Compaction adds
+      // no user input row (ADR 28). Later turns can carry the same ID, as each
+      // turn toward a goal does; they are not that input again.
+      if (
+        (row.kind === "userInput" || row.kind === "turnHeader") &&
+        row.sourceCommandId
+      ) {
         const input = this.admissions.get(row.sourceCommandId);
-        if (input) {
+        if (input && (row.kind === "userInput" || !input.consumed)) {
           input.consumed = true;
           input.productTurnId = this.productTurn(row);
           if (this.active?.inputs.has(row.sourceCommandId)) {
@@ -976,13 +983,11 @@ export class ZCodeSession {
     const target = this.state.control.activeWorks.find(
       (w) => w.foregroundExecutionId,
     )?.foregroundExecutionId;
-    if (this.state.control.canStop && !target)
-      throw new AdapterError(
-        "NATIVE_PROTOCOL_ERROR",
-        "ZCode did not identify its stoppable foreground execution",
-      );
+    // The ID keeps a late stop from ending a later execution. The works of a
+    // manual compaction name none; like ZCode Desktop, stop without one then.
     if (target)
       await this.control("stop", { expectedForegroundExecutionId: target });
+    else if (this.state.control.canStop) await this.control("stop", {});
     await this.conversation.waitFor(
       () =>
         !this.state.control.canStop &&

@@ -23,7 +23,7 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 - プロジェクトの MCP の信頼（ZCode 3.17）。Desktop の Settings → MCP Servers で付けた信頼が、プラグインの Server のセッションにも効くか。保存先は共有の `~/.zcode/security/workspace-mcp-trust-v1.json` で、ローカルのワークスペースは解決済みのパスで識別される（ソースからの推定）。シンボリックリンク経由のフォルダーでは一致しない可能性がある。
 - ZCode Sites（3.17.2 の公式プラグイン `zcode-site`）でのデプロイ。CLI は Bash から `node` で動き、認証は Server の公式の経路を使うので、プラグインからも使えるとみて隠していない。サインインした実ランタイムで `zcode-site list` を試していない。
 - Goal のピル（ADR 27）の、Desktop ネイティブ画面とモバイル実機での表示。確認したのは一時 daemon の Web UI（1400px と 420px）である。実モデルでのゴールの実行（検証の応答は固定のモデルで確かめた）、複数のクライアントを同時に開いた場合、200 件を超えるエージェントがあるホストも未確認。
-- **`/compact` のターンが完了しない（未修正）**：プラグインは `/compact` を `sendText` で送る。管理下ランタイム 3.17.2 と固定の応答を返すモデルで確かめると、圧縮は実行されて `Context compaction: success` が出るが、Paseo のターンは `started` のまま完了しない（35 秒後も会話はアイドルで、実行だけが残る。停止すれば戻る）。圧縮の入力は `userInput` 行として投影されないので、ADR 9 の「受け付けた入力がすべて読まれた」という完了条件を満たさないためである。変更前の `94cd37a` でも同じだった。Desktop は `/compact` を V4 の `compact` コマンドで送る（a9fe401 の `packages/ui/src/v4/slashCommands.ts`）。`/goal`（ADR 27）と同じ形での対応を検討する。`workflow` と `init` は確かめていない。
+- `/compact`（ADR 28）の、実モデルでの圧縮と、圧縮の最中の停止。確認は固定の応答を返すモデルで行った。ターンの途中で ZCode が自動で行う圧縮の最中の停止も確かめていない。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 
 ## 今回追加しない機能
