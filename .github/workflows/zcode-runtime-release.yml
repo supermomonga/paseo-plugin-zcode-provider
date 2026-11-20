@@ -34,12 +34,13 @@ jobs:
   # ZCode 3.18 starts its Agent on Windows only through zcode-runtime-host.exe,
   # which the integrated distribution leaves out (ADR 33). ZCode's own script
   # builds it from the pinned source with Visual Studio, as Desktop's build does.
+  # The script asks CMake for "Visual Studio 17 2022", which windows-2025 lacks.
   windows-host:
     name: Build Windows runtime host (${{ matrix.arch }})
     strategy:
       matrix:
         arch: [x64, arm64]
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 20
     defaults:
       run:
