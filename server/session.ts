@@ -830,6 +830,16 @@ export class ZCodeSession {
   goal(): GoalState | null {
     return this.conversation.state?.goal ?? null;
   }
+  /** Calls `changed` when ZCode changes the goal (ADR 30); returns the stop. */
+  watchGoal(changed: () => void): () => void {
+    let last = this.goal();
+    return this.conversation.subscribe(() => {
+      const next = this.goal();
+      if (isDeepStrictEqual(next, last)) return;
+      last = next;
+      changed();
+    });
+  }
   /**
    * Admits one input into a run. `send` prepares and issues the command; it
    * calls `sending` before the command leaves and throws

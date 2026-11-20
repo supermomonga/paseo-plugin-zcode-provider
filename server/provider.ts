@@ -675,9 +675,10 @@ export class ZCodeConnection implements ProviderConnection {
       const agentId = config.env.PASEO_AGENT_ID;
       if (agentId) {
         const session = native;
-        forgetGoal = entry.forgetGoal = this.goals.register(agentId, () =>
-          session.goal(),
-        );
+        forgetGoal = entry.forgetGoal = this.goals.register(agentId, {
+          read: () => session.goal(),
+          watch: (changed) => session.watchGoal(changed),
+        });
       }
       this.emit({
         type: "session.opened",

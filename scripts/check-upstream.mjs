@@ -105,7 +105,7 @@ try {
   const { PluginAgentClientRegistry } = await load("adapter");
   const { createZCodeProvider } = await load("provider");
   const { SessionPersistenceStore } = await load("persistence");
-  const { GoalDirectory } = await load("goal");
+  const { GoalDirectory, serveGoals } = await load("goal");
   const { FakeBridge, snapshot, completeTurn } = await load("fake");
   const goals = new GoalDirectory();
   const hosts = [],
@@ -346,6 +346,17 @@ try {
     // Paseo sends a listed command as a command; /goal reaches the Server as
     // its goal command, and the launch environment names the agent (ADR 27).
     assert.deepEqual(goals.views(), []);
+    // The goals subscription sends them now and on each change (ADR 30).
+    const pushed = [],
+      released = new AbortController();
+    serveGoals(goals)(
+      {},
+      {
+        push: async (event) => void pushed.push(event),
+        signal: released.signal,
+      },
+    );
+    assert.deepEqual(pushed, [{ goals: [] }]);
     const goalRun = await resumed.startTurn("/goal Ship it", {
       clientMessageId: "goal",
     });
@@ -363,6 +374,12 @@ try {
     await current.verifyGoal("pass");
     await goalDone;
     assert.equal(goals.views()[0].status, "verified");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(
+      pushed.map(({ goals }) => goals.map((goal) => goal.status)),
+      [[], ["active"], ["verifying"], ["verified"]],
+    );
+    released.abort();
     const stopRun = await resumed.startTurn("Stop", {
       clientMessageId: "stop",
     });
@@ -618,7 +635,8 @@ async function checkContributions({
   };
   let registered;
   const sources = [],
-    handlers = [];
+    handlers = [],
+    subscriptions = [];
   const dispose = contribution.default({
     registerProvider(provider) {
       registered = provider;
@@ -627,12 +645,13 @@ async function checkContributions({
       sources.push(source);
     },
     registerSettings,
+    // Paseo serves a contract with an event schema as a subscription.
     handle(contract) {
-      handlers.push(contract.name);
+      ("event" in contract ? subscriptions : handlers).push(contract.name);
     },
   });
   assert.deepEqual(settings, ["timeline"]);
-  assert.ok(handlers.includes("zcode.goals"));
+  assert.deepEqual(subscriptions, ["zcode.goals.watch"]);
   assert.equal(registered.id, "zcode");
   assert.equal(typeof registered.status, "function");
   await readPluginProviderIcon(candidate, registered.icon);
@@ -669,6 +688,7 @@ async function checkContributions({
         openExternalUrl: async () => {},
         useRpc: () => async () => ({}),
         useSettings: () => ({ status: "loading" }),
+        useSubscription: () => ({ status: "connecting" }),
       };
     if (name === "@getpaseo/plugin/client/ui")
       return {
@@ -686,9 +706,10 @@ async function checkContributions({
   });
   // Like Paseo's client runtime, each registration returns its own cleanup.
   const screens = new Map();
-  // The Goal pill follows the agent directory and the plugin's RPC (ADR 27).
+  // The Goal pill follows the agent directory and the plugin's goals
+  // subscription (ADR 27, ADR 30).
   const pills = new Map();
-  let agents, observation;
+  let agents, observation, goals;
   const disposeClient = clientContribution.default({
     addSettingsScreen(screen) {
       screens.set(screen.id, screen);
@@ -699,19 +720,15 @@ async function checkContributions({
       pills.set(key, pill.button);
       return { update() {}, remove: () => pills.delete(key) };
     },
-    rpc: async (contract) => {
-      assert.equal(contract.name, "zcode.goals");
-      return {
-        goals: [
-          {
-            agentId: "agent-1",
-            status: "paused",
-            elapsedSeconds: 3780,
-            running: false,
-            iterations: [],
-          },
-        ],
-      };
+    subscribe(contract, input, onEvent, options) {
+      assert.equal(contract.name, "zcode.goals.watch");
+      contract.input.parse(input);
+      goals = { onEvent: (event) => onEvent(contract.event.parse(event)) };
+      goals.signal = options.signal;
+      return Object.assign(() => {}, {
+        ready: Promise.resolve(),
+        release: async () => {},
+      });
     },
     paseo: {
       agents: {
@@ -735,7 +752,17 @@ async function checkContributions({
       { agent: { id: "agent-2", provider: "claude", workspaceId: "w-1" } },
     ],
   });
-  await new Promise((resolve) => setImmediate(resolve));
+  goals.onEvent({
+    goals: [
+      {
+        agentId: "agent-1",
+        status: "paused",
+        elapsedSeconds: 3780,
+        running: false,
+        iterations: [],
+      },
+    ],
+  });
   assert.deepEqual([...pills.keys()], ["w-1/agent-1/goal"]);
   const [pill] = pills.values();
   assert.equal(pill.label, "Goal 1h 3m");
@@ -746,6 +773,7 @@ async function checkContributions({
   assert.equal(screens.size, 0);
   assert.equal(pills.size, 0);
   assert.equal(observation.aborted, true);
+  assert.equal(goals.signal.aborted, true);
   return {
     compiledBytes: Buffer.byteLength(serverBundle),
     clientCompiledBytes: Buffer.byteLength(clientBundle),

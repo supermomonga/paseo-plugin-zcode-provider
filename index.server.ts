@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { AccountService } from "./server/account.js";
-import { GoalDirectory } from "./server/goal.js";
+import { GoalDirectory, serveGoals } from "./server/goal.js";
 import { createHost, createZCodeProvider } from "./server/provider.js";
 import { ManagedRuntimeInstaller } from "./server/runtime/managed.js";
 import { createRuntimeSetupHandlers } from "./server/runtime-setup.js";
@@ -32,7 +32,7 @@ export default function contribute(server: PluginServerContext): () => void {
       goals,
     ),
   );
-  server.handle(zcodeGoals, () => ({ goals: goals.views() }));
+  server.handle(zcodeGoals, serveGoals(goals));
   server.handle(zcodeDiagnostics, createDiagnosticsHandler());
   const setup = createRuntimeSetupHandlers(new ManagedRuntimeInstaller());
   server.handle(zcodeRuntimeStatus, setup.status);

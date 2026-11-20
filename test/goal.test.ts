@@ -275,3 +275,34 @@ it("lists a goal only for a session that names its Paseo agent, until it closes"
   await f.wait((e) => e.type === "session.closed");
   expect(f.goals.views()).toEqual([]);
 });
+
+// The Goal pill is told when ZCode changes the goal (ADR 30).
+it("tells the goal directory when the session's goal changes", async () => {
+  const f = await fixture();
+  await f.open();
+  let changes = 0;
+  const stop = f.goals.watch(() => changes++);
+  const settled = () => new Promise((resolve) => setImmediate(resolve));
+  await settled();
+  const before = changes;
+  await f.command("m1", "Ship it");
+  await settled();
+  expect(changes).toBeGreaterThan(before);
+  const set = changes;
+  await f.host.verifyGoal("pass");
+  await f.wait((e) => e.type === "session.turn" && e.state === "completed");
+  await settled();
+  expect(changes).toBeGreaterThan(set);
+  // Rows that leave the goal alone do not count.
+  const verified = changes;
+  await f.send({
+    type: "session.configure",
+    sessionId: "public",
+    requestId: "plan",
+    changes: { providerOptions: { plan_mode: true } },
+  });
+  await f.wait((e) => e.type === "request.completed" && e.requestId === "plan");
+  await settled();
+  expect(changes).toBe(verified);
+  stop();
+});
