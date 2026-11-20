@@ -112,6 +112,11 @@ async function stageWindowsRuntimeHost(source, root, built) {
   const added = [];
   for (const arch of WINDOWS_RUNTIME_HOST_ARCHES) {
     const directory = join(built, `win32-${arch}`);
+    await assertRuntimeLayout(directory, [
+      "zcode-runtime-host.exe",
+      "zcode-installer-process-helper.exe",
+      "build.json",
+    ]);
     // ZCode's own check: a PE binary of this architecture whose build.json
     // records this source's digest and the binary's hash.
     if (!(await isRuntimeHostReady(directory, arch)))
