@@ -33,6 +33,12 @@ Issue #104 の対応。
 - **keyring**：`scripts/package-zcode-runtime.mjs` で 5 プラットフォーム分の `@napi-rs/keyring` 2.1.2 を加えた書庫（`zcode-runtime-3.18.2-paseo.0.tar.gz`、sha256 `c23f5f14…`、92,087,051 バイト）を展開し、`server/remote` からモジュールを解決して読み込めることを確かめた。この端末には使える OS のストアが無く、読み出しはネイティブ層の `Couldn't access platform storage` で失敗した。OS のストアに結び付いたデータでの起動は、確かめていない。
 - **実ランタイム**：この書庫に対し、プラグインの `test:stdio-runtime` が全項目を通った。公開済みの 3.17.2-paseo.1（sha256 `24e3a9b0…`）でも全項目が通り、3.18 より前の Server には `--prepare-credentials` を付けない。隔離したデータに `credential-secret` ができることも確かめる。`test:native-restore` は、これまでどおり失敗した（明示の設定の無い再開で `{ mode: "yolo", plan: false }`、期待は `{ mode: "edit", plan: true }`）。ADR 14 の保証の外の不具合は 3.18.2 でも残る。
 
+## Windows のランタイムの補助（ADR 33）
+
+- **失敗**：PR #111 の最初の CI で、3.18.2 から作った書庫（keyring を加えたもの）は、リリースのワークフローの検証のうち darwin-arm64・linux-x64・linux-arm64 で全項目を通り、win-x64 と win-arm64 ではカタログの取得で `NATIVE_PROTOCOL_ERROR` になった。診断には実行環境の情報が無く、プロバイダの `initializeWorkspace` が ZCode の `initialize` の `available: false`（理由のコードが無いもの）を受けた形だった。同じ PR の CI の、3.17.2 の管理下ランタイムでの契約試験は、Windows の 2 つでも通った。
+- **原因**：3.18 の Server は、Windows で Agent の CLI を、ネイティブの補助 `zcode-runtime-host.exe` を通してだけ起動する（`zcodeAgentProcessManager.ts` が `process.platform === "win32"` で `spawnWindowsRuntimeHost` を呼ぶ）。補助は `ZCODE_RUNTIME_HOST_PATH`、Electron の `resourcesPath`、`ZCODE_SERVER_RUNTIME_ROOT` の下などで探し、見つからなければ例外になる（`packages/services/src/windows-runtime-host/index.ts`）。`initialize` はこの例外を `available: false` と ZCode の文言にする（`zcodeAgentService.ts`）。統合 CLI の配布物には補助が無い。Desktop と `packages/zcode-server-cli` の Windows 向けの配布物は、`scripts/build-windows-runtime-host.mjs` で C++ のソースからビルドしたものを `tools/runtime-host/` に入れる。
+- **変更**：リリースのワークフローに、Windows のランナーで x64 と arm64 の補助をこのスクリプトでビルドするジョブを加え、梱包で `tools/runtime-host/win32-<arch>/` に入れる。プロバイダは、Windows の 3.18 以降で、daemon のアーキテクチャの補助を `ZCODE_RUNTIME_HOST_PATH` で渡す。
+
 ## 管理下ランタイムのパッチ（ADR 19）
 
 - `patches/zcode/0001-hide-suppressed-official-plugins.patch` は、3.18.2 にもそのまま当たる（51 行ずれる）。対象の commit を書き換え、行番号を合わせた差分に作り直した。

@@ -1,5 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import {
   CancellationTokenSource,
@@ -43,6 +45,46 @@ export function credentialStoreUnavailable(): AdapterError {
     "CREDENTIAL_STORE_UNAVAILABLE",
     "ZCode could not open its credential store. When ZCode Desktop shares this machine's ZCode data, its key is in the system's credential store (Keychain, Credential Manager or Secret Service), which must be unlocked and reachable from the Paseo daemon.",
   );
+}
+// ZCode 3.18 starts the Agent on Windows inside a Job object owned by the
+// native zcode-runtime-host.exe and refuses to start it without one
+// (packages/services/src/windows-runtime-host). The integrated distribution
+// leaves it out; the managed runtime ships one per architecture, built with
+// ZCode's scripts/build-windows-runtime-host.mjs (ADR 33). ZCode finds it
+// through ZCODE_RUNTIME_HOST_PATH.
+const WINDOWS_RUNTIME_HOST_MINIMUM_APP_VERSION = "3.18.0";
+export function windowsRuntimeHostPath(installRoot: string, arch: string) {
+  return join(
+    installRoot,
+    "tools",
+    "runtime-host",
+    `win32-${arch}`,
+    "zcode-runtime-host.exe",
+  );
+}
+export function windowsRuntimeHostEnvironment(
+  runtime: DiscoveredRuntime,
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+  exists: (path: string) => boolean = existsSync,
+): Record<string, string> {
+  if (
+    platform !== "win32" ||
+    !atLeast(
+      runtime.identity.appVersion,
+      WINDOWS_RUNTIME_HOST_MINIMUM_APP_VERSION,
+    ) ||
+    environment.ZCODE_RUNTIME_HOST_PATH
+  )
+    return {};
+  const path = windowsRuntimeHostPath(runtime.paths.installRoot, arch);
+  if (!exists(path))
+    throw new AdapterError(
+      "WINDOWS_RUNTIME_HOST_MISSING",
+      "ZCode 3.18 needs zcode-runtime-host.exe on Windows",
+    );
+  return { ZCODE_RUNTIME_HOST_PATH: path };
 }
 export function serverArguments(runtime: DiscoveredRuntime): string[] {
   return [
@@ -187,6 +229,7 @@ export class ZCodeHostBridge implements HostBridge {
       cwd: workspace,
       env: {
         ...runtimeEnvironment(environment),
+        ...windowsRuntimeHostEnvironment(runtime, environment),
         ...UNSUPPORTED_CAPABILITY_ENVIRONMENT,
         // The Agent inherits this and reports it in model request headers, or
         // its CLI version without it. Desktop and the remote Core set it too.

@@ -961,6 +961,9 @@ try {
             ? [
                 "Session tools that start or stop work hidden",
                 "Server started with --prepare-credentials",
+                ...(windows
+                  ? ["Agent started through the bundled Windows runtime host"]
+                  : []),
               ]
             : []),
         ],

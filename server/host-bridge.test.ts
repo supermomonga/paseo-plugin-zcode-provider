@@ -4,7 +4,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import { serverArguments, ZCodeHostBridge } from "./host/bridge.js";
+import {
+  serverArguments,
+  windowsRuntimeHostEnvironment,
+  windowsRuntimeHostPath,
+  ZCodeHostBridge,
+} from "./host/bridge.js";
 import type { DiscoveredRuntime } from "./discovery/types.js";
 import { logger } from "./logger.js";
 let directory: string, runtime: DiscoveredRuntime;
@@ -182,4 +187,37 @@ it("reports a Server that cannot open its credential store", async () => {
   } finally {
     await bridge.close();
   }
+});
+
+// ZCode 3.18 starts its Agent on Windows through zcode-runtime-host.exe (ADR 33).
+it("passes the bundled Windows runtime host to 3.18 Servers on Windows", () => {
+  const at = (appVersion: string) => ({
+    ...runtime,
+    identity: { ...runtime.identity, appVersion },
+  });
+  const helper = windowsRuntimeHostPath(runtime.paths.installRoot, "arm64");
+  const present = (path: string) => path === helper;
+  expect(
+    windowsRuntimeHostEnvironment(at("3.18.2"), {}, "win32", "arm64", present),
+  ).toEqual({ ZCODE_RUNTIME_HOST_PATH: helper });
+  // Not needed before 3.18 or elsewhere; the daemon's own setting wins.
+  expect(
+    windowsRuntimeHostEnvironment(at("3.17.2"), {}, "win32", "arm64", present),
+  ).toEqual({});
+  expect(
+    windowsRuntimeHostEnvironment(at("3.18.2"), {}, "linux", "arm64", present),
+  ).toEqual({});
+  expect(
+    windowsRuntimeHostEnvironment(
+      at("3.18.2"),
+      { ZCODE_RUNTIME_HOST_PATH: "C:\\host.exe" },
+      "win32",
+      "x64",
+      () => false,
+    ),
+  ).toEqual({});
+  // An override runtime without one fails before the Agent would.
+  expect(() =>
+    windowsRuntimeHostEnvironment(at("3.18.2"), {}, "win32", "x64", present),
+  ).toThrow(expect.objectContaining({ code: "WINDOWS_RUNTIME_HOST_MISSING" }));
 });

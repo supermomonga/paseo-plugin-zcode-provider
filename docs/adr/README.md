@@ -30,3 +30,4 @@
 * [30. Paseo 0.16を最低要件にし、Planを入力欄のコントロールで報告して、ゴールの変化をsubscriptionで送る](0030-paseo-0-16を最低要件にし-planを入力欄のコントロールで報告して-ゴールの変化をsubscriptionで送る.md)
 * [31. ZCode 3.18のSessionツールのうち他のセッションで作業を始め・止めるものをターンごとに隠す](0031-zcode-3-18のsessionツールのうち他のセッションで作業を始め-止めるものをターンごとに隠す.md)
 * [32. ZCode 3.18のServerを資格情報ストアが使える状態で起動する](0032-zcode-3-18のserverを資格情報ストアが使える状態で起動する.md)
+* [33. WindowsではZCodeの公式スクリプトでzcode-runtime-host.exeをビルドして管理下ランタイムに入れる](0033-windowsではzcodeの公式スクリプトでzcode-runtime-host-exeをビルドして管理下ランタイムに入れる.md)

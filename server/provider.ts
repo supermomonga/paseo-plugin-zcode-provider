@@ -892,6 +892,8 @@ function publicError(error: unknown): ProviderError {
     AUTH_REQUIRED:
       "No ZCode model provider is usable. Sign in or add a provider in Settings → Plugins → ZCode Provider → Account.",
     CREDENTIAL_STORE_UNAVAILABLE: credentialStoreUnavailable().message,
+    WINDOWS_RUNTIME_HOST_MISSING:
+      "ZCode 3.18 needs zcode-runtime-host.exe on Windows to start its Agent. The managed runtime includes it; with PASEO_ZCODE_RUNTIME, set ZCODE_RUNTIME_HOST_PATH for the Paseo daemon to ZCode's zcode-runtime-host.exe.",
     MODEL_UNAVAILABLE:
       "ZCode cannot use the selected model. Choose another model, or check the account and model providers in Settings → Plugins → ZCode Provider → Account.",
     PERSISTENCE_VERSION_UNSUPPORTED:

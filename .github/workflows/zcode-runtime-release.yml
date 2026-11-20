@@ -31,8 +31,53 @@ env:
   NODE_VERSION: "24.21.0"
 
 jobs:
+  # ZCode 3.18 starts its Agent on Windows only through zcode-runtime-host.exe,
+  # which the integrated distribution leaves out (ADR 33). ZCode's own script
+  # builds it from the pinned source with Visual Studio, as Desktop's build does.
+  windows-host:
+    name: Build Windows runtime host (${{ matrix.arch }})
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: plugin
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install plugin dependencies
+        working-directory: plugin
+        run: npm ci --include=dev
+      - name: Resolve pinned ZCode source
+        id: source
+        working-directory: plugin
+        run: echo "commit=$(node scripts/package-zcode-runtime.mjs commit)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v6
+        with:
+          repository: zai-org/ZCode
+          ref: ${{ steps.source.outputs.commit }}
+          path: zcode-source
+          persist-credentials: false
+      - name: Build zcode-runtime-host.exe with the official script
+        working-directory: zcode-source
+        run: node scripts/build-windows-runtime-host.mjs --arch=${{ matrix.arch }} --output-dir=../windows-runtime-host/win32-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-runtime-host-${{ matrix.arch }}
+          path: windows-runtime-host/
+          if-no-files-found: error
+          retention-days: 1
+
   build:
     name: Build runtime archive
+    needs: windows-host
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -79,12 +124,17 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec tsc -b packages/shared
           node scripts/build-zcode.mjs --base-url https://example.invalid/zcode/
-      - name: Add upstream notices, patches and build provenance
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: windows-runtime-host-*
+          path: windows-runtime-host
+          merge-multiple: true
+      - name: Add upstream notices, patches, added components and build provenance
         id: package
         working-directory: plugin
         env:
           TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-        run: node scripts/package-zcode-runtime.mjs package --source ../zcode-source --out ../runtime-release ${TAG:+--tag "$TAG"}
+        run: node scripts/package-zcode-runtime.mjs package --source ../zcode-source --out ../runtime-release --windows-runtime-host ../windows-runtime-host ${TAG:+--tag "$TAG"}
       # Only verify and publish in this run use the archive; tags publish it
       # as a release asset.
       - uses: actions/upload-artifact@v4
