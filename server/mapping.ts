@@ -41,7 +41,10 @@ const GUARDED_MINIMUM_APP_VERSION = "3.15.1";
 // ZCode 3.17.1 added the MCP server `scope`; older Servers reject it.
 const MCP_SCOPE_MINIMUM_APP_VERSION = "3.17.1";
 
-function atLeast(appVersion: string | undefined, minimum: string): boolean {
+export function atLeast(
+  appVersion: string | undefined,
+  minimum: string,
+): boolean {
   return (
     appVersion !== undefined &&
     valid(appVersion) !== null &&

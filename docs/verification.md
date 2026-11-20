@@ -15,6 +15,12 @@ Issue #104 の対応。
 - **権限の確認**：`modeSwitch` と、選択肢 `allowAndSwitchGuarded`・`fullAccess` が加わった。どちらも `options` には入らず、`fullAccessOption` か `modeSwitch` で示される。`options` だけを出すこれまでの扱いで足りる。
 - **使っていない追加**：`stopSubagent`、キューの編集のロック（`lockQueueItemEdit` など）、`commands/query` の `turn`、`v4/conversation/contextComposition`、冷えた再開の `workspace`（管理された worktree のセッションだけに要る）。
 
+## サービスの変更とこのプロバイダ
+
+- **サインイン**：Desktop 3.18 のサインインは、Z.ai の一つの入口で、地域で OAuth のプロバイダーを選ぶ。中国本土は `zai_cn`、それ以外は `zai` である（`packages/ui/src/WelcomeScreen.tsx` の `resolveSingleLoginProvider`）。BigModel は、明示的な接続の求めにだけ使う。Account の画面は、`oauth.getProviders` が `zai_cn` を返せば「Global」と「China mainland」を、返さなければこれまでの Z.ai と BigModel を出す。サーバーは、出した選択肢にない開始を断る。
+- **サインイン後の家族**：3.18 の Desktop は、サインインしたプロバイダーではなく、`oauth.getAccountAvailability` が返すアカウントの家族から決める。選んである家族を保ち、無ければアカウントの最初の家族にし、どちらも無ければ何も選ばない（`packages/ui/src/root/oauthProviderFamilySelectionRefresh.ts`）。BigModel に結び付いていない中国本土のアカウントは家族を持たない。プラグインも 3.18 以降はこの規則に従い、3.18 より前のランタイムではこれまでどおりサインインした家族に切り替える。プランは、選んでいなければ個人の Coding Plan にする（これまでどおり）。
+- **今のプロバイダー**：`oauth.getActiveProvider` は `zai_cn` を返しうる。プラグインはこれを `zai`・`bigmodel` の列挙で読んでいたので、中国本土でサインインしたアカウントでは Account の画面と利用量の読み出しが失敗した。文字列として読み、家族は ZCode の `resolveProviderFamilyDomainFromOAuthProvider` と同じく `zai`・`bigmodel` だけを家族とみなす。画面の Region は、サインインしたプロバイダーから出す。
+
 ## 管理下ランタイムのパッチ（ADR 19）
 
 - `patches/zcode/0001-hide-suppressed-official-plugins.patch` は、3.18.2 にもそのまま当たる（51 行ずれる）。対象の commit を書き換え、行番号を合わせた差分に作り直した。

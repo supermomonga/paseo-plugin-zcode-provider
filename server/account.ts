@@ -11,6 +11,7 @@ import {
 import { AdapterError } from "./errors.js";
 import type { SettingsChannel } from "./host/bridge.js";
 import { logger } from "./logger.js";
+import { atLeast } from "./mapping.js";
 
 /** The official services this screen uses, on a ZCode Server it owns. */
 export interface SettingsHost {
@@ -23,6 +24,7 @@ export interface SettingsHost {
   ): Promise<z.output<Schema>>;
   onFailure(listener: (error: AdapterError) => void): () => void;
   close(): Promise<void>;
+  readonly diagnostic: { readonly appVersion?: string };
 }
 
 export interface AccountServiceOptions {
@@ -124,7 +126,52 @@ export const sessionStateSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("signed-out") }),
   z.object({ status: z.literal("reauthentication-required") }),
 ]);
-export const familySchema = z.enum(["zai", "bigmodel"]).nullable();
+// `oauth.getActiveProvider` names the OAuth provider, which from 3.18 can be
+// `zai_cn`, a Z.ai sign-in in China that is not a plan family by itself.
+export const activeProviderSchema = z.string().nullable();
+/** The plan family of a sign-in, as ZCode's resolveProviderFamilyDomainFromOAuthProvider. */
+export function familyOfProvider(
+  provider: string | null | undefined,
+): AccountFamily | undefined {
+  return provider === "zai" || provider === "bigmodel" ? provider : undefined;
+}
+/** A stored providerFamilyDomain, as ZCode's normalizeProviderFamilyDomain. */
+export function normalizeFamily(
+  value: string | null | undefined,
+): AccountFamily | undefined {
+  return familyOfProvider(value);
+}
+const oauthProvidersSchema = z.array(
+  z.object({ id: z.string(), enabled: z.boolean().optional() }),
+);
+// 3.18: the account's plan families, which a China sign-in has only once it is
+// linked to BigModel.
+const accountAvailabilitySchema = z.object({
+  families: z.array(z.string()),
+});
+/** ZCode 3.18 signs in through one Z.ai entry with a region, as Desktop does. */
+const SINGLE_SIGN_IN_MINIMUM_APP_VERSION = "3.18.0";
+
+// What ZCode Desktop offers: from 3.18 a single Z.ai sign-in whose region
+// selects `zai` or `zai_cn`, BigModel serving only explicit connections; before,
+// Z.ai or BigModel. Only providers the runtime's OAuth service lists are shown.
+export function signInOptions(
+  providers: z.output<typeof oauthProvidersSchema>,
+): ReadyAccountView["signInOptions"] {
+  const listed = new Set(
+    providers.filter((p) => p.enabled !== false).map((p) => p.id),
+  );
+  const options = listed.has("zai_cn")
+    ? [
+        { provider: "zai", label: "Global" },
+        { provider: "zai_cn", label: "China mainland" },
+      ]
+    : [
+        { provider: "zai", label: "Z.ai (international)" },
+        { provider: "bigmodel", label: "BigModel (China)" },
+      ];
+  return options.filter((option) => listed.has(option.provider));
+}
 export const accountSettingsSchema = z.object({
   providerFamilyDomain: z.string().optional(),
   providerFamilyDomainUpdatedAt: z.number().optional(),
@@ -159,6 +206,7 @@ function project(
   account: ReadyAccountView["account"],
   family: AccountFamily | undefined,
   signIn: SignIn,
+  options: ReadyAccountView["signInOptions"],
 ): ReadyAccountView {
   const visible = view.providers.filter(
     (provider) => provider.effectiveConfig.visibility !== "hidden",
@@ -167,6 +215,7 @@ function project(
     status: "ready",
     account,
     signIn,
+    signInOptions: options,
     plans:
       account.state === "signed-out" || family === undefined
         ? []
@@ -401,16 +450,16 @@ export class AccountService {
   }
 
   private async read(host: SettingsHost): Promise<AccountView> {
-    const [session, active, settings, view] = await Promise.all([
+    const [session, active, settings, view, providers] = await Promise.all([
       host.invoke("oauth", "restoreCachedSessionState", [], sessionStateSchema),
-      host.invoke("oauth", "getActiveProvider", [], familySchema),
+      host.invoke("oauth", "getActiveProvider", [], activeProviderSchema),
       host.invoke("setting", "get", [], accountSettingsSchema),
       host.invoke("provider-settings", "getView", [], nativeViewSchema),
+      host.invoke("oauth", "getProviders", [], oauthProvidersSchema),
     ]);
-    const domain = familySchema.safeParse(
-      settings.providerFamilyDomain || null,
-    );
-    const family = (domain.success ? domain.data : null) ?? active ?? undefined;
+    const family =
+      normalizeFamily(settings.providerFamilyDomain) ??
+      familyOfProvider(active);
     const account: ReadyAccountView["account"] =
       session.status === "signed-out"
         ? { state: "signed-out" }
@@ -420,6 +469,7 @@ export class AccountService {
                 ? "signed-in"
                 : "reauthentication-required",
             ...(family ? { family } : {}),
+            ...(active ? { loginProvider: active } : {}),
             ...(session.status === "authenticated" &&
             session.userInfo.displayName
               ? { displayName: session.userInfo.displayName }
@@ -428,7 +478,13 @@ export class AccountService {
               ? { username: session.userInfo.username }
               : {}),
           };
-    return project(view, account, family, this.signIn);
+    return project(
+      view,
+      account,
+      family,
+      this.signIn,
+      signInOptions(providers),
+    );
   }
 
   private async apply(
@@ -437,15 +493,30 @@ export class AccountService {
   ): Promise<void> {
     switch (change.action) {
       case "signIn": {
+        const providers = await host.invoke(
+          "oauth",
+          "getProviders",
+          [],
+          oauthProvidersSchema,
+        );
+        if (
+          !signInOptions(providers).some(
+            (option) => option.provider === change.provider,
+          )
+        )
+          throw new AdapterError(
+            "INVALID_CONFIGURATION",
+            "This ZCode runtime does not offer that sign-in",
+          );
         const started = await host.invoke(
           "oauth",
           "startOAuthWithPolling",
-          [change.family],
+          [change.provider],
           startedSchema,
         );
         this.signIn = {
           state: "pending",
-          family: change.family,
+          provider: change.provider,
           authorizeUrl: started.authorizeUrl,
           expiresAt: this.now() + SIGN_IN_LIFETIME_MS,
         };
@@ -728,7 +799,7 @@ export class AccountService {
     }
     if (result?.kind === "session" || result?.kind === "duplicate") {
       try {
-        await this.completeSignIn(host, pending.family);
+        await this.completeSignIn(host, pending.provider);
         this.changed();
       } catch (error) {
         logger.error("zcode.account.signin.settings.failed", error);
@@ -747,14 +818,20 @@ export class AccountService {
     if (this.signIn === pending) this.schedulePoll();
   }
 
-  // Desktop's completion: select the signed-in family and its individual
-  // Coding Plan unless a plan is already chosen, then refresh entitlements.
-  // Without the family the Server does not offer the account's models.
-  // Writing the selections requires the settings read here as the expected
-  // state (compare-and-set), as Desktop's setProviderFamilyDomain passes them.
+  // Desktop's completion: select the account's plan family and its
+  // individual Coding Plan unless a plan is already chosen for it, then
+  // refresh entitlements. Without the family the Server does not offer the
+  // account's models. Writing the selections requires the settings read here
+  // as the expected state (compare-and-set), as Desktop's setting update does.
+  //
+  // From 3.18 the family comes from the account rather than the sign-in
+  // (refreshLatestModelProviderFamilySelectionAfterLogin): the chosen family is
+  // kept, else the account's first, and an account without one (a China
+  // sign-in not linked to BigModel) selects nothing. Before 3.18 the sign-in's
+  // family replaces the chosen one.
   private async completeSignIn(
     host: SettingsHost,
-    family: AccountFamily,
+    provider: string,
   ): Promise<void> {
     const settings = await host.invoke(
       "setting",
@@ -762,30 +839,53 @@ export class AccountService {
       [],
       accountSettingsSchema,
     );
-    const selections = settings.providerFamilyConnectionSelections ?? {};
-    await host.invoke(
-      "setting",
-      "update",
-      [
-        {
-          providerFamilyDomain: family,
-          providerFamilyDomainUpdatedAt: this.now(),
-          providerFamilyDomainMigrated: true,
-          providerFamilyConnectionSelections: {
-            ...selections,
-            [family]: selections[family] ?? { kind: "individual-coding-plan" },
-          },
-        },
-        {
-          providerFamilyDomain: settings.providerFamilyDomain,
-          providerFamilyConnectionSelections:
-            settings.providerFamilyConnectionSelections,
-          providerFamilyDomainUpdatedAt:
-            settings.providerFamilyDomainUpdatedAt ?? 0,
-        },
-      ],
-      z.unknown(),
-    );
+    const current = normalizeFamily(settings.providerFamilyDomain);
+    let family: AccountFamily | undefined;
+    if (
+      atLeast(host.diagnostic.appVersion, SINGLE_SIGN_IN_MINIMUM_APP_VERSION)
+    ) {
+      const { families } = await host.invoke(
+        "oauth",
+        "getAccountAvailability",
+        [],
+        accountAvailabilitySchema,
+      );
+      const available = families.flatMap((value) => {
+        const family = normalizeFamily(value);
+        return family ? [family] : [];
+      });
+      family = current ?? available[0];
+      if (family && !available.includes(family)) family = undefined;
+    } else family = familyOfProvider(provider);
+    if (family) {
+      const selections = settings.providerFamilyConnectionSelections ?? {};
+      if (family !== current || !selections[family])
+        await host.invoke(
+          "setting",
+          "update",
+          [
+            {
+              providerFamilyDomain: family,
+              providerFamilyDomainUpdatedAt: this.now(),
+              providerFamilyDomainMigrated: true,
+              providerFamilyConnectionSelections: {
+                ...selections,
+                [family]: selections[family] ?? {
+                  kind: "individual-coding-plan",
+                },
+              },
+            },
+            {
+              providerFamilyDomain: settings.providerFamilyDomain,
+              providerFamilyConnectionSelections:
+                settings.providerFamilyConnectionSelections,
+              providerFamilyDomainUpdatedAt:
+                settings.providerFamilyDomainUpdatedAt ?? 0,
+            },
+          ],
+          z.unknown(),
+        );
+    }
     await this.refresh(host, "oauth-login-entitlement");
   }
 }

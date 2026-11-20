@@ -4,6 +4,16 @@ import { z } from "zod";
 export const accountFamilySchema = z.enum(["zai", "bigmodel"]);
 export type AccountFamily = z.output<typeof accountFamilySchema>;
 
+/** A ZCode OAuth provider, such as `zai`, `zai_cn` (3.18) or `bigmodel`. */
+const loginProviderSchema = z.string().trim().min(1).max(64);
+
+// The sign-in choices the runtime's OAuth service offers, as ZCode Desktop
+// lists them: a single Z.ai sign-in with a region from 3.18, Z.ai or BigModel
+// before.
+const signInOptionSchema = z
+  .object({ provider: loginProviderSchema, label: z.string() })
+  .strict();
+
 export const apiFormatSchema = z.enum([
   "anthropic-messages",
   "openai-chat-completions",
@@ -75,7 +85,7 @@ export const signInStateSchema = z.discriminatedUnion("state", [
   z
     .object({
       state: z.literal("pending"),
-      family: accountFamilySchema,
+      provider: loginProviderSchema,
       /** Open it on any device; the daemon receives the result. */
       authorizeUrl: z.string(),
       expiresAt: z.number(),
@@ -100,13 +110,17 @@ export const accountViewSchema = z.discriminatedUnion("status", [
         z
           .object({
             state: z.enum(["signed-in", "reauthentication-required"]),
+            /** The plan family whose plans the account uses. */
             family: accountFamilySchema.optional(),
+            /** The OAuth provider the account signed in with. */
+            loginProvider: loginProviderSchema.optional(),
             displayName: z.string().optional(),
             username: z.string().optional(),
           })
           .strict(),
       ]),
       signIn: signInStateSchema,
+      signInOptions: z.array(signInOptionSchema),
       plans: z.array(planSchema),
       providers: z.array(customProviderSchema),
       templates: z.array(templateSchema),
@@ -134,7 +148,7 @@ const apiKey = z.string().trim().min(1).max(4096);
 
 export const accountChangeSchema = z.discriminatedUnion("action", [
   z
-    .object({ action: z.literal("signIn"), family: accountFamilySchema })
+    .object({ action: z.literal("signIn"), provider: loginProviderSchema })
     .strict(),
   z.object({ action: z.literal("cancelSignIn") }).strict(),
   z.object({ action: z.literal("signOut") }).strict(),

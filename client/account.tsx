@@ -20,7 +20,6 @@ import {
   zcodeAccountChange,
   zcodeAccountView,
   type AccountChange,
-  type AccountFamily,
   type AccountView,
   type ApiFormat,
   type CustomProvider,
@@ -39,10 +38,12 @@ interface PartProps {
   readonly run: Run;
 }
 
-const FAMILIES: readonly { label: string; value: AccountFamily }[] = [
-  { label: "Z.ai (international)", value: "zai" },
-  { label: "BigModel (China)", value: "bigmodel" },
-];
+// Where the account signed in, by its ZCode OAuth provider.
+const LOGIN_REGIONS: Readonly<Record<string, string>> = {
+  zai: "Global (Z.ai)",
+  zai_cn: "China mainland (Z.ai)",
+  bigmodel: "China mainland (BigModel)",
+};
 const API_FORMATS: readonly { label: string; value: ApiFormat }[] = [
   { label: "Anthropic messages (/messages)", value: "anthropic-messages" },
   {
@@ -137,10 +138,14 @@ function Account({
   busy,
   run,
 }: PartProps & { view: ReadyAccountView }) {
-  const [family, setFamily] = useState<AccountFamily>("zai");
+  const { account, signIn, signInOptions } = view;
+  // The runtime lists the sign-ins it offers; the first is Desktop's default.
+  const [chosen, setChosen] = useState<string | undefined>();
+  const provider = signInOptions.some((o) => o.provider === chosen)
+    ? chosen
+    : signInOptions[0]?.provider;
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
-  const { account, signIn } = view;
   const open = (url: string) => {
     setOpenError(null);
     openExternalUrl(url).catch(() =>
@@ -148,15 +153,15 @@ function Account({
     );
   };
   const start = async () => {
-    const next = await run({ action: "signIn", family });
+    if (provider === undefined) return;
+    const next = await run({ action: "signIn", provider });
     if (next?.status === "ready" && next.signIn.state === "pending")
       open(next.signIn.authorizeUrl);
   };
-  const region = FAMILIES.find(
-    (entry) =>
-      entry.value ===
-      (account.state === "signed-out" ? undefined : account.family),
-  )?.label;
+  const region =
+    account.state === "signed-out" || account.loginProvider === undefined
+      ? undefined
+      : (LOGIN_REGIONS[account.loginProvider] ?? account.loginProvider);
 
   return (
     <SettingsSection title="ZCode account">
@@ -238,21 +243,28 @@ function Account({
           />
         ) : (
           [
-            <SettingsSelect<AccountFamily>
+            <SettingsSelect<string>
               key="region"
               label="Region"
-              value={family}
-              options={FAMILIES}
-              onValueChange={setFamily}
-              disabled={busy}
+              value={provider ?? ""}
+              options={signInOptions.map((option) => ({
+                label: option.label,
+                value: option.provider,
+              }))}
+              onValueChange={setChosen}
+              disabled={busy || signInOptions.length === 0}
             />,
             <SettingsAction
               key="sign-in"
               label="Sign in"
-              hint="Opens the sign-in page in your browser."
+              hint={
+                signInOptions.length === 0
+                  ? "This ZCode runtime offers no sign-in."
+                  : "Opens the sign-in page in your browser."
+              }
               error={signIn.state === "failed" ? signIn.message : null}
               actionLabel="Sign in"
-              disabled={busy}
+              disabled={busy || provider === undefined}
               onPress={() => void start()}
             />,
           ]
