@@ -62,6 +62,12 @@ Issue #105〜#107 の対応。v0.15.4（`1c00b365`）と v0.16.2（`2ee30f4164af
 
 ## 検証（Linux x64、Node.js 22.22.1、2026-11-20）
 
+- **実 UI**：`@getpaseo/cli@0.16.2` の一時 daemon（`--home`、HOME と XDG のディレクトリは一時ディレクトリ、loopback、relay は無効、Web UI と plugins は有効、モデルは固定の応答を返すローカルのサーバー）に、`git archive` で取り出して `npm ci` した作業ツリーを導入した。ZCode は、一時ディレクトリでビルドした 3.18.2 のランタイム（下の「ZCode 3.18.2 への追従」）を `PASEO_ZCODE_RUNTIME` で使った。ヘッドレス Chromium（1400×900）で次を確かめた。
+  - Settings → Plugins の行と設定のページの見出しに、マニフェストの `ZCode Provider` と説明が出る。設定のページには、ホストのタブとして Runtime・Account・Timeline・Diagnostics がアイコン付きで並ぶ。
+  - Account は、3.18.2 の Server でサインインしていない状態を示し、Region に Global と China mainland を出した。
+  - ZCode のエージェントの入力欄に、Plan のトグルがアイコン付きで出て、ツールチップは `Plan` である。押すと有効の色になり、Paseo が保存したエージェントの `providerOptions.plan_mode` が `true` になった。もう一度押すと `false` に戻った。
+  - `/goal` を送ると、一定間隔の読み出しなしに Goal のピル（`Goal <1m`、0.16 の上向きのシェブロン付き）が出た。ポップオーバーは `In progress`、経過秒、反復の題を示した。停止すると、ピルのアイコンが一時停止に変わった。
+  - プラグインのログとブラウザの console に、エラーは無かった。検証の後に daemon とモデルのサーバーを止め、起動したプロセスが残っていないことと、この端末の `~/.zcode` が変わっていないことを確かめた。
 - **SDK**：開発 SDK を 0.16.2 にし、`npm run typecheck`、`npm test`（29 ファイル、287 tests）、`npm run build` が成功した。
 - **上流**：`git clone --shared` で作った v0.16.2（`2ee30f4`）の clone に対し、`NODE_PATH` を外して `npm run test:upstream` を実行した。0.16 で無くなった `setFeature` を `applyOptions` に置き換え、全項目が成功した。`NODE_PATH` を外すのは、mise で入れた Paseo CLI の `NODE_PATH` から `zod` が解決され、準備前の複製で `zod` が見つからないことの確認が成り立たないためである。
 
