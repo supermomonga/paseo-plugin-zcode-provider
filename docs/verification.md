@@ -17,6 +17,7 @@ Issue #105〜#107 の対応。v0.15.4（`1c00b365`）と v0.16.2（`2ee30f4164af
 - **Plan**：`settings` をやめ、`controls` の `toggle`（`plan_mode`、ラベル `Plan`、アイコン `list-todo`、既定値 `false`。Paseo の Codex プロバイダーと同じ）と `providerOptions.plan_mode` で報告する。`session.open` と `session.configure` は `providerOptions` だけを読み、`null` は Plan をオフにする。Issue #108 で入れた `settings` とのマージは無くした。
 - **実ランタイムの確認**：`test:stdio-runtime`・`test:model-plan-runtime`・`test:native-restore` は、Plan を `providerOptions` で渡し、`session.config` の `providerOptions.plan_mode` で確かめる。
 - **Goal のピル**：RPC `zcode.goals` を subscription `zcode.goals.watch` に置き換えた。サーバーは購読の開始時と、セッションの V4 の `goal` が変わったとき（深い比較で同じなら送らない）と、セッションの登録と削除のときに送る。同じ時点の変化はマイクロタスクでまとめる。ピルとポップオーバーは一定間隔の読み出しをやめ、イベントだけで更新する。購読がエラーで閉じたら 5 秒後に購読し直す。
+- **設定画面**：Paseo 0.16 は設定画面ごとにタブを出すので、自前のタブを持つ Settings 画面をやめ、Runtime・Account・Timeline・Diagnostics の四つの画面として登録した。Account の「Open Runtime」は `client.openSettings("runtime")` で Runtime の画面を開く。`paseo-plugin.json` に `name`（`ZCode Provider`）と `description` を加え、案内の文言の場所も `Settings → Plugins → ZCode Provider → Runtime` などに変えた。
 
 ## 検証（Linux x64、Node.js 22.22.1、2026-11-20）
 

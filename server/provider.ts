@@ -884,9 +884,9 @@ function publicError(error: unknown): ProviderError {
     RUNTIME_DISCOVERY_FAILED:
       "ZCode installation or required host structure could not be inspected. See the diagnostic for the failure stage.",
     RUNTIME_SETUP_REQUIRED:
-      "ZCode runtime is not set up. Install it in Settings → Plugins → zcode-provider → Settings → Runtime.",
+      "ZCode runtime is not set up. Install it in Settings → Plugins → ZCode Provider → Runtime.",
     AUTH_REQUIRED:
-      "No ZCode model provider is usable. Sign in or add a provider in Settings → Plugins → zcode-provider → Settings → Account.",
+      "No ZCode model provider is usable. Sign in or add a provider in Settings → Plugins → ZCode Provider → Account.",
     PERSISTENCE_VERSION_UNSUPPORTED:
       "ZCode persistence version is unsupported. Create a new Paseo ZCode session.",
     PERSISTENCE_INVALID:

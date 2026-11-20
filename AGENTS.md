@@ -2,11 +2,11 @@
 
 ## Project Structure
 
-This plugin connects Paseo's public Provider API to the official stdio Services Server included in the integrated ZCode CLI distribution. The Settings screen's Runtime tab installs a pinned build of that distribution and Node.js (ADR 15); its Account tab signs in and manages model providers through ZCode's official services (ADR 17).
+This plugin connects Paseo's public Provider API to the official stdio Services Server included in the integrated ZCode CLI distribution. The Runtime settings screen installs a pinned build of that distribution and Node.js (ADR 15); the Account screen signs in and manages model providers through ZCode's official services (ADR 17).
 
 - `index.server.ts` / `index.client.tsx`: Server registration; settings UI and Goal pill registration.
 - `server/`: Provider, sessions, and persistence. `discovery/` locates installations; `runtime/` pins and installs the managed runtime; `host/` and `protocol/` handle startup, communication, and validation.
-- `client/`: React Native Settings (Runtime, Account and Timeline tabs) and Diagnostics screens, and the Goal pill above the composer with its popover. `shared/` contains types and contracts shared by the server and client.
+- `client/`: React Native settings screens (Runtime, Account, Timeline and Diagnostics, one host tab each), and the Goal pill above the composer with its popover. `shared/` contains types and contracts shared by the server and client.
 - `test/`: Integration tests and `fake-host.ts`. Unit tests also live in `server/`.
 - `scripts/`: Build, upstream integration, and runtime verification scripts. `docs/` contains development procedures, verification records, and ADRs. Images live in `images/` and `icon.svg`.
 

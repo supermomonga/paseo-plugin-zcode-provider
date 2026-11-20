@@ -43,7 +43,7 @@ const messages: Record<
   ],
   MODEL_AUTH_FAILED: [
     "The model provider is not signed in or rejected the credentials",
-    "Check the account and model providers in the Account tab of the zcode-provider Settings.",
+    "Check the account and model providers in Settings → Plugins → ZCode Provider → Account.",
   ],
   MODEL_CONTEXT_EXCEEDED: [
     "The conversation exceeds the model's context window",

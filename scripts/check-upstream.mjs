@@ -455,6 +455,9 @@ async function checkGitPreparation({
     });
 
     const manifest = await readPluginManifest(candidate);
+    // Paseo shows the name in Settings → Plugins and on the settings page.
+    assert.equal(manifest.name, "ZCode Provider");
+    assert.ok(manifest.description);
     const environment = { ...process.env };
     if (nodeEnv === undefined) delete environment.NODE_ENV;
     else environment.NODE_ENV = nodeEnv;
@@ -742,7 +745,16 @@ async function checkContributions({
       },
     },
   });
-  assert.deepEqual([...screens.keys()], ["settings", "diagnostics"]);
+  // Paseo shows one tab per settings screen, in registration order (ADR 30).
+  assert.deepEqual(
+    [...screens.values()].map(({ id, title }) => [id, title]),
+    [
+      ["runtime", "Runtime"],
+      ["account", "Account"],
+      ["timeline", "Timeline"],
+      ["diagnostics", "Diagnostics"],
+    ],
+  );
   for (const screen of screens.values())
     assert.equal(typeof screen.Component, "function");
   await new Promise((resolve) => setImmediate(resolve));

@@ -30,7 +30,7 @@ To follow the `main` branch instead, install the Git repository with `paseo plug
 
 ## Setup
 
-Open **Settings → Plugins → zcode-provider → Settings**. The screen has three tabs: **Runtime** installs and removes the runtime, **Account** signs in and manages model providers, and **Timeline** chooses what ZCode agents add to the timeline.
+Open **Settings → Plugins → ZCode Provider** with the settings button. The page has four tabs: **Runtime** installs and removes the runtime, **Account** signs in and manages model providers, **Timeline** chooses what ZCode agents add to the timeline, and **Diagnostics** shows the runtime in use.
 
 On the **Runtime** tab, choose **Download and install**. The screen lists every download, its SHA-256, size and license before you start. Setup runs on the machine hosting the daemon:
 
@@ -109,7 +109,7 @@ New conversations support listing, resume and paged V4 history. From ZCode 3.16,
 
 ## Diagnostics
 
-**Settings → Plugins → zcode-provider → Diagnostics** shows whether the managed runtime or the environment override is in use, the runtime and Node.js paths and versions, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds. **Settings → Providers** also shows ZCode as not installed until the runtime is set up and supported. Its diagnostic lists the runtime source, Server, Agent and Node.js versions and platform, or the reason the runtime cannot be used. This check reuses its result for 30 seconds and does not start ZCode, so sign-in problems still appear when a session starts.
+**Settings → Plugins → ZCode Provider → Diagnostics** shows whether the managed runtime or the environment override is in use, the runtime and Node.js paths and versions, Server/Agent versions and hashes, minimum-version assessment and mapping location. The screen is read-only. Its optional version check does not prove that authentication or a model call succeeds. **Settings → Providers** also shows ZCode as not installed until the runtime is set up and supported. Its diagnostic lists the runtime source, Server, Agent and Node.js versions and platform, or the reason the runtime cannot be used. This check reuses its result for 30 seconds and does not start ZCode, so sign-in problems still appear when a session starts.
 
 ```bash
 paseo plugin logs zcode-provider

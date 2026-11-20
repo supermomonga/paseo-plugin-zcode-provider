@@ -4,7 +4,7 @@ import { runMain } from "./releases/common.mjs";
 
 // Installs the pinned managed runtime with the plugin's own installer, so CI
 // and local checks exercise the same downloads and verification as the
-// Settings screen. Honors XDG_DATA_HOME for an isolated destination.
+// Runtime settings. Honors XDG_DATA_HOME for an isolated destination.
 async function loadInstaller() {
   const result = await build({
     stdin: {

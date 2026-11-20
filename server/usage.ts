@@ -31,8 +31,7 @@ const FAMILY_LABELS: Record<AccountFamily, string> = {
   zai: "Z.ai",
   bigmodel: "BigModel",
 };
-const SETTINGS_PATH =
-  "Settings → Plugins → zcode-provider → Settings → Account";
+const SETTINGS_PATH = "Settings → Plugins → ZCode Provider → Account";
 
 const limitSchema = z.object({
   type: z.string(),
