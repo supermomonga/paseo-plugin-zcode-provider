@@ -1,3 +1,21 @@
+# Paseo 0.16.0〜0.16.2 への追従（2026-11-20）
+
+Issue #105〜#107 の対応。v0.15.4（`1c00b365`）と v0.16.2（`2ee30f4164af42ba209236ab3a31bf9532592fc3`）の `packages/plugin`、`plugin-provider.ts`、プラグインのコンパイラと準備処理を比べた。0.16.1 と 0.16.2 の変更履歴に、プラグインの API の変更は無い。
+
+## 変更履歴とこのプロバイダ
+
+- **入力欄のオプション**：`ProviderConfigState.settings` が非推奨になり、`controls` と `providerOptions` で報告する形が加わった（`plugin-provider-options.ts`）。`settings` を報告するプロバイダーには、0.16 の daemon が同じ値を `changes.providerOptions` と `changes.settings` の両方で送る。この互換処理は 2027-05-01 以降に削除される。アダプターの `setFeature` は `applyOptions` に置き換わった。
+- **プラグインのサブスクリプション**：`defineSubscription` と `server.handle` で、プラグインのサーバーからクライアントへイベントを送れるようになった（getpaseo/paseo#8527）。クライアントは `client.subscribe` か `useSubscription` で受け取る。
+- **設定画面**：Settings → Plugins の歯車から開き、`addSettingsScreen` で登録した画面ごとにホストがタブを出す（getpaseo/paseo#8675）。見出しにはマニフェストの `name` が出る。
+- **バックグラウンドタスク**：Claude Code、Codex、OpenCode v2 は `background_work` と `stopBackgroundWork` で報告と停止を行う。プラグイン Provider の API（`packages/plugin/src/server/provider.ts`）にもアダプターにも、これに当たるイベントと入力は無い。ZCode のバックグラウンドの Bash とサブエージェントは、これまでどおりツール呼び出しとして見せ、アイドル時の解放は `session.can_stop_runtime` で拒否する。
+- **廃止**：`agent.turn.after.timeline` が削除された。このプラグインは使っていない。
+- **変わらないもの**：プラグイン Provider のセッションには、0.16.2 でも `usageSession()` が無い。ready より前のイベントも、アダプターの履歴に積まれるだけである。`test:upstream` が読む上流のファイル（`compiler-build.ts`、`manifest.ts`、`preparation-build.ts`、`provider-icon.ts`、`plugin-provider.ts`）は同じ名前と引数で残っている。
+
+## 検証（Linux x64、Node.js 22.22.1、2026-11-20）
+
+- **SDK**：開発 SDK を 0.16.2 にし、`npm run typecheck`、`npm test`（29 ファイル、287 tests）、`npm run build` が成功した。
+- **上流**：`git clone --shared` で作った v0.16.2（`2ee30f4`）の clone に対し、`NODE_PATH` を外して `npm run test:upstream` を実行した。0.16 で無くなった `setFeature` を `applyOptions` に置き換え、全項目が成功した。`NODE_PATH` を外すのは、mise で入れた Paseo CLI の `NODE_PATH` から `zod` が解決され、準備前の複製で `zod` が見つからないことの確認が成り立たないためである。
+
 # Paseo 0.16 で、保存した `plan_mode` を持つセッションを開けない（2026-11-20）
 
 [Issue #108](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/108) の対応。Paseo 0.16.1 の daemon では、ZCode のセッションで会話を始めると `ZCode operation failed (INVALID_CONFIGURATION)` になった。daemon を再起動した後は、保存したエージェントの履歴も開けなかった。

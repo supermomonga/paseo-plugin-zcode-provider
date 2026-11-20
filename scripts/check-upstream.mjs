@@ -222,7 +222,8 @@ try {
     await host.deltas([
       { op: "state.updated", patch: { backgroundWorks: [] } },
     ]);
-    await session.setFeature("plan_mode", true);
+    // Paseo 0.16 changes provider options through applyOptions.
+    await session.applyOptions({ plan_mode: true });
     assert.equal(host.state.config.planEnabled, true);
     const persistence = session.describePersistence();
     savedState = structuredClone(host.state);
@@ -248,7 +249,8 @@ try {
           (e) => e.item.type === "assistant_message" && e.item.text === "hello",
         ),
     );
-    await resumed.setFeature("plan_mode", false);
+    await resumed.applyOptions({ plan_mode: false });
+    assert.equal(current.state.config.planEnabled, false);
     const run = await resumed.startTurn("Continue", {
       clientMessageId: "next",
     });
