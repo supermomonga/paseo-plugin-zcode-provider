@@ -39,6 +39,13 @@ Issue #104 の対応。
 - **原因**：3.18 の Server は、Windows で Agent の CLI を、ネイティブの補助 `zcode-runtime-host.exe` を通してだけ起動する（`zcodeAgentProcessManager.ts` が `process.platform === "win32"` で `spawnWindowsRuntimeHost` を呼ぶ）。補助は `ZCODE_RUNTIME_HOST_PATH`、Electron の `resourcesPath`、`ZCODE_SERVER_RUNTIME_ROOT` の下などで探し、見つからなければ例外になる（`packages/services/src/windows-runtime-host/index.ts`）。`initialize` はこの例外を `available: false` と ZCode の文言にする（`zcodeAgentService.ts`）。統合 CLI の配布物には補助が無い。Desktop と `packages/zcode-server-cli` の Windows 向けの配布物は、`scripts/build-windows-runtime-host.mjs` で C++ のソースからビルドしたものを `tools/runtime-host/` に入れる。
 - **変更**：リリースのワークフローに、Windows のランナーで x64 と arm64 の補助をこのスクリプトでビルドするジョブを加え、梱包で `tools/runtime-host/win32-<arch>/` に入れる。プロバイダは、Windows の 3.18 以降で、daemon のアーキテクチャの補助を `ZCODE_RUNTIME_HOST_PATH` で渡す。
 
+## 公開と固定
+
+- **PR の CI**：Windows の補助を加えた後、リリースのワークフローは、5 プラットフォーム（darwin-arm64、linux-x64、linux-arm64、win-x64、win-arm64）で `test:stdio-runtime` の全項目を通した。Windows では「Agent started through the bundled Windows runtime host」も通った。補助のビルドは、`windows-2025` のイメージに Visual Studio 2022 が無いので `windows-2022` で行い、`build.json` のソースの要約を Linux の LF の checkout と合わせるため、checkout の前に `core.autocrlf` を無効にした。
+- **公開**：`zcode-runtime-v3.18.2-paseo.1` を `c5f8668` に push した。最初の実行は、ZCode の依存の導入中の pnpm の一時的な失敗（`ERR_PNPM_ENOENT`、一時ディレクトリの名前の変更）で、公開の前に止まった。同じ実行のやり直し（run 44766094128）が、ビルド、5 プラットフォームの検証、証明をして、latest ではないリリースとして公開した。
+- **書庫**：`zcode-runtime-3.18.2-paseo.1.tar.gz`、92,314,940 バイト、SHA-256 `b6c0126d2257da87313f47185f0292ef701623fbc56ad725e22db3ffa16e243d`。取得した書庫は `SHA256SUMS` と一致し、`gh attestation verify` は、タグの `zcode-runtime-release.yml` とソース `c5f8668` を示した。`BUILD-INFO.json` は、ソース `fec9759`、`@napi-rs/keyring` 2.1.2 と 5 つのネイティブのパッケージ、`tools/runtime-host/win32-x64/zcode-runtime-host.exe`（SHA-256 `a55ddfc0…`）と `win32-arm64`（`18cbd525…`）を記録している。
+- **固定**：`server/runtime/pins.ts` をこの書庫にし、導入の検査（`MANAGED_ZCODE_FILES`）に keyring と二つの補助を加えた。一時の `XDG_DATA_HOME` に `npm run setup:managed-runtime` で導入し（Linux x64）、管理下ランタイムとしての `test:stdio-runtime` が全項目を通った。
+
 ## 管理下ランタイムのパッチ（ADR 19）
 
 - `patches/zcode/0001-hide-suppressed-official-plugins.patch` は、3.18.2 にもそのまま当たる（51 行ずれる）。対象の commit を書き換え、行番号を合わせた差分に作り直した。
