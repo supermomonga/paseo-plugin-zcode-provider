@@ -104,7 +104,6 @@ export async function createHost(
   }
 }
 
-const optionsSchema = z.object({}).strict();
 const settingsSchema = z.object({ plan_mode: z.boolean().optional() }).strict();
 
 interface SessionEntry {
@@ -549,8 +548,16 @@ export class ZCodeConnection implements ProviderConnection {
     input: Extract<ProviderInput, { type: "session.open" }>,
   ): Promise<void> {
     const config = input.config;
-    optionsSchema.parse(config.providerOptions ?? {});
-    const settings = settingsSchema.parse(config.settings);
+    // Paseo 0.16 passes the agent's options, provider defaults included, as
+    // `providerOptions` and repeats them in the deprecated `settings`. Paseo
+    // 0.15 passes the composer's `plan_mode` only in `settings`, while its
+    // `providerOptions` also hold the defaults from `config.json`; `settings`
+    // wins, as the agent's own value wins over a default on 0.16. Stop reading
+    // `settings` once Paseo 0.16 is the minimum.
+    const settings = settingsSchema.parse({
+      ...config.providerOptions,
+      ...config.settings,
+    });
     requireConfigurableMode(config.mode);
     if (config.systemPrompt?.trim())
       throw new AdapterError(

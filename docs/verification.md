@@ -1,3 +1,28 @@
+# Paseo 0.16 で、保存した `plan_mode` を持つセッションを開けない（2026-11-20）
+
+[Issue #108](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/108) の対応。Paseo 0.16.1 の daemon では、ZCode のセッションで会話を始めると `ZCode operation failed (INVALID_CONFIGURATION)` になった。daemon を再起動した後は、保存したエージェントの履歴も開けなかった。
+
+## 原因
+
+- **Paseo 0.16 の変更**：v0.16.1 と v0.16.2 の `plugin-provider.ts` の `mapSessionConfig` は、エージェントのオプションを `providerOptions` に入れる。オプションには `config.json` のプロバイダーの既定値も含まれる。非推奨になった `settings` にも同じ値を入れる。v0.15.4 では、`settings` には `featureValues` が、`providerOptions` には別のオプションが入っていた。0.16 は、保存済みの `featureValues` も読み込むときに `providerOptions` へ畳み込む（`option-controls.ts`）。ユーザーの環境の保存済みエージェントも `providerOptions: { "plan_mode": false }` になっていた。
+- **プラグイン**：`providerOptions` を `z.object({}).strict()` で検証していた。このため、`plan_mode` があると `session.open` が `unrecognized_keys` で失敗した。新しいセッションと再開の両方がこの検証を通る。
+- **実行中の変更は通っていた**：0.16 の `applyOptions` は、`settings` を報告するプラグインに、`changes.providerOptions` と同じ値を `changes.settings` でも送る。プラグインは `changes.settings` を読んでいた。
+
+## 変更
+
+- `session.open` で、`settings` と `providerOptions` を一つのオプションとして読み、`plan_mode` だけを許すスキーマで検証する。0.15 は入力欄で選んだ `plan_mode` を `settings` にしか入れないので、`settings` も読む。最低要件が 0.16 になったら、`settings` を読むのをやめる。知らないキーと、真偽値でない値（`null` を含む）は、これまでどおり拒否する。
+- 同じキーが両方にあれば `settings` を優先する。0.16 では両者は同じ値である。0.15 の `providerOptions` には、`config.json` の既定値がエージェント自身のオプションとマージされて入る（v0.15.4 の `provider-registry.ts` の `mergeProviderOptions`）。0.16 でエージェント自身の値が既定値より優先されるのに合わせ、0.15 でも入力欄の値を既定値より優先する。
+- `session.configure` と、`session.config` での `settings` の報告は変えていない。`controls` での報告への移行は、Paseo 0.16 への追従（Issue #105〜#107）で扱う。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-20）
+
+- **テスト**：`test/model-catalog.test.ts` に 4 件を加えた。0.16 の形で Plan の false と true を受け取って再開すること、`providerOptions` だけで受け取った Plan で開くこと、`providerOptions` の既定値より `settings` を優先することである。修正前は 4 件とも `request.failed` になることを確かめた。`npm run typecheck`、`npm test`（29 ファイル、287 tests）、`npm run build`、`npm run format:check` が成功した。
+- **Paseo 0.16.2 の実アダプター**：`git archive` で取り出した v0.16.2 の `plugin-provider.ts` と、`@getpaseo/plugin`・`@getpaseo/client`・`@getpaseo/protocol` の 0.16.2 を入れたプラグインの複製を使った。`test:upstream` と同じく偽の Host を使う一時スクリプトで、Plan の false と true のそれぞれについて次を行った。`providerOptions` に Plan を入れて作成し、1 ターン送る。`applyOptions` で Plan を切り替える。閉じてから、保存したオプションで再開する。再開前に、ネイティブの状態は反対の値にしておいた。修正前の 0.5.2 は、作成の時点でユーザーの daemon と同じ `session.open` の `unrecognized_keys` で失敗した。修正後は、どちらでも Plan が反映され、履歴が戻った。`test:upstream` は 0.16 で無くなった `setFeature` を使うので、v0.16.2 ではそのままでは動かない。
+- **上流**：v0.15.4（`1c00b365`）の clone に対し、`NODE_PATH` を外して `npm run test:upstream` を実行した。`planSettingsResume` を含む全項目が成功した。
+- **実ランタイム**：管理下ランタイム 3.17.2-paseo.1 に対する `npm run test:stdio-runtime` が成功した。この確認は Plan を `settings` で渡す。
+
+未検証：Paseo 0.16 の実 daemon と実 UI への導入。`providerOptions` で Plan を渡す経路の、実ランタイムでの確認。
+
 # Paseo 0.15.4 への追従（2026-11-12）
 
 Issue #98 の対応。Paseo 0.15.4 の変更履歴は、Claude Fable 5.2 と Mythos 5.2 をモデル一覧に加えたこと（getpaseo/paseo#9233）だけである。

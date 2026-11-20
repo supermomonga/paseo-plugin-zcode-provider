@@ -94,3 +94,48 @@ it.each([
     expect(f.events.indexOf(configs[0]!)).toBeLessThan(f.events.indexOf(ready));
   },
 );
+
+// Paseo 0.16 passes the saved options in `providerOptions` and repeats them in
+// `settings` (Issue #108).
+it.each([false, true])(
+  "reapplies Plan %s that Paseo passes in providerOptions on resume",
+  async (plan) => {
+    const f = await providerFixture();
+    cleanup.push(f.close);
+    f.host.state.config.planEnabled = !plan;
+    const ready = await f.open(
+      {
+        mode: "build",
+        settings: { plan_mode: plan },
+        providerOptions: { plan_mode: plan },
+      },
+      {
+        version: 3,
+        data: { kind: "native", sessionId: "session-1", cwd: f.cwd },
+      },
+    );
+    expect(ready.type).toBe("session.ready");
+    expect(f.host.state.config).toMatchObject({ planEnabled: plan });
+  },
+);
+
+it("opens with Plan given only in providerOptions", async () => {
+  const f = await providerFixture();
+  cleanup.push(f.close);
+  const ready = await f.open({ providerOptions: { plan_mode: true } });
+  expect(ready.type).toBe("session.ready");
+  expect(f.host.state.config).toMatchObject({ planEnabled: true });
+});
+
+// Paseo 0.15 passes the composer's Plan in `settings` and the provider defaults
+// from `config.json` in `providerOptions`.
+it("prefers the agent's Plan in settings over a default in providerOptions", async () => {
+  const f = await providerFixture();
+  cleanup.push(f.close);
+  const ready = await f.open({
+    settings: { plan_mode: false },
+    providerOptions: { plan_mode: true },
+  });
+  expect(ready.type).toBe("session.ready");
+  expect(f.host.state.config).toMatchObject({ planEnabled: false });
+});
