@@ -530,16 +530,13 @@ try {
       `${plugin}:${skill} skill visibility`,
     );
   }
-  await configure({ settings: { plan_mode: true } });
+  await configure({ providerOptions: { plan_mode: true } });
   await configure({ mode: "edit" });
   const beforeResume = events.findLast(
     (e) => e.type === "session.config",
   ).config;
   assert.equal(beforeResume.mode, "edit");
-  assert.equal(
-    beforeResume.settings.find((s) => s.id === "plan_mode").value,
-    true,
-  );
+  assert.equal(beforeResume.providerOptions.plan_mode, true);
   await send({ type: "session.close", requestId: "close-native" });
   await wait((e) => e.type === "session.closed");
   await connection.close();
@@ -552,7 +549,7 @@ try {
     assert.deepEqual(
       {
         mode: resumed.mode,
-        plan: resumed.settings.find((s) => s.id === "plan_mode").value,
+        plan: resumed.providerOptions.plan_mode,
       },
       { mode: "edit", plan: true },
       "ZCode cold resume without explicit settings must restore its saved execution state",
@@ -560,20 +557,19 @@ try {
     await connection.close();
     await connect();
   }
-  // Paseo keeps modeId and featureValues separately from the native handle.
-  // Reapply the actual values captured before shutdown, not native resume's
-  // potentially stale values. No prompt is submitted to trigger the change.
+  // Paseo keeps the mode and the agent's options separately from the native
+  // handle. Reapply the actual values captured before shutdown, not native
+  // resume's potentially stale values. No prompt is submitted to trigger the
+  // change.
   await open(saved, {
     mode: beforeResume.mode,
-    settings: Object.fromEntries(
-      beforeResume.settings.map((setting) => [setting.id, setting.value]),
-    ),
+    providerOptions: beforeResume.providerOptions,
   });
   const restoredConfigs = events.filter((e) => e.type === "session.config");
   assert.ok(restoredConfigs.length);
   for (const { config } of restoredConfigs) {
     assert.equal(config.mode, "edit");
-    assert.equal(config.settings.find((s) => s.id === "plan_mode").value, true);
+    assert.equal(config.providerOptions.plan_mode, true);
   }
   assert.ok(
     events.indexOf(restoredConfigs[0]) <
@@ -591,7 +587,7 @@ try {
         e.item.text === "STDIO_SMOKE_DONE",
     ),
   );
-  await configure({ mode: "yolo", settings: { plan_mode: false } });
+  await configure({ mode: "yolo", providerOptions: { plan_mode: false } });
   await prompt("question");
   const question = (
     await wait(
@@ -816,9 +812,8 @@ try {
   );
   assert.equal(events.filter((e) => e.type === "session.turn").length, 0);
   assert.equal(
-    events
-      .findLast((e) => e.type === "session.config")
-      .config.settings.find((s) => s.id === "plan_mode").value,
+    events.findLast((e) => e.type === "session.config").config.providerOptions
+      .plan_mode,
     true,
   );
   await connection.send({
@@ -829,7 +824,7 @@ try {
   const listed = (await wait((e) => e.type === "sessions")).sessions;
   assert.ok(listed.length);
   assert.ok(listed.every((s) => s.persistence.version === 3));
-  await configure({ mode: "yolo", settings: { plan_mode: false } });
+  await configure({ mode: "yolo", providerOptions: { plan_mode: false } });
   await prompt("hold");
   const activeBridge = bridges.findLast((b) => !b.closing);
   const owned = await activeBridge.request(
@@ -860,7 +855,7 @@ try {
   // saved session with its settings and sends a prompt.
   await connection.close();
   await connect();
-  await open(saved, { mode: "yolo", settings: { plan_mode: false } });
+  await open(saved, { mode: "yolo", providerOptions: { plan_mode: false } });
   await prompt("bash", "Resume working.");
   assert.equal((await terminal()).state, "completed");
   // Paseo's MCP servers reach the model even when the project declares one of

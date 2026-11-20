@@ -222,7 +222,12 @@ try {
     await host.deltas([
       { op: "state.updated", patch: { backgroundWorks: [] } },
     ]);
-    // Paseo 0.16 changes provider options through applyOptions.
+    // Paseo draws Plan in the composer from the reported control (ADR 30) and
+    // changes it through applyOptions.
+    assert.deepEqual(
+      session.controls.map(({ type, key, icon }) => ({ type, key, icon })),
+      [{ type: "toggle", key: "plan_mode", icon: "list-todo" }],
+    );
     await session.applyOptions({ plan_mode: true });
     assert.equal(host.state.config.planEnabled, true);
     const persistence = session.describePersistence();
@@ -579,8 +584,8 @@ async function checkContributions({
   requireModule,
 }) {
   // The daemon checks requirements.paseo against its own version first.
-  await assert.rejects(compileDirectoryPlugin(candidate, "0.14.0"), {
-    message: /requires Paseo >=0\.15\.0/u,
+  await assert.rejects(compileDirectoryPlugin(candidate, "0.15.4"), {
+    message: /requires Paseo >=0\.16\.0/u,
   });
   const { serverBundle, clientBundle } = await compileDirectoryPlugin(
     candidate,

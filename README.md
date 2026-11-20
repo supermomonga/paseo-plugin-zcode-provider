@@ -10,7 +10,7 @@ This is an unofficial plugin. It is not endorsed or maintained by ZCode or Z.ai.
 
 | Setting        | Requirement                                                                                                                             |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Paseo          | 0.15.0 or later; development SDK 0.16.2                                                                                                 |
+| Paseo          | 0.16.0 or later; development SDK 0.16.2                                                                                                 |
 | Plugin Node.js | 22.12.0 or later (the Paseo daemon's runtime)                                                                                           |
 | Managed setup  | darwin-arm64, linux-x64, linux-arm64, win-x64, win-arm64                                                                                |
 | ZCode          | Managed: 3.17.2 (release `3.17.2-paseo.1`) with Node.js 24.21.0. Overrides: stable Server 3.14.0+ / Agent 0.16.9+ with Node.js 24.14.0+ |
@@ -82,7 +82,7 @@ The source baseline is `a9fe401eede6e6e5e01be9048679c206fe6f02d9` (ZCode 3.17.2,
 
 ## Behavior
 
-- Models and reasoning options come from ZCode. Editing modes are `build`, `edit`, `guarded` and `yolo`; `settings.plan_mode` is independent. `guarded` (ZCode's Autonomous mode, Server 3.15.1 or later) runs tools without approval but asks once, each time, before a command that ZCode's safety rules consider risky; it is not offered on older runtimes.
+- Models and reasoning options come from ZCode. Editing modes are `build`, `edit`, `guarded` and `yolo`; Plan is an independent composer toggle (`plan_mode`). `guarded` (ZCode's Autonomous mode, Server 3.15.1 or later) runs tools without approval but asks once, each time, before a command that ZCode's safety rules consider risky; it is not offered on older runtimes.
 - Text, thoughts, tools, subagent progress, usage and history use V4 snapshots and deltas. Tool output is marked when ZCode truncates it. Usage is cumulative; repeated snapshots do not add it again.
 - Text submitted during generation uses native guidance. Attachments use the native queue. Paseo reports one run across these native turns and completes it only after all accepted input has been consumed and foreground work has ended.
 - Paseo sends every message typed in the app during a run as a steer that asks to clear pending permissions. The plugin queues it first, then declines pending permissions, questions and Plan approvals with their deny action until ZCode reads the message, including requests opened in the meantime. Requests that appear after it is read are left to the user. Declining a Plan approval in Plan mode ends ZCode's turn; the message then starts the next native turn in the same Paseo run (ADR 22).
@@ -105,7 +105,7 @@ New handles use **version 3**. Versions 1 and 2 are rejected without migration o
 
 Unsent conversations are deferred drafts. Before the first prompt, the plugin atomically saves the logical-to-native ID mapping under `$XDG_STATE_HOME/paseo-plugin-zcode-provider/sessions-v3`, or `~/.local/state/paseo-plugin-zcode-provider/sessions-v3`. It stores identifiers and workspace paths, not message bodies. Preserve this directory for backup. A mapping write failure prevents sending. Corrupt mappings and missing native conversations fail explicitly; no replacement conversation is created.
 
-New conversations support listing, resume and paged V4 history. From ZCode 3.16, archiving belongs to Desktop's task list, so the listing also contains conversations archived in Desktop. Mode/Plan restoration requires both `mode` and `settings.plan_mode` saved by Paseo. The plugin applies them after native restore and confirms the resulting state before reporting the session ready. Omitted settings retain whatever ZCode returns, which can be stale on the pinned source; restoration of those values is not guaranteed. There is no private Plan restoration store. [ADR 14](docs/adr/0014-paseoの保存設定を再適用する復元を保証範囲とする.md) limits the guarantee to this supported path; settings-free restoration is checked separately with `npm run test:native-restore`. Existing ZCode databases may be migrated by ZCode itself on startup; the native tests isolate the home, configuration and database.
+New conversations support listing, resume and paged V4 history. From ZCode 3.16, archiving belongs to Desktop's task list, so the listing also contains conversations archived in Desktop. Mode/Plan restoration requires both `mode` and `providerOptions.plan_mode` saved by Paseo. The plugin applies them after native restore and confirms the resulting state before reporting the session ready. Omitted settings retain whatever ZCode returns, which can be stale on the pinned source; restoration of those values is not guaranteed. There is no private Plan restoration store. [ADR 14](docs/adr/0014-paseoの保存設定を再適用する復元を保証範囲とする.md) limits the guarantee to this supported path; settings-free restoration is checked separately with `npm run test:native-restore`. Existing ZCode databases may be migrated by ZCode itself on startup; the native tests isolate the home, configuration and database.
 
 ## Diagnostics
 

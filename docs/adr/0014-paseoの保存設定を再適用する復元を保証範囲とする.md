@@ -6,6 +6,8 @@ date: 2026-09-21
 links:
   - target: 13
     kind: amends
+  - target: 30
+    kind: amendedby
 ---
 
 # Paseoの保存設定を再適用する復元を保証範囲とする

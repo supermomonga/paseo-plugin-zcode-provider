@@ -195,7 +195,7 @@ it("explains goal commands it cannot run and sends nothing for them", async () =
     type: "session.configure",
     sessionId: "public",
     requestId: "plan",
-    changes: { settings: { plan_mode: true } },
+    changes: { providerOptions: { plan_mode: true } },
   });
   await f.wait((e) => e.type === "request.completed" && e.requestId === "plan");
   expect(failure(await f.command("m5", "Ship it"))).toMatch(/Plan mode/);

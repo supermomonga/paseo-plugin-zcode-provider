@@ -104,7 +104,14 @@ export async function createHost(
   }
 }
 
-const settingsSchema = z.object({ plan_mode: z.boolean().optional() }).strict();
+// Paseo passes an agent's options, the provider defaults from `config.json`
+// included, as `providerOptions`. Plan is ZCode's only option.
+const optionsSchema = z.object({ plan_mode: z.boolean().optional() }).strict();
+// A change may set an option to `null`, which returns it to the provider's
+// default: Plan off.
+const optionChangesSchema = z
+  .object({ plan_mode: z.boolean().nullable().optional() })
+  .strict();
 
 interface SessionEntry {
   native: ZCodeSession;
@@ -501,20 +508,17 @@ export class ZCodeConnection implements ProviderConnection {
         return;
       }
       case "session.configure": {
-        const settings = settingsSchema.parse(input.changes.settings ?? {});
+        const options = optionChangesSchema.parse(
+          input.changes.providerOptions ?? {},
+        );
+        const plan = options.plan_mode === null ? false : options.plan_mode;
         requireConfigurableMode(input.changes.mode);
         if (input.changes.model !== undefined)
           await entry.native.setModel(input.changes.model);
         if (input.changes.thinkingOption !== undefined)
           await entry.native.setThinkingOption(input.changes.thinkingOption);
-        if (
-          input.changes.mode !== undefined ||
-          settings.plan_mode !== undefined
-        )
-          await entry.native.configureMode(
-            input.changes.mode,
-            settings.plan_mode,
-          );
+        if (input.changes.mode !== undefined || plan !== undefined)
+          await entry.native.configureMode(input.changes.mode, plan);
         this.emitConfig(input.sessionId, entry);
         break;
       }
@@ -548,16 +552,8 @@ export class ZCodeConnection implements ProviderConnection {
     input: Extract<ProviderInput, { type: "session.open" }>,
   ): Promise<void> {
     const config = input.config;
-    // Paseo 0.16 passes the agent's options, provider defaults included, as
-    // `providerOptions` and repeats them in the deprecated `settings`. Paseo
-    // 0.15 passes the composer's `plan_mode` only in `settings`, while its
-    // `providerOptions` also hold the defaults from `config.json`; `settings`
-    // wins, as the agent's own value wins over a default on 0.16. Stop reading
-    // `settings` once Paseo 0.16 is the minimum.
-    const settings = settingsSchema.parse({
-      ...config.providerOptions,
-      ...config.settings,
-    });
+    // The deprecated `settings` repeats the same values.
+    const options = optionsSchema.parse(config.providerOptions ?? {});
     requireConfigurableMode(config.mode);
     if (config.systemPrompt?.trim())
       throw new AdapterError(
@@ -653,9 +649,9 @@ export class ZCodeConnection implements ProviderConnection {
               model: undefined,
               ...(initialModel ? { thinkingOption: undefined } : {}),
             }),
-        settings: {
-          ...settings,
-          ...(!nativeId && settings.plan_mode === undefined
+        providerOptions: {
+          ...options,
+          ...(!nativeId && options.plan_mode === undefined
             ? { plan_mode: false }
             : {}),
         },

@@ -10,6 +10,8 @@ links:
     kind: amends
   - target: 24
     kind: amends
+  - target: 30
+    kind: amendedby
 ---
 
 # Paseo 0.15を最低要件にしZCodeの作業が残る間はアイドル時のランタイム解放を拒否する

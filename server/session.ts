@@ -9,6 +9,7 @@ import type {
   ProviderPermissionRequest,
   ProviderPermissionResponse,
   ProviderCommand,
+  ProviderOptionControl,
   ProviderTimelineItem,
 } from "@getpaseo/plugin/server/provider";
 import type {
@@ -54,6 +55,16 @@ import { AdapterError } from "./errors.js";
 import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
 import { turnFailure } from "./turn-failure.js";
 import type { TimelinePreferences } from "../shared/timeline.js";
+// ZCode's Plan is independent of its mode (ADR 11); Paseo draws it in the
+// composer from the agent's `plan_mode` option (ADR 30).
+const PLAN_CONTROL: ProviderOptionControl = {
+  type: "toggle",
+  key: "plan_mode",
+  label: "Plan",
+  description: "Have ZCode plan and ask for approval before it makes changes",
+  icon: "list-todo",
+  defaultValue: false,
+};
 interface Admission {
   clientMessageId?: string;
   accepted: boolean;
@@ -538,14 +549,8 @@ export class ZCodeSession {
       models: catalogModels(this.modelCatalog, c.modelSelection),
       modes: zcodeModes(this.bridge.diagnostic.appVersion),
       thinkingOptions: c.thoughtLevels.map((id) => ({ id, label: id })),
-      settings: [
-        {
-          type: "toggle",
-          id: "plan_mode",
-          label: "Toggle plan mode",
-          value: c.planEnabled === true,
-        },
-      ],
+      controls: [PLAN_CONTROL],
+      providerOptions: { plan_mode: c.planEnabled === true },
     };
   }
   async applyInitialConfig(
@@ -556,7 +561,7 @@ export class ZCodeSession {
       await this.setThinkingOption(config.thinkingOption);
     await this.configureMode(
       config.mode,
-      config.settings?.plan_mode as boolean | undefined,
+      config.providerOptions?.plan_mode as boolean | undefined,
     );
   }
   async configureMode(mode?: string | null, plan?: boolean): Promise<void> {

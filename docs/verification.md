@@ -11,6 +11,12 @@ Issue #105〜#107 の対応。v0.15.4（`1c00b365`）と v0.16.2（`2ee30f4164af
 - **廃止**：`agent.turn.after.timeline` が削除された。このプラグインは使っていない。
 - **変わらないもの**：プラグイン Provider のセッションには、0.16.2 でも `usageSession()` が無い。ready より前のイベントも、アダプターの履歴に積まれるだけである。`test:upstream` が読む上流のファイル（`compiler-build.ts`、`manifest.ts`、`preparation-build.ts`、`provider-icon.ts`、`plugin-provider.ts`）は同じ名前と引数で残っている。
 
+## 変更（ADR 30）
+
+- **最低要件**：`requirements.paseo` を `>=0.16.0` に上げた。`test:upstream` は、0.15.4 の daemon が最低要件で拒否することを確かめる。
+- **Plan**：`settings` をやめ、`controls` の `toggle`（`plan_mode`、ラベル `Plan`、アイコン `list-todo`、既定値 `false`。Paseo の Codex プロバイダーと同じ）と `providerOptions.plan_mode` で報告する。`session.open` と `session.configure` は `providerOptions` だけを読み、`null` は Plan をオフにする。Issue #108 で入れた `settings` とのマージは無くした。
+- **実ランタイムの確認**：`test:stdio-runtime`・`test:model-plan-runtime`・`test:native-restore` は、Plan を `providerOptions` で渡し、`session.config` の `providerOptions.plan_mode` で確かめる。
+
 ## 検証（Linux x64、Node.js 22.22.1、2026-11-20）
 
 - **SDK**：開発 SDK を 0.16.2 にし、`npm run typecheck`、`npm test`（29 ファイル、287 tests）、`npm run build` が成功した。
