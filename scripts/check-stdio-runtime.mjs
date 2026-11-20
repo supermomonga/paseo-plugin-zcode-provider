@@ -496,6 +496,22 @@ try {
     !turnRequest.tools.includes("mcp__node_repl__js"),
     "The shared Browser and Computer Use tool must be hidden from every turn",
   );
+  // ZCode 3.18's Session tools that start or stop work in other sessions are
+  // hidden on every turn, also from ToolSearch's catalog (ADR 31).
+  if (gte(identity.appVersion, "3.18.0")) {
+    const offered = `${turnRequest.tools.join("\n")}\n${turnRequest.messages}`;
+    assert.ok(
+      offered.includes("ListSessions"),
+      "The read-only Session tools must stay available",
+    );
+    for (const tool of [
+      "CreateSession",
+      "ForkSession",
+      "SendToSession",
+      "InterruptSession",
+    ])
+      assert.ok(!offered.includes(tool), `${tool} must be hidden`);
+  }
   // Enabled plugins that discovery skipped are still listed as "missing".
   const listedPlugins =
     // The session's Server; the catalog's Server has already closed.

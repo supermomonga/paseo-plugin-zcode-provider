@@ -24,6 +24,8 @@ Issue #104 の対応。
 - **使えないモデルでの入力**：3.18 は、セッションのモデルを使えないとき、`sendText`（`/compact` を含む）と `sendGoalCommand`・`resumeGoal` を受け付ける前に、`reasonCode: "modelUnavailable"` で拒否する（`prompt-turn.ts`、`handlers/goal-compact.ts`）。プラグインはこれまでどおり ZCode の文言を出さず、コード `MODEL_UNAVAILABLE` と、モデルの選び直しと Account の確認を促す固定の文言で返す（ADR 23 と同じ扱い）。ほかの拒否は `NATIVE_INPUT_REJECTED` のままである。
 - **ほかのセッションからの入力**：3.18 の Session のツール（`SendToSession`）や Desktop の拡張が送った入力は、`userInput` 行の `source` が `session`・`extension` になる。Paseo のユーザーのメッセージには送り手を表す項目が無いので、ユーザーの発言としては出さず、送り手（セッションの ID か拡張の ID）を書いた通知として出す。Desktop のプラグインの画面（`pluginUi`・`genUi`）からの入力は利用者の操作なので、これまでどおりユーザーのメッセージとして出す。
 
+- **Session のツール（ADR 31）**：3.18 の Session のツールは、stdio の Server でも有効になる（`createLocalServices` が `appControlService` を常に作り、`appControlEnabled` が真になる）。このうち、ほかのセッションで作業を始める・止める CreateSession・ForkSession・SendToSession・InterruptSession を、すべての `sendText` の `toolDisallowlist` に加えた。ZCode はターンのツールをこの名前で除き（`turn-tool-visibility.ts`）、ToolSearch の候補もそこから作る。読み取りのツールと、名前の変更・アーカイブ・ピン留めは残す。
+
 ## 管理下ランタイムのパッチ（ADR 19）
 
 - `patches/zcode/0001-hide-suppressed-official-plugins.patch` は、3.18.2 にもそのまま当たる（51 行ずれる）。対象の commit を書き換え、行番号を合わせた差分に作り直した。
