@@ -9,6 +9,7 @@ import type {
   ProviderPermissionRequest,
   ProviderPermissionResponse,
   ProviderCommand,
+  ProviderOptionControl,
   ProviderTimelineItem,
 } from "@getpaseo/plugin/server/provider";
 import type {
@@ -44,7 +45,7 @@ import {
 } from "./host/schemas.js";
 import type { HostBridge } from "./host/bridge.js";
 import type { Logger } from "./logger.js";
-import { UNSUPPORTED_TOOLS } from "./unsupported-capabilities.js";
+import { TURN_TOOL_DISALLOWLIST } from "./unsupported-capabilities.js";
 import type {
   NativePromptInput,
   NativeSessionEvent,
@@ -54,6 +55,16 @@ import { AdapterError } from "./errors.js";
 import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
 import { turnFailure } from "./turn-failure.js";
 import type { TimelinePreferences } from "../shared/timeline.js";
+// ZCode's Plan is independent of its mode (ADR 11); Paseo draws it in the
+// composer from the agent's `plan_mode` option (ADR 30).
+const PLAN_CONTROL: ProviderOptionControl = {
+  type: "toggle",
+  key: "plan_mode",
+  label: "Plan",
+  description: "Have ZCode plan and ask for approval before it makes changes",
+  icon: "list-todo",
+  defaultValue: false,
+};
 interface Admission {
   clientMessageId?: string;
   accepted: boolean;
@@ -71,6 +82,21 @@ interface Run {
   cancelled: boolean;
   stopping?: Promise<void>;
   buffered: NativeSessionEvent[];
+}
+// ZCode 3.18 refuses input for a model it cannot use before admitting it
+// (prompt-turn.ts and handlers/goal-compact.ts). The native message is not
+// passed on (ADR 23).
+const MODEL_UNAVAILABLE_REASON_CODE = "modelUnavailable";
+function inputRejected(
+  ack: { reasonCode?: string },
+  message: string,
+): AdapterError {
+  return ack.reasonCode === MODEL_UNAVAILABLE_REASON_CODE
+    ? new AdapterError(
+        "MODEL_UNAVAILABLE",
+        "ZCode cannot use the selected model",
+      )
+    : new AdapterError("NATIVE_INPUT_REJECTED", message);
 }
 export class ZCodeSession {
   readonly id: string;
@@ -538,14 +564,8 @@ export class ZCodeSession {
       models: catalogModels(this.modelCatalog, c.modelSelection),
       modes: zcodeModes(this.bridge.diagnostic.appVersion),
       thinkingOptions: c.thoughtLevels.map((id) => ({ id, label: id })),
-      settings: [
-        {
-          type: "toggle",
-          id: "plan_mode",
-          label: "Toggle plan mode",
-          value: c.planEnabled === true,
-        },
-      ],
+      controls: [PLAN_CONTROL],
+      providerOptions: { plan_mode: c.planEnabled === true },
     };
   }
   async applyInitialConfig(
@@ -556,7 +576,7 @@ export class ZCodeSession {
       await this.setThinkingOption(config.thinkingOption);
     await this.configureMode(
       config.mode,
-      config.settings?.plan_mode as boolean | undefined,
+      config.providerOptions?.plan_mode as boolean | undefined,
     );
   }
   async configureMode(mode?: string | null, plan?: boolean): Promise<void> {
@@ -701,7 +721,7 @@ export class ZCodeSession {
             modelSelection: config.modelSelection,
             mode: config.mode,
             planEnabled: config.planEnabled === true,
-            toolDisallowlist: [...UNSUPPORTED_TOOLS],
+            toolDisallowlist: [...TURN_TOOL_DISALLOWLIST],
             requestedDelivery: previous
               ? attachments.length
                 ? "queue"
@@ -711,10 +731,7 @@ export class ZCodeSession {
           { commandId },
         );
         if (["failed", "rejected", "stale", "noop"].includes(ack.status))
-          throw new AdapterError(
-            "NATIVE_INPUT_REJECTED",
-            "ZCode rejected the input",
-          );
+          throw inputRejected(ack, "ZCode rejected the input");
         if (
           ack.status !== "accepted" ||
           ack.result?.type !== "inputAccepted" ||
@@ -790,10 +807,7 @@ export class ZCodeSession {
                 { commandId },
               );
         if (ack.status !== "accepted")
-          throw new AdapterError(
-            "NATIVE_INPUT_REJECTED",
-            "ZCode rejected the goal command",
-          );
+          throw inputRejected(ack, "ZCode rejected the goal command");
       },
     );
   }
@@ -825,10 +839,20 @@ export class ZCodeSession {
   goal(): GoalState | null {
     return this.conversation.state?.goal ?? null;
   }
+  /** Calls `changed` when ZCode changes the goal (ADR 30); returns the stop. */
+  watchGoal(changed: () => void): () => void {
+    let last = this.goal();
+    return this.conversation.subscribe(() => {
+      const next = this.goal();
+      if (isDeepStrictEqual(next, last)) return;
+      last = next;
+      changed();
+    });
+  }
   /**
    * Admits one input into a run. `send` prepares and issues the command; it
    * calls `sending` before the command leaves and throws
-   * NATIVE_INPUT_REJECTED when ZCode refuses it.
+   * NATIVE_INPUT_REJECTED or MODEL_UNAVAILABLE when ZCode refuses it.
    */
   private async admit(
     previous: Run | undefined,
@@ -888,7 +912,8 @@ export class ZCodeSession {
       if (
         !sent ||
         (error instanceof AdapterError &&
-          error.code === "NATIVE_INPUT_REJECTED")
+          (error.code === "NATIVE_INPUT_REJECTED" ||
+            error.code === "MODEL_UNAVAILABLE"))
       ) {
         run.inputs.delete(commandId);
         this.admissions.delete(commandId);

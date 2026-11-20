@@ -452,6 +452,16 @@ try {
   });
   const { catalog } = await wait((e) => e.type === "catalog");
   assert.ok(catalog.models.length);
+  // ZCode 3.18 opens its credential store before serving anything. Data that
+  // is not bound to the OS store gets a private key file from
+  // --prepare-credentials (ADR 32).
+  if (gte(identity.appVersion, "3.18.0"))
+    assert.ok(
+      (await readdir(join(directory, ".zcode"), { recursive: true })).some(
+        (file) => file.endsWith("credential-secret"),
+      ),
+      "The Server must prepare its private credential key",
+    );
   // Guarded ("Autonomous mode") exists from ZCode 3.15.1.
   const guarded = gte(identity.appVersion, "3.15.1");
   const contentFilter = gte(identity.appVersion, "3.17.1");
@@ -496,6 +506,22 @@ try {
     !turnRequest.tools.includes("mcp__node_repl__js"),
     "The shared Browser and Computer Use tool must be hidden from every turn",
   );
+  // ZCode 3.18's Session tools that start or stop work in other sessions are
+  // hidden on every turn, also from ToolSearch's catalog (ADR 31).
+  if (gte(identity.appVersion, "3.18.0")) {
+    const offered = `${turnRequest.tools.join("\n")}\n${turnRequest.messages}`;
+    assert.ok(
+      offered.includes("ListSessions"),
+      "The read-only Session tools must stay available",
+    );
+    for (const tool of [
+      "CreateSession",
+      "ForkSession",
+      "SendToSession",
+      "InterruptSession",
+    ])
+      assert.ok(!offered.includes(tool), `${tool} must be hidden`);
+  }
   // Enabled plugins that discovery skipped are still listed as "missing".
   const listedPlugins =
     // The session's Server; the catalog's Server has already closed.
@@ -530,16 +556,13 @@ try {
       `${plugin}:${skill} skill visibility`,
     );
   }
-  await configure({ settings: { plan_mode: true } });
+  await configure({ providerOptions: { plan_mode: true } });
   await configure({ mode: "edit" });
   const beforeResume = events.findLast(
     (e) => e.type === "session.config",
   ).config;
   assert.equal(beforeResume.mode, "edit");
-  assert.equal(
-    beforeResume.settings.find((s) => s.id === "plan_mode").value,
-    true,
-  );
+  assert.equal(beforeResume.providerOptions.plan_mode, true);
   await send({ type: "session.close", requestId: "close-native" });
   await wait((e) => e.type === "session.closed");
   await connection.close();
@@ -552,7 +575,7 @@ try {
     assert.deepEqual(
       {
         mode: resumed.mode,
-        plan: resumed.settings.find((s) => s.id === "plan_mode").value,
+        plan: resumed.providerOptions.plan_mode,
       },
       { mode: "edit", plan: true },
       "ZCode cold resume without explicit settings must restore its saved execution state",
@@ -560,20 +583,19 @@ try {
     await connection.close();
     await connect();
   }
-  // Paseo keeps modeId and featureValues separately from the native handle.
-  // Reapply the actual values captured before shutdown, not native resume's
-  // potentially stale values. No prompt is submitted to trigger the change.
+  // Paseo keeps the mode and the agent's options separately from the native
+  // handle. Reapply the actual values captured before shutdown, not native
+  // resume's potentially stale values. No prompt is submitted to trigger the
+  // change.
   await open(saved, {
     mode: beforeResume.mode,
-    settings: Object.fromEntries(
-      beforeResume.settings.map((setting) => [setting.id, setting.value]),
-    ),
+    providerOptions: beforeResume.providerOptions,
   });
   const restoredConfigs = events.filter((e) => e.type === "session.config");
   assert.ok(restoredConfigs.length);
   for (const { config } of restoredConfigs) {
     assert.equal(config.mode, "edit");
-    assert.equal(config.settings.find((s) => s.id === "plan_mode").value, true);
+    assert.equal(config.providerOptions.plan_mode, true);
   }
   assert.ok(
     events.indexOf(restoredConfigs[0]) <
@@ -591,7 +613,7 @@ try {
         e.item.text === "STDIO_SMOKE_DONE",
     ),
   );
-  await configure({ mode: "yolo", settings: { plan_mode: false } });
+  await configure({ mode: "yolo", providerOptions: { plan_mode: false } });
   await prompt("question");
   const question = (
     await wait(
@@ -816,9 +838,8 @@ try {
   );
   assert.equal(events.filter((e) => e.type === "session.turn").length, 0);
   assert.equal(
-    events
-      .findLast((e) => e.type === "session.config")
-      .config.settings.find((s) => s.id === "plan_mode").value,
+    events.findLast((e) => e.type === "session.config").config.providerOptions
+      .plan_mode,
     true,
   );
   await connection.send({
@@ -829,7 +850,7 @@ try {
   const listed = (await wait((e) => e.type === "sessions")).sessions;
   assert.ok(listed.length);
   assert.ok(listed.every((s) => s.persistence.version === 3));
-  await configure({ mode: "yolo", settings: { plan_mode: false } });
+  await configure({ mode: "yolo", providerOptions: { plan_mode: false } });
   await prompt("hold");
   const activeBridge = bridges.findLast((b) => !b.closing);
   const owned = await activeBridge.request(
@@ -860,7 +881,7 @@ try {
   // saved session with its settings and sends a prompt.
   await connection.close();
   await connect();
-  await open(saved, { mode: "yolo", settings: { plan_mode: false } });
+  await open(saved, { mode: "yolo", providerOptions: { plan_mode: false } });
   await prompt("bash", "Resume working.");
   assert.equal((await terminal()).state, "completed");
   // Paseo's MCP servers reach the model even when the project declares one of
@@ -936,6 +957,15 @@ try {
           patched
             ? "unsupported plugins and tool hidden (patched runtime)"
             : "unsupported tool hidden, plugins visible (unpatched runtime)",
+          ...(gte(identity.appVersion, "3.18.0")
+            ? [
+                "Session tools that start or stop work hidden",
+                "Server started with --prepare-credentials",
+                ...(windows
+                  ? ["Agent started through the bundled Windows runtime host"]
+                  : []),
+              ]
+            : []),
         ],
         model: "local deterministic fixture",
         sharedUserData: "not accessed",

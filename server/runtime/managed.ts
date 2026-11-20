@@ -52,6 +52,11 @@ export const MANAGED_ZCODE_FILES = [
   "server/remote/zcode-server.cjs",
   "agent/zcode.cjs",
   "agent/provider/zcode-builtin.json",
+  // The OS credential store the 3.18 Server opens at startup (ADR 32).
+  "node_modules/@napi-rs/keyring/package.json",
+  // What starts the 3.18 Agent on Windows (ADR 33).
+  "tools/runtime-host/win32-x64/zcode-runtime-host.exe",
+  "tools/runtime-host/win32-arm64/zcode-runtime-host.exe",
   "LICENSE",
   "NOTICE.md",
   "THIRD-PARTY-NOTICES.md",

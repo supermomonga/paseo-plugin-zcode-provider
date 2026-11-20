@@ -195,7 +195,7 @@ it("explains goal commands it cannot run and sends nothing for them", async () =
     type: "session.configure",
     sessionId: "public",
     requestId: "plan",
-    changes: { settings: { plan_mode: true } },
+    changes: { providerOptions: { plan_mode: true } },
   });
   await f.wait((e) => e.type === "request.completed" && e.requestId === "plan");
   expect(failure(await f.command("m5", "Ship it"))).toMatch(/Plan mode/);
@@ -243,6 +243,11 @@ it("keeps the session usable when ZCode rejects the goal", async () => {
     ),
   ).toMatchObject({ result: { type: "failed" } });
   expect(f.events.some((e) => e.type === "session.runtime_failed")).toBe(false);
+  // ZCode 3.18 refuses a goal for a model it cannot use.
+  f.host.rejectionReason = "modelUnavailable";
+  expect(failure(await f.command("m3", "Ship it"))).toMatch(
+    /^ZCode cannot use the selected model\./,
+  );
   f.host.failAdmission = undefined;
   expect(await f.prompt("m2")).toMatchObject({ result: { type: "turn" } });
   await completeTurn(f.host);
@@ -274,4 +279,35 @@ it("lists a goal only for a session that names its Paseo agent, until it closes"
   });
   await f.wait((e) => e.type === "session.closed");
   expect(f.goals.views()).toEqual([]);
+});
+
+// The Goal pill is told when ZCode changes the goal (ADR 30).
+it("tells the goal directory when the session's goal changes", async () => {
+  const f = await fixture();
+  await f.open();
+  let changes = 0;
+  const stop = f.goals.watch(() => changes++);
+  const settled = () => new Promise((resolve) => setImmediate(resolve));
+  await settled();
+  const before = changes;
+  await f.command("m1", "Ship it");
+  await settled();
+  expect(changes).toBeGreaterThan(before);
+  const set = changes;
+  await f.host.verifyGoal("pass");
+  await f.wait((e) => e.type === "session.turn" && e.state === "completed");
+  await settled();
+  expect(changes).toBeGreaterThan(set);
+  // Rows that leave the goal alone do not count.
+  const verified = changes;
+  await f.send({
+    type: "session.configure",
+    sessionId: "public",
+    requestId: "plan",
+    changes: { providerOptions: { plan_mode: true } },
+  });
+  await f.wait((e) => e.type === "request.completed" && e.requestId === "plan");
+  await settled();
+  expect(changes).toBe(verified);
+  stop();
 });

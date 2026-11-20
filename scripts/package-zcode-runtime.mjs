@@ -13,7 +13,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { runMain, validateVersion } from "./releases/common.mjs";
 import { verifyAppliedZCodePatches } from "./apply-zcode-patches.mjs";
@@ -21,7 +22,8 @@ import { loadZCodeManifest } from "./zcode-manifest.mjs";
 
 // Repackages the official integrated CLI archive, built from the pinned source
 // with patches/zcode applied (ADR 19). Only upstream license material, the
-// patches and build provenance are added.
+// patches, build provenance, the credential store's native module (ADR 32)
+// and the Windows runtime host (ADR 33) are added.
 export const RUNTIME_TAG_PREFIX = "zcode-runtime-v";
 // <ZCode version>-paseo.<n>; n counts patch revisions of one ZCode version.
 // Untagged builds use n = 0 and are never published.
@@ -39,6 +41,95 @@ export const UPSTREAM_NOTICE_FILES = [
   "NOTICE.md",
   "THIRD-PARTY-NOTICES.md",
 ];
+
+// ZCode 3.18's Server opens the OS credential store at startup through the
+// native @napi-rs/keyring, which the integrated distribution leaves out
+// (ADR 32). Desktop stages it with the official
+// scripts/stage-credential-keyring.mjs; the archive gets it for every managed
+// platform, from the packages pnpm installed for the pinned lockfile.
+export const KEYRING_PLATFORMS = [
+  "darwin-arm64",
+  "linux-x64",
+  "linux-arm64",
+  "win32-x64",
+  "win32-arm64",
+];
+export const KEYRING_PACKAGE = "@napi-rs/keyring";
+
+async function stageCredentialStore(source, root) {
+  try {
+    await access(join(root, "node_modules", KEYRING_PACKAGE));
+    throw new Error(
+      `Official archive already contains ${KEYRING_PACKAGE}; review ADR 32`,
+    );
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const { stageCredentialKeyring, keyringPlatformPackage } = await import(
+    pathToFileURL(join(source, "scripts/stage-credential-keyring.mjs")).href
+  );
+  const packages = [];
+  for (const platformKey of KEYRING_PLATFORMS) {
+    await stageCredentialKeyring({
+      sourceRoot: source,
+      targetRoot: root,
+      platformKey,
+    });
+    packages.push(keyringPlatformPackage(platformKey));
+  }
+  const version = async (name) =>
+    JSON.parse(
+      await readFile(join(root, "node_modules", name, "package.json"), "utf8"),
+    ).version;
+  return Promise.all(
+    [KEYRING_PACKAGE, ...packages].map(async (name) => ({
+      name,
+      version: await version(name),
+    })),
+  );
+}
+
+// ZCode 3.18 starts the Agent on Windows only through zcode-runtime-host.exe,
+// which the integrated distribution leaves out (ADR 33). The release workflow
+// builds it on Windows with ZCode's scripts/build-windows-runtime-host.mjs;
+// the provider passes the one for its architecture as ZCODE_RUNTIME_HOST_PATH.
+export const WINDOWS_RUNTIME_HOST_ARCHES = ["x64", "arm64"];
+export const windowsRuntimeHostFile = (arch) =>
+  `tools/runtime-host/win32-${arch}/zcode-runtime-host.exe`;
+
+async function stageWindowsRuntimeHost(source, root, built) {
+  try {
+    await access(join(root, "tools/runtime-host"));
+    throw new Error(
+      "Official archive already contains tools/runtime-host; review ADR 33",
+    );
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const { isRuntimeHostReady } = await import(
+    pathToFileURL(join(source, "scripts/build-windows-runtime-host.mjs")).href
+  );
+  const added = [];
+  for (const arch of WINDOWS_RUNTIME_HOST_ARCHES) {
+    const directory = join(built, `win32-${arch}`);
+    await assertRuntimeLayout(directory, [
+      "zcode-runtime-host.exe",
+      "zcode-installer-process-helper.exe",
+      "build.json",
+    ]);
+    // ZCode's own check: a PE binary of this architecture whose build.json
+    // records this source's digest and the binary's hash.
+    if (!(await isRuntimeHostReady(directory, arch)))
+      throw new Error(
+        `The Windows runtime host for ${arch} was not built from this source`,
+      );
+    const file = windowsRuntimeHostFile(arch);
+    await mkdir(dirname(join(root, file)), { recursive: true });
+    await copyFile(join(directory, "zcode-runtime-host.exe"), join(root, file));
+    added.push({ file, sha256: await sha256File(join(root, file)) });
+  }
+  return added;
+}
 
 export function parseRuntimeRelease(release) {
   const match = RELEASE_PATTERN.exec(release);
@@ -115,7 +206,7 @@ function createArchive(staging, output, mtime) {
   execFileSync("tar", [...options, output, "-C", staging, "zcode"]);
 }
 
-export async function packageRuntime({ source, out, tag }) {
+export async function packageRuntime({ source, out, tag, windowsRuntimeHost }) {
   const { ZCODE_SOURCE_COMMIT } = await loadZCodeManifest();
   const commit = git(source, "rev-parse", "HEAD");
   if (commit !== ZCODE_SOURCE_COMMIT)
@@ -156,6 +247,17 @@ export async function packageRuntime({ source, out, tag }) {
       }
       await copyFile(join(source, file), join(root, file));
     }
+    const addedPackages = await stageCredentialStore(source, root);
+    // Published archives serve Windows too, so they must carry the host.
+    if (!windowsRuntimeHost && tag !== undefined)
+      throw new Error("Published runtimes need --windows-runtime-host");
+    const addedFiles = windowsRuntimeHost
+      ? await stageWindowsRuntimeHost(source, root, windowsRuntimeHost)
+      : [];
+    if (!windowsRuntimeHost)
+      console.warn(
+        "No --windows-runtime-host: this archive cannot start ZCode's Agent on Windows",
+      );
     // Apache-2.0 section 4(b): ship the changes themselves with the build.
     await mkdir(join(root, "patches"));
     for (const { file, path } of patches)
@@ -183,6 +285,10 @@ export async function packageRuntime({ source, out, tag }) {
           build: {
             script: "scripts/build-zcode.mjs",
             officialArchiveSha256: upstreamSha256,
+            // Staged with scripts/stage-credential-keyring.mjs (ADR 32).
+            addedPackages,
+            // Built with scripts/build-windows-runtime-host.mjs (ADR 33).
+            addedFiles,
             node: process.version,
             workflowRun: run,
           },
@@ -225,6 +331,7 @@ runMain(import.meta.url, async () => {
       source: { type: "string" },
       out: { type: "string" },
       tag: { type: "string" },
+      "windows-runtime-host": { type: "string" },
     },
   });
   if (positionals[0] === "commit") {
@@ -234,7 +341,7 @@ runMain(import.meta.url, async () => {
   }
   if (positionals[0] !== "package" || !values.source || !values.out)
     throw new Error(
-      "Usage: package-zcode-runtime.mjs commit | package --source <patched ZCode checkout> --out <directory> [--tag zcode-runtime-v<version>-paseo.<n>]",
+      "Usage: package-zcode-runtime.mjs commit | package --source <patched ZCode checkout> --out <directory> [--windows-runtime-host <directory with win32-x64 and win32-arm64>] [--tag zcode-runtime-v<version>-paseo.<n>]",
     );
   console.log(
     JSON.stringify(
@@ -242,6 +349,9 @@ runMain(import.meta.url, async () => {
         source: resolve(values.source),
         out: resolve(values.out),
         tag: values.tag || undefined,
+        windowsRuntimeHost: values["windows-runtime-host"]
+          ? resolve(values["windows-runtime-host"])
+          : undefined,
       }),
       null,
       2,

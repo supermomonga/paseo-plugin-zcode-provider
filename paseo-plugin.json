@@ -1,5 +1,7 @@
 {
   "id": "zcode-provider",
-  "requirements": { "paseo": ">=0.15.0" },
+  "name": "ZCode Provider",
+  "description": "Use ZCode models, tools and conversations through the official stdio Server of the ZCode CLI.",
+  "requirements": { "paseo": ">=0.16.0" },
   "build": [["npm", "ci", "--include=dev"]]
 }

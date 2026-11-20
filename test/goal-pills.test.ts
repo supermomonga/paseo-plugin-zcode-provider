@@ -21,6 +21,14 @@ const agent = (
   workspaceId,
 });
 
+interface Subscription {
+  name: string;
+  onEvent(event: { goals: GoalView[] }): void;
+  onClosed?: (closed: { error?: Error }) => void;
+  signal?: AbortSignal;
+  released: boolean;
+}
+
 // The parts of Paseo's client that the pills use.
 function paseo() {
   const pills = new Map<string, Record<string, unknown>>();
@@ -28,11 +36,34 @@ function paseo() {
   let observer:
     | { snapshot(s: unknown): void; update(m: unknown): void }
     | undefined;
-  const state = { goals: [] as GoalView[], fail: false };
-  const rpc = vi.fn(async () => {
-    if (state.fail) throw new Error("offline");
-    return { goals: state.goals };
-  });
+  const subscriptions: Subscription[] = [];
+  const subscribe = vi.fn(
+    (
+      contract: { name: string },
+      _input: unknown,
+      onEvent: Subscription["onEvent"],
+      options: {
+        signal?: AbortSignal;
+        onClosed?: Subscription["onClosed"];
+      } = {},
+    ) => {
+      const subscription: Subscription = {
+        name: contract.name,
+        onEvent,
+        onClosed: options.onClosed,
+        signal: options.signal,
+        released: false,
+      };
+      options.signal?.addEventListener("abort", () => {
+        subscription.released = true;
+      });
+      subscriptions.push(subscription);
+      return Object.assign(() => {}, {
+        ready: Promise.resolve(),
+        release: async () => {},
+      });
+    },
+  );
   const list = vi.fn(async (_options: { signal: AbortSignal }) => ({
     subscription: {
       subscribe(next: typeof observer) {
@@ -42,7 +73,7 @@ function paseo() {
     },
   }));
   const client = {
-    rpc,
+    subscribe,
     paseo: { agents: { list } },
     addComposerPill(contribution: {
       id: string;
@@ -63,13 +94,18 @@ function paseo() {
       };
     },
   } as unknown as GoalPillHost;
+  /** The subscription the pills follow now. */
+  const current = () => subscriptions.at(-1)!;
   return {
     client,
     pills,
     updates,
-    rpc,
+    subscribe,
+    subscriptions,
     list,
-    state,
+    /** The daemon sends the goals. */
+    send: (...goals: GoalView[]) => current().onEvent({ goals }),
+    close: (error?: Error) => current().onClosed?.({ error }),
     snapshot: (...agents: Array<ReturnType<typeof agent>>) =>
       observer!.snapshot({ entries: agents.map((a) => ({ agent: a })) }),
     upsert: (a: ReturnType<typeof agent>) =>
@@ -103,9 +139,9 @@ async function started() {
 
 it("shows a pill on the composer of a ZCode agent that has a goal", async () => {
   const p = await started();
-  p.state.goals = [goal(), goal({ agentId: "other" })];
+  expect(p.subscriptions.map((s) => s.name)).toEqual(["zcode.goals.watch"]);
   p.snapshot(agent("agent-1"), agent("other", "claude"), agent("agent-3"));
-  await settle();
+  p.send(goal(), goal({ agentId: "other" }));
   expect([...p.pills]).toEqual([
     [
       "workspace-1/agent-1",
@@ -120,36 +156,42 @@ it("shows a pill on the composer of a ZCode agent that has a goal", async () => 
   p.stop();
   expect(p.pills.size).toBe(0);
   expect(p.list.mock.calls[0]![0].signal.aborted).toBe(true);
+  expect(p.subscriptions[0]!.released).toBe(true);
 });
 
-it("counts the minutes by its own clock and rereads a goal in progress", async () => {
+it("shows goals that arrive before the agents are known", async () => {
   const p = await started();
-  p.state.goals = [goal({ elapsedSeconds: 3775 })];
+  p.send(goal());
+  expect(p.pills.size).toBe(0);
   p.snapshot(agent("agent-1"));
-  await settle();
-  expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 2m");
-  await settle(4_000);
-  expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 2m");
-  // The daemon's figure plus the time since it arrived, without a read.
-  await settle(1_000);
-  expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 3m");
-  expect(p.rpc).toHaveBeenCalledTimes(1);
-  // ZCode titles a goal without anything changing in Paseo.
-  p.state.goals = [goal({ elapsedSeconds: 3785 })];
-  await settle(5_000);
-  expect(p.rpc).toHaveBeenCalledTimes(2);
-  expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 3m");
+  expect([...p.pills.keys()]).toEqual(["workspace-1/agent-1"]);
   p.stop();
 });
 
-it("follows the goal in place and stops reading once it rests", async () => {
+it("counts the minutes by its own clock between the daemon's events", async () => {
   const p = await started();
-  p.state.goals = [goal()];
   p.snapshot(agent("agent-1"));
-  await settle();
-  p.state.goals = [goal({ status: "paused", running: false })];
-  p.upsert(agent("agent-1"));
+  p.send(goal({ elapsedSeconds: 3775 }));
+  expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 2m");
+  await settle(4_000);
+  expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 2m");
+  // The daemon's figure plus the time since it arrived.
   await settle(1_000);
+  expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 3m");
+  // An agent update long after the event keeps the time it arrived.
+  await settle(60_000);
+  p.upsert(agent("agent-1"));
+  expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 4m");
+  // Nothing is read in between; the subscription is the only source.
+  expect(p.subscribe).toHaveBeenCalledTimes(1);
+  p.stop();
+});
+
+it("follows the goal in place and stops counting once it rests", async () => {
+  const p = await started();
+  p.snapshot(agent("agent-1"));
+  p.send(goal());
+  p.send(goal({ status: "paused", running: false }));
   expect(p.pills.get("workspace-1/agent-1")).toMatchObject({
     title: "Goal: Paused",
     icon: "CirclePause",
@@ -157,81 +199,62 @@ it("follows the goal in place and stops reading once it rests", async () => {
   });
   // Replacing the behavior would close an open popover.
   expect(p.updates).toEqual([{ title: "Goal: Paused", icon: "CirclePause" }]);
-  const reads = p.rpc.mock.calls.length;
   await settle(120_000);
-  expect(p.rpc).toHaveBeenCalledTimes(reads);
   expect(p.pills.get("workspace-1/agent-1")!.label).toBe("Goal 1h 3m");
 
-  p.state.goals = [];
-  p.upsert(agent("agent-1"));
-  await settle(1_000);
+  p.send();
   expect(p.pills.size).toBe(0);
-  p.stop();
-});
-
-it("reads when a ZCode agent changes, at most once a second", async () => {
-  const p = await started();
-  p.snapshot(agent("agent-1"));
-  await settle();
-  expect(p.rpc).toHaveBeenCalledTimes(1);
-  for (let i = 0; i < 5; i++) p.upsert(agent("agent-1"));
-  p.upsert(agent("other", "claude"));
-  await settle(500);
-  expect(p.rpc).toHaveBeenCalledTimes(1);
-  await settle(500);
-  expect(p.rpc).toHaveBeenCalledTimes(2);
-  // Other providers' agents never cause a read.
-  p.upsert(agent("other", "claude"));
-  await settle(5_000);
-  expect(p.rpc).toHaveBeenCalledTimes(2);
   p.stop();
 });
 
 it("moves the pill with its agent and removes it with the agent", async () => {
   const p = await started();
-  p.state.goals = [goal({ status: "verified", running: false })];
   p.snapshot(agent("agent-1"));
-  await settle();
+  p.send(goal({ status: "verified", running: false }));
   expect(p.pills.get("workspace-1/agent-1")).toMatchObject({
     title: "Goal: Complete",
     icon: "CircleCheckBig",
   });
   p.upsert(agent("agent-1", "zcode", "workspace-2"));
-  await settle(1_000);
   expect([...p.pills.keys()]).toEqual(["workspace-2/agent-1"]);
   p.remove("agent-1");
+  expect(p.pills.size).toBe(0);
+  // Other providers' agents never show a pill.
+  p.upsert(agent("agent-1", "claude"));
   expect(p.pills.size).toBe(0);
   p.stop();
 });
 
-it("keeps what it shows when a read fails and recovers on the next", async () => {
+it("keeps what it shows when the subscription fails and follows again", async () => {
   const p = await started();
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-  p.state.goals = [goal()];
   p.snapshot(agent("agent-1"));
-  await settle();
-  p.state.fail = true;
-  await settle(10_000);
+  p.send(goal());
+  p.close(new Error("plugin stopped"));
   expect(logged).toHaveBeenCalledTimes(1);
   expect(p.pills.get("workspace-1/agent-1")).toMatchObject({ icon: "Goal" });
-  p.state.fail = false;
-  p.state.goals = [goal({ status: "verifying", running: false })];
-  await settle(10_000);
+  await settle(4_999);
+  expect(p.subscribe).toHaveBeenCalledTimes(1);
+  await settle(1);
+  expect(p.subscribe).toHaveBeenCalledTimes(2);
+  p.send(goal({ status: "verifying", running: false }));
   expect(p.pills.get("workspace-1/agent-1")).toMatchObject({
     title: "Goal: Verifying",
     icon: "ScanSearch",
   });
   p.stop();
+  // A stopped client does not follow again.
+  p.close();
+  await settle(10_000);
+  expect(p.subscribe).toHaveBeenCalledTimes(2);
 });
 
 it("replaces what it knows on a new snapshot, as after a reconnect", async () => {
   const p = await started();
-  p.state.goals = [goal(), goal({ agentId: "agent-2" })];
   p.snapshot(agent("agent-1"), agent("agent-2"));
-  await settle();
+  p.send(goal(), goal({ agentId: "agent-2" }));
   expect(p.pills.size).toBe(2);
   p.snapshot(agent("agent-2"));
-  await settle(1_000);
   expect([...p.pills.keys()]).toEqual(["workspace-1/agent-2"]);
   p.stop();
 });

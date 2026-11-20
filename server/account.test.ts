@@ -110,17 +110,32 @@ function nativeView(providers: unknown[] = []) {
 }
 
 class FakeHost implements SettingsHost {
+  diagnostic = { appVersion: "3.18.2" };
   readonly calls: { method: string; args: unknown[] }[] = [];
   readonly failures = new Set<(error: AdapterError) => void>();
   closed = 0;
   settings: Record<string, unknown> = {};
   session: unknown = { status: "signed-out" };
+  /** The account's plan families, which ZCode 3.18 reports after sign-in. */
+  families: string[] = ["zai"];
+  oauthProviders = [
+    { id: "zai", displayName: "Z.ai", enabled: true, order: 0 },
+    { id: "bigmodel", displayName: "BigModel", enabled: true, order: 1 },
+    { id: "zai_cn", displayName: "Z.ai (CN)", enabled: true, order: 2 },
+  ];
   view = nativeView([customProvider]);
   readonly handlers: Record<string, Handler> = {
     "oauth.restoreCachedSessionState": () => this.session,
     "oauth.getActiveProvider": () => null,
-    "oauth.startOAuthWithPolling": (family) => ({
-      provider: family,
+    "oauth.getProviders": () => this.oauthProviders,
+    "oauth.getAccountAvailability": () => ({
+      loginProvider: "zai",
+      userId: "1",
+      sessionRevision: "r",
+      families: this.families,
+    }),
+    "oauth.startOAuthWithPolling": (provider) => ({
+      provider,
       authorizeUrl: "https://chat.z.ai/api/oauth/authorize?state=s",
       state: "s",
     }),
@@ -298,11 +313,11 @@ describe("sign-in", () => {
     host.handlers["oauth.pollPendingOAuth"] = () =>
       ++polls < 3 ? null : { kind: "session", provider: "zai" };
     const started = await ready(
-      account.change({ action: "signIn", family: "zai" }),
+      account.change({ action: "signIn", provider: "zai" }),
     );
     expect(started.signIn).toMatchObject({
       state: "pending",
-      family: "zai",
+      provider: "zai",
       authorizeUrl: "https://chat.z.ai/api/oauth/authorize?state=s",
     });
     await vi.waitFor(async () =>
@@ -335,7 +350,7 @@ describe("sign-in", () => {
       kind: "duplicate",
       provider: "zai",
     });
-    await account.change({ action: "signIn", family: "zai" });
+    await account.change({ action: "signIn", provider: "zai" });
     await vi.waitFor(() =>
       expect(host.settings.providerFamilyDomain).toBe("zai"),
     );
@@ -351,6 +366,7 @@ describe("sign-in", () => {
       providerFamilyDomain: "bigmodel",
       providerFamilyDomainUpdatedAt: 5,
     };
+    host.families = ["zai", "bigmodel"];
     const get = host.handlers["setting.get"]!;
     host.handlers["setting.get"] = () => {
       const read = structuredClone(get());
@@ -366,7 +382,7 @@ describe("sign-in", () => {
       kind: "session",
       provider: "zai",
     });
-    await account.change({ action: "signIn", family: "zai" });
+    await account.change({ action: "signIn", provider: "zai" });
     await vi.waitFor(async () =>
       expect((await ready(account.view())).signIn).toMatchObject({
         state: "failed",
@@ -377,13 +393,122 @@ describe("sign-in", () => {
     await account.close();
   });
 
+  // ZCode 3.18's single sign-in: the region picks the OAuth provider.
+  it("offers Desktop's single Z.ai sign-in with a region from ZCode 3.18", async () => {
+    const { host, account } = service();
+    expect((await ready(account.view())).signInOptions).toEqual([
+      { provider: "zai", label: "Global" },
+      { provider: "zai_cn", label: "China mainland" },
+    ]);
+    // A runtime without zai_cn offers Z.ai or BigModel, as Desktop did.
+    host.oauthProviders = host.oauthProviders.filter((p) => p.id !== "zai_cn");
+    expect((await ready(account.view())).signInOptions).toEqual([
+      { provider: "zai", label: "Z.ai (international)" },
+      { provider: "bigmodel", label: "BigModel (China)" },
+    ]);
+    // Only what the runtime offers can be started.
+    await expect(
+      account.change({ action: "signIn", provider: "zai_cn" }),
+    ).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+    expect(host.called("oauth.startOAuthWithPolling")).toEqual([]);
+    await account.close();
+  });
+
+  it("shows an account signed in through Z.ai in China", async () => {
+    const { host, account } = service();
+    host.session = {
+      status: "authenticated",
+      userInfo: { id: "1", displayName: "Momo" },
+    };
+    host.handlers["oauth.getActiveProvider"] = () => "zai_cn";
+    // zai_cn is no plan family; the account's family is the chosen one.
+    expect((await ready(account.view())).account).toEqual({
+      state: "signed-in",
+      loginProvider: "zai_cn",
+      displayName: "Momo",
+    });
+    host.settings = { providerFamilyDomain: "bigmodel" };
+    const view = await ready(account.view());
+    expect(view.account).toMatchObject({ family: "bigmodel" });
+    expect(view.plans.map((p) => p.providerId)).toEqual([
+      "account:bigmodel-start-plan",
+    ]);
+    await account.close();
+  });
+
+  it("selects the family the account has after a China sign-in", async () => {
+    const { host, account } = service();
+    host.families = ["bigmodel"];
+    host.handlers["oauth.pollPendingOAuth"] = () => ({
+      kind: "session",
+      provider: "zai_cn",
+    });
+    await account.change({ action: "signIn", provider: "zai_cn" });
+    await vi.waitFor(() =>
+      expect(host.settings).toMatchObject({
+        providerFamilyDomain: "bigmodel",
+        providerFamilyConnectionSelections: {
+          bigmodel: { kind: "individual-coding-plan" },
+        },
+      }),
+    );
+    expect(host.called("oauth.startOAuthWithPolling")[0]!.args).toEqual([
+      "zai_cn",
+    ]);
+    await account.close();
+  });
+
+  it("selects nothing for an account without a plan family", async () => {
+    const { host, account } = service();
+    // A China sign-in that is not linked to BigModel.
+    host.families = [];
+    host.handlers["oauth.pollPendingOAuth"] = () => ({
+      kind: "session",
+      provider: "zai_cn",
+    });
+    await account.change({ action: "signIn", provider: "zai_cn" });
+    await vi.waitFor(async () =>
+      expect((await ready(account.view())).signIn.state).toBe("idle"),
+    );
+    expect(host.called("setting.update")).toEqual([]);
+    expect(host.called("provider-settings.refresh")).toHaveLength(1);
+    await account.close();
+  });
+
+  it("keeps the chosen family on ZCode 3.18 and switches to the sign-in's before", async () => {
+    for (const [appVersion, expected] of [
+      ["3.18.2", "bigmodel"],
+      ["3.17.2", "zai"],
+    ] as const) {
+      const { host, account } = service();
+      host.diagnostic = { appVersion };
+      host.families = ["zai", "bigmodel"];
+      host.settings = {
+        providerFamilyDomain: "bigmodel",
+        providerFamilyConnectionSelections: {
+          bigmodel: { kind: "individual-coding-plan" },
+        },
+      };
+      host.handlers["oauth.pollPendingOAuth"] = () => ({
+        kind: "session",
+        provider: "zai",
+      });
+      await account.change({ action: "signIn", provider: "zai" });
+      await vi.waitFor(async () =>
+        expect((await ready(account.view())).signIn.state).toBe("idle"),
+      );
+      expect(host.settings.providerFamilyDomain).toBe(expected);
+      await account.close();
+    }
+  });
+
   it("times out, cancels the native flow and keeps the Server until then", async () => {
     let now = 0;
     const { host, account } = service(new FakeHost(), {
       idleMs: 1,
       now: () => now,
     });
-    await account.change({ action: "signIn", family: "bigmodel" });
+    await account.change({ action: "signIn", provider: "zai_cn" });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(host.closed).toBe(0);
     now = 5 * 60_000;
@@ -403,7 +528,7 @@ describe("sign-in", () => {
     host.handlers["oauth.pollPendingOAuth"] = () => {
       throw new Error("OAuth 登录失败: secret detail");
     };
-    await account.change({ action: "signIn", family: "zai" });
+    await account.change({ action: "signIn", provider: "zai" });
     await vi.waitFor(async () =>
       expect((await ready(account.view())).signIn).toEqual({
         state: "failed",
@@ -422,7 +547,7 @@ describe("sign-in", () => {
       },
       { pollMs: 60_000 },
     );
-    await account.change({ action: "signIn", family: "zai" });
+    await account.change({ action: "signIn", provider: "zai" });
     hosts[0]!.fail();
     expect((await ready(account.view())).signIn).toEqual({
       state: "failed",

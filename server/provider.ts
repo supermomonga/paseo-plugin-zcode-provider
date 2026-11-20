@@ -26,7 +26,11 @@ import {
   discoverRuntime,
   runRuntimeSmoke,
 } from "./discovery/discover.js";
-import { ZCodeHostBridge, type HostBridge } from "./host/bridge.js";
+import {
+  credentialStoreUnavailable,
+  ZCodeHostBridge,
+  type HostBridge,
+} from "./host/bridge.js";
 import { createRuntimeStatus } from "./provider-status.js";
 import { logger } from "./logger.js";
 import { MINIMUM_ZCODE_VERSION } from "./discovery/manifest.js";
@@ -104,7 +108,14 @@ export async function createHost(
   }
 }
 
-const settingsSchema = z.object({ plan_mode: z.boolean().optional() }).strict();
+// Paseo passes an agent's options, the provider defaults from `config.json`
+// included, as `providerOptions`. Plan is ZCode's only option.
+const optionsSchema = z.object({ plan_mode: z.boolean().optional() }).strict();
+// A change may set an option to `null`, which returns it to the provider's
+// default: Plan off.
+const optionChangesSchema = z
+  .object({ plan_mode: z.boolean().nullable().optional() })
+  .strict();
 
 interface SessionEntry {
   native: ZCodeSession;
@@ -501,20 +512,17 @@ export class ZCodeConnection implements ProviderConnection {
         return;
       }
       case "session.configure": {
-        const settings = settingsSchema.parse(input.changes.settings ?? {});
+        const options = optionChangesSchema.parse(
+          input.changes.providerOptions ?? {},
+        );
+        const plan = options.plan_mode === null ? false : options.plan_mode;
         requireConfigurableMode(input.changes.mode);
         if (input.changes.model !== undefined)
           await entry.native.setModel(input.changes.model);
         if (input.changes.thinkingOption !== undefined)
           await entry.native.setThinkingOption(input.changes.thinkingOption);
-        if (
-          input.changes.mode !== undefined ||
-          settings.plan_mode !== undefined
-        )
-          await entry.native.configureMode(
-            input.changes.mode,
-            settings.plan_mode,
-          );
+        if (input.changes.mode !== undefined || plan !== undefined)
+          await entry.native.configureMode(input.changes.mode, plan);
         this.emitConfig(input.sessionId, entry);
         break;
       }
@@ -548,16 +556,8 @@ export class ZCodeConnection implements ProviderConnection {
     input: Extract<ProviderInput, { type: "session.open" }>,
   ): Promise<void> {
     const config = input.config;
-    // Paseo 0.16 passes the agent's options, provider defaults included, as
-    // `providerOptions` and repeats them in the deprecated `settings`. Paseo
-    // 0.15 passes the composer's `plan_mode` only in `settings`, while its
-    // `providerOptions` also hold the defaults from `config.json`; `settings`
-    // wins, as the agent's own value wins over a default on 0.16. Stop reading
-    // `settings` once Paseo 0.16 is the minimum.
-    const settings = settingsSchema.parse({
-      ...config.providerOptions,
-      ...config.settings,
-    });
+    // The deprecated `settings` repeats the same values.
+    const options = optionsSchema.parse(config.providerOptions ?? {});
     requireConfigurableMode(config.mode);
     if (config.systemPrompt?.trim())
       throw new AdapterError(
@@ -653,9 +653,9 @@ export class ZCodeConnection implements ProviderConnection {
               model: undefined,
               ...(initialModel ? { thinkingOption: undefined } : {}),
             }),
-        settings: {
-          ...settings,
-          ...(!nativeId && settings.plan_mode === undefined
+        providerOptions: {
+          ...options,
+          ...(!nativeId && options.plan_mode === undefined
             ? { plan_mode: false }
             : {}),
         },
@@ -679,9 +679,10 @@ export class ZCodeConnection implements ProviderConnection {
       const agentId = config.env.PASEO_AGENT_ID;
       if (agentId) {
         const session = native;
-        forgetGoal = entry.forgetGoal = this.goals.register(agentId, () =>
-          session.goal(),
-        );
+        forgetGoal = entry.forgetGoal = this.goals.register(agentId, {
+          read: () => session.goal(),
+          watch: (changed) => session.watchGoal(changed),
+        });
       }
       this.emit({
         type: "session.opened",
@@ -887,9 +888,14 @@ function publicError(error: unknown): ProviderError {
     RUNTIME_DISCOVERY_FAILED:
       "ZCode installation or required host structure could not be inspected. See the diagnostic for the failure stage.",
     RUNTIME_SETUP_REQUIRED:
-      "ZCode runtime is not set up. Install it in Settings → Plugins → zcode-provider → Settings → Runtime.",
+      "ZCode runtime is not set up. Install it in Settings → Plugins → ZCode Provider → Runtime.",
     AUTH_REQUIRED:
-      "No ZCode model provider is usable. Sign in or add a provider in Settings → Plugins → zcode-provider → Settings → Account.",
+      "No ZCode model provider is usable. Sign in or add a provider in Settings → Plugins → ZCode Provider → Account.",
+    CREDENTIAL_STORE_UNAVAILABLE: credentialStoreUnavailable().message,
+    WINDOWS_RUNTIME_HOST_MISSING:
+      "ZCode 3.18 needs zcode-runtime-host.exe on Windows to start its Agent. The managed runtime includes it; with PASEO_ZCODE_RUNTIME, set ZCODE_RUNTIME_HOST_PATH for the Paseo daemon to ZCode's zcode-runtime-host.exe.",
+    MODEL_UNAVAILABLE:
+      "ZCode cannot use the selected model. Choose another model, or check the account and model providers in Settings → Plugins → ZCode Provider → Account.",
     PERSISTENCE_VERSION_UNSUPPORTED:
       "ZCode persistence version is unsupported. Create a new Paseo ZCode session.",
     PERSISTENCE_INVALID:

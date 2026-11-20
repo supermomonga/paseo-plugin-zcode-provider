@@ -1,3 +1,89 @@
+# ZCode 3.18.2 への追従（2026-11-20）
+
+Issue #104 の対応。
+
+## 上流のソース
+
+- `git ls-remote --tags --refs https://github.com/zai-org/ZCode.git` は、`refs/tags/v3.18.2` に `fec975905a2abd4c07e35c40d51fa097a2258ec9` を示した。ルートの `package.json` は `3.18.2` で、`main` から辿れる。親は 3.18.1（`c5904686`）と 3.18.0（`b95ebaff`）の `chore: sync ZCode source` で、どちらもタグが無い。その前が `v3.17.2`（`a9fe401`）である。ソースの基準を `v3.18.2` に移した。
+- 同梱するファイルは 139 になった。`zcode-protocol-v4/command.ts` が読む `zcode-protocol/index.ts` が、3.18 で `app-control/contract.ts` を通して、非公開のワークスペースパッケージ `@zcode/session-control/contracts` を読むようになった。同期スクリプトに、`@zcode/session-control/contracts` と `#session-control/*` を相対パスに読み替える規則を加えた。
+
+## V4 の契約の変更とこのプロバイダ
+
+- **読めない行**：スナップショットの `rows.window` と `rows/range` の行は、`displayConversationRowSchema` で読むようになった。読めない行は、フレームを拒否せずに `kind: "unreadable"` の行に置き換わる（`rows.ts`）。差分（`row.appended`・`row.upserted`）は、これまでどおり厳密に読む。3.17.2 のスキーマのままだと、新しい種類の値（入力の出どころ `session`・`extension`、マーカー `worktreeCreated` など）を含むフレームで接続ごと失敗する。読めない行は、種類を添えた警告の通知として出す。
+- **新しいマーカー**：`worktreeCreated` は、Desktop が管理する worktree で始めたタスクの最初のターンに付く。worktree の場所と commit を通知に出す。
+- **新しい対話**：`pendingInteractions` の種類に `pluginInstall` が加わった。Server は、`clientHello` で `pluginDiscoveryUi` を宣言した接続にだけプラグインの導入を勧め、それ以外の接続のスナップショットからは取り除く（`conversation-topic-publisher.ts` の `pluginInstallSnapshotForConnection`）。このプロバイダは宣言しないので、表示しない。
+- **権限の確認**：`modeSwitch` と、選択肢 `allowAndSwitchGuarded`・`fullAccess` が加わった。どちらも `options` には入らず、`fullAccessOption` か `modeSwitch` で示される。`options` だけを出すこれまでの扱いで足りる。
+- **使っていない追加**：`stopSubagent`、キューの編集のロック（`lockQueueItemEdit` など）、`commands/query` の `turn`、`v4/conversation/contextComposition`、冷えた再開の `workspace`（管理された worktree のセッションだけに要る）。
+
+## サービスの変更とこのプロバイダ
+
+- **サインイン**：Desktop 3.18 のサインインは、Z.ai の一つの入口で、地域で OAuth のプロバイダーを選ぶ。中国本土は `zai_cn`、それ以外は `zai` である（`packages/ui/src/WelcomeScreen.tsx` の `resolveSingleLoginProvider`）。BigModel は、明示的な接続の求めにだけ使う。Account の画面は、`oauth.getProviders` が `zai_cn` を返せば「Global」と「China mainland」を、返さなければこれまでの Z.ai と BigModel を出す。サーバーは、出した選択肢にない開始を断る。
+- **サインイン後の家族**：3.18 の Desktop は、サインインしたプロバイダーではなく、`oauth.getAccountAvailability` が返すアカウントの家族から決める。選んである家族を保ち、無ければアカウントの最初の家族にし、どちらも無ければ何も選ばない（`packages/ui/src/root/oauthProviderFamilySelectionRefresh.ts`）。BigModel に結び付いていない中国本土のアカウントは家族を持たない。プラグインも 3.18 以降はこの規則に従い、3.18 より前のランタイムではこれまでどおりサインインした家族に切り替える。プランは、選んでいなければ個人の Coding Plan にする（これまでどおり）。
+- **今のプロバイダー**：`oauth.getActiveProvider` は `zai_cn` を返しうる。プラグインはこれを `zai`・`bigmodel` の列挙で読んでいたので、中国本土でサインインしたアカウントでは Account の画面と利用量の読み出しが失敗した。文字列として読み、家族は ZCode の `resolveProviderFamilyDomainFromOAuthProvider` と同じく `zai`・`bigmodel` だけを家族とみなす。画面の Region は、サインインしたプロバイダーから出す。
+
+- **使えないモデルでの入力**：3.18 は、セッションのモデルを使えないとき、`sendText`（`/compact` を含む）と `sendGoalCommand`・`resumeGoal` を受け付ける前に、`reasonCode: "modelUnavailable"` で拒否する（`prompt-turn.ts`、`handlers/goal-compact.ts`）。プラグインはこれまでどおり ZCode の文言を出さず、コード `MODEL_UNAVAILABLE` と、モデルの選び直しと Account の確認を促す固定の文言で返す（ADR 23 と同じ扱い）。ほかの拒否は `NATIVE_INPUT_REJECTED` のままである。
+- **ほかのセッションからの入力**：3.18 の Session のツール（`SendToSession`）や Desktop の拡張が送った入力は、`userInput` 行の `source` が `session`・`extension` になる。Paseo のユーザーのメッセージには送り手を表す項目が無いので、ユーザーの発言としては出さず、送り手（セッションの ID か拡張の ID）を書いた通知として出す。Desktop のプラグインの画面（`pluginUi`・`genUi`）からの入力は利用者の操作なので、これまでどおりユーザーのメッセージとして出す。
+
+- **Session のツール（ADR 31）**：3.18 の Session のツールは、stdio の Server でも有効になる（`createLocalServices` が `appControlService` を常に作り、`appControlEnabled` が真になる）。このうち、ほかのセッションで作業を始める・止める CreateSession・ForkSession・SendToSession・InterruptSession を、すべての `sendText` の `toolDisallowlist` に加えた。ZCode はターンのツールをこの名前で除き（`turn-tool-visibility.ts`）、ToolSearch の候補もそこから作る。読み取りのツールと、名前の変更・アーカイブ・ピン留めは残す。
+
+## 資格情報ストア（ADR 32）
+
+- **起動しない**：一時ディレクトリでビルドした 3.18.2 の公式の配布物（`zcode-3.18.2.tar.gz`、sha256 `6b1e458f…`、Node.js 24.14.0、Linux x64）を、隔離した HOME で起動すると、Server は hello の直後に `fatal: Error: Remote credential storage unavailable`（`CREDENTIAL_SECURE_STORAGE_UNAVAILABLE`）で終了した。`test:stdio-runtime` は、カタログの取得で `NATIVE_PROTOCOL_ERROR` になった。配布物には、Agent の下に `@napi-rs/keyring` の JS だけがあり、Server から読める場所にもネイティブのパッケージにも無い。
+- **`--prepare-credentials`**：同じ配布物を `--prepare-credentials` 付きで起動すると `stdio mode ready` まで進み、`~/.zcode/v2/credential-secret`（0600、43 バイト）ができた。
+- **keyring**：`scripts/package-zcode-runtime.mjs` で 5 プラットフォーム分の `@napi-rs/keyring` 2.1.2 を加えた書庫（`zcode-runtime-3.18.2-paseo.0.tar.gz`、sha256 `c23f5f14…`、92,087,051 バイト）を展開し、`server/remote` からモジュールを解決して読み込めることを確かめた。この端末には使える OS のストアが無く、読み出しはネイティブ層の `Couldn't access platform storage` で失敗した。OS のストアに結び付いたデータでの起動は、確かめていない。
+- **実ランタイム**：この書庫に対し、プラグインの `test:stdio-runtime` が全項目を通った。公開済みの 3.17.2-paseo.1（sha256 `24e3a9b0…`）でも全項目が通り、3.18 より前の Server には `--prepare-credentials` を付けない。隔離したデータに `credential-secret` ができることも確かめる。`test:native-restore` は、これまでどおり失敗した（明示の設定の無い再開で `{ mode: "yolo", plan: false }`、期待は `{ mode: "edit", plan: true }`）。ADR 14 の保証の外の不具合は 3.18.2 でも残る。
+
+## Windows のランタイムの補助（ADR 33）
+
+- **失敗**：PR #111 の最初の CI で、3.18.2 から作った書庫（keyring を加えたもの）は、リリースのワークフローの検証のうち darwin-arm64・linux-x64・linux-arm64 で全項目を通り、win-x64 と win-arm64 ではカタログの取得で `NATIVE_PROTOCOL_ERROR` になった。診断には実行環境の情報が無く、プロバイダの `initializeWorkspace` が ZCode の `initialize` の `available: false`（理由のコードが無いもの）を受けた形だった。同じ PR の CI の、3.17.2 の管理下ランタイムでの契約試験は、Windows の 2 つでも通った。
+- **原因**：3.18 の Server は、Windows で Agent の CLI を、ネイティブの補助 `zcode-runtime-host.exe` を通してだけ起動する（`zcodeAgentProcessManager.ts` が `process.platform === "win32"` で `spawnWindowsRuntimeHost` を呼ぶ）。補助は `ZCODE_RUNTIME_HOST_PATH`、Electron の `resourcesPath`、`ZCODE_SERVER_RUNTIME_ROOT` の下などで探し、見つからなければ例外になる（`packages/services/src/windows-runtime-host/index.ts`）。`initialize` はこの例外を `available: false` と ZCode の文言にする（`zcodeAgentService.ts`）。統合 CLI の配布物には補助が無い。Desktop と `packages/zcode-server-cli` の Windows 向けの配布物は、`scripts/build-windows-runtime-host.mjs` で C++ のソースからビルドしたものを `tools/runtime-host/` に入れる。
+- **変更**：リリースのワークフローに、Windows のランナーで x64 と arm64 の補助をこのスクリプトでビルドするジョブを加え、梱包で `tools/runtime-host/win32-<arch>/` に入れる。プロバイダは、Windows の 3.18 以降で、daemon のアーキテクチャの補助を `ZCODE_RUNTIME_HOST_PATH` で渡す。
+
+## 公開と固定
+
+- **PR の CI**：Windows の補助を加えた後、リリースのワークフローは、5 プラットフォーム（darwin-arm64、linux-x64、linux-arm64、win-x64、win-arm64）で `test:stdio-runtime` の全項目を通した。Windows では「Agent started through the bundled Windows runtime host」も通った。補助のビルドは、`windows-2025` のイメージに Visual Studio 2022 が無いので `windows-2022` で行い、`build.json` のソースの要約を Linux の LF の checkout と合わせるため、checkout の前に `core.autocrlf` を無効にした。
+- **公開**：`zcode-runtime-v3.18.2-paseo.1` を `c5f8668` に push した。最初の実行は、ZCode の依存の導入中の pnpm の一時的な失敗（`ERR_PNPM_ENOENT`、一時ディレクトリの名前の変更）で、公開の前に止まった。同じ実行のやり直し（run 44766094128）が、ビルド、5 プラットフォームの検証、証明をして、latest ではないリリースとして公開した。
+- **書庫**：`zcode-runtime-3.18.2-paseo.1.tar.gz`、92,314,940 バイト、SHA-256 `b6c0126d2257da87313f47185f0292ef701623fbc56ad725e22db3ffa16e243d`。取得した書庫は `SHA256SUMS` と一致し、`gh attestation verify` は、タグの `zcode-runtime-release.yml` とソース `c5f8668` を示した。`BUILD-INFO.json` は、ソース `fec9759`、`@napi-rs/keyring` 2.1.2 と 5 つのネイティブのパッケージ、`tools/runtime-host/win32-x64/zcode-runtime-host.exe`（SHA-256 `a55ddfc0…`）と `win32-arm64`（`18cbd525…`）を記録している。
+- **固定**：`server/runtime/pins.ts` をこの書庫にし、導入の検査（`MANAGED_ZCODE_FILES`）に keyring と二つの補助を加えた。一時の `XDG_DATA_HOME` に `npm run setup:managed-runtime` で導入し（Linux x64）、管理下ランタイムとしての `test:stdio-runtime` が全項目を通った。
+
+## 管理下ランタイムのパッチ（ADR 19）
+
+- `patches/zcode/0001-hide-suppressed-official-plugins.patch` は、3.18.2 にもそのまま当たる（51 行ずれる）。対象の commit を書き換え、行番号を合わせた差分に作り直した。
+- **まだ要るか**：要る。3.18.2 でも、公式プラグインを検出から外すのは、ユーザー設定の `suppressedBuiltins` だけである（`adapters/src/plugins/index.ts`）。`ZCODE_CUA_PRODUCT_HELPER=0` は、3.17.2 では `resolveOfficialPluginRoots` が Computer Use のキャッシュを外すのに使っていたが、3.18 ではこの関数から設定の参照が無くなり、Computer Use の broker（`services/src/node.ts`）と「元に戻す」の入口だけを止める。Browser Use は既定で有効（`defaultEnabled: true`）のままで、Visualize は 3.18 で既定で無効になったが、Desktop で有効にした利用者には `~/.zcode` を共有する管理下ランタイムでも出る。削除の条件（ZCode がプロセスごとに公式プラグインを隠す公式の手段を持つこと）は満たされていない。
+- **新しい公式プラグイン**：3.18 で増えたのは `design`（0.7.2）だけである。skill とフックとスクリプトだけで MCP サーバーを持たず、既定で無効である。Desktop のブラウザのデザインモードは、ホストのツールに有る場合だけ使う作りなので、隠さない。
+
+# Paseo 0.16.0〜0.16.2 への追従（2026-11-20）
+
+Issue #105〜#107 の対応。v0.15.4（`1c00b365`）と v0.16.2（`2ee30f4164af42ba209236ab3a31bf9532592fc3`）の `packages/plugin`、`plugin-provider.ts`、プラグインのコンパイラと準備処理を比べた。0.16.1 と 0.16.2 の変更履歴に、プラグインの API の変更は無い。
+
+## 変更履歴とこのプロバイダ
+
+- **入力欄のオプション**：`ProviderConfigState.settings` が非推奨になり、`controls` と `providerOptions` で報告する形が加わった（`plugin-provider-options.ts`）。`settings` を報告するプロバイダーには、0.16 の daemon が同じ値を `changes.providerOptions` と `changes.settings` の両方で送る。この互換処理は 2027-05-01 以降に削除される。アダプターの `setFeature` は `applyOptions` に置き換わった。
+- **プラグインのサブスクリプション**：`defineSubscription` と `server.handle` で、プラグインのサーバーからクライアントへイベントを送れるようになった（getpaseo/paseo#8527）。クライアントは `client.subscribe` か `useSubscription` で受け取る。
+- **設定画面**：Settings → Plugins の歯車から開き、`addSettingsScreen` で登録した画面ごとにホストがタブを出す（getpaseo/paseo#8675）。見出しにはマニフェストの `name` が出る。
+- **バックグラウンドタスク**：Claude Code、Codex、OpenCode v2 は `background_work` と `stopBackgroundWork` で報告と停止を行う。プラグイン Provider の API（`packages/plugin/src/server/provider.ts`）にもアダプターにも、これに当たるイベントと入力は無い。ZCode のバックグラウンドの Bash とサブエージェントは、これまでどおりツール呼び出しとして見せ、アイドル時の解放は `session.can_stop_runtime` で拒否する。
+- **廃止**：`agent.turn.after.timeline` が削除された。このプラグインは使っていない。
+- **変わらないもの**：プラグイン Provider のセッションには、0.16.2 でも `usageSession()` が無い。ready より前のイベントも、アダプターの履歴に積まれるだけである。`test:upstream` が読む上流のファイル（`compiler-build.ts`、`manifest.ts`、`preparation-build.ts`、`provider-icon.ts`、`plugin-provider.ts`）は同じ名前と引数で残っている。
+
+## 変更（ADR 30）
+
+- **最低要件**：`requirements.paseo` を `>=0.16.0` に上げた。`test:upstream` は、0.15.4 の daemon が最低要件で拒否することを確かめる。
+- **Plan**：`settings` をやめ、`controls` の `toggle`（`plan_mode`、ラベル `Plan`、アイコン `list-todo`、既定値 `false`。Paseo の Codex プロバイダーと同じ）と `providerOptions.plan_mode` で報告する。`session.open` と `session.configure` は `providerOptions` だけを読み、`null` は Plan をオフにする。Issue #108 で入れた `settings` とのマージは無くした。
+- **実ランタイムの確認**：`test:stdio-runtime`・`test:model-plan-runtime`・`test:native-restore` は、Plan を `providerOptions` で渡し、`session.config` の `providerOptions.plan_mode` で確かめる。
+- **Goal のピル**：RPC `zcode.goals` を subscription `zcode.goals.watch` に置き換えた。サーバーは購読の開始時と、セッションの V4 の `goal` が変わったとき（深い比較で同じなら送らない）と、セッションの登録と削除のときに送る。同じ時点の変化はマイクロタスクでまとめる。ピルとポップオーバーは一定間隔の読み出しをやめ、イベントだけで更新する。購読がエラーで閉じたら 5 秒後に購読し直す。
+- **設定画面**：Paseo 0.16 は設定画面ごとにタブを出すので、自前のタブを持つ Settings 画面をやめ、Runtime・Account・Timeline・Diagnostics の四つの画面として登録した。Account の「Open Runtime」は `client.openSettings("runtime")` で Runtime の画面を開く。`paseo-plugin.json` に `name`（`ZCode Provider`）と `description` を加え、案内の文言の場所も `Settings → Plugins → ZCode Provider → Runtime` などに変えた。
+
+## 検証（Linux x64、Node.js 22.22.1、2026-11-20）
+
+- **実 UI**：`@getpaseo/cli@0.16.2` の一時 daemon（`--home`、HOME と XDG のディレクトリは一時ディレクトリ、loopback、relay は無効、Web UI と plugins は有効、モデルは固定の応答を返すローカルのサーバー）に、`git archive` で取り出して `npm ci` した作業ツリーを導入した。ZCode は、一時ディレクトリでビルドした 3.18.2 のランタイム（下の「ZCode 3.18.2 への追従」）を `PASEO_ZCODE_RUNTIME` で使った。ヘッドレス Chromium（1400×900）で次を確かめた。
+  - Settings → Plugins の行と設定のページの見出しに、マニフェストの `ZCode Provider` と説明が出る。設定のページには、ホストのタブとして Runtime・Account・Timeline・Diagnostics がアイコン付きで並ぶ。
+  - Account は、3.18.2 の Server でサインインしていない状態を示し、Region に Global と China mainland を出した。
+  - ZCode のエージェントの入力欄に、Plan のトグルがアイコン付きで出て、ツールチップは `Plan` である。押すと有効の色になり、Paseo が保存したエージェントの `providerOptions.plan_mode` が `true` になった。もう一度押すと `false` に戻った。
+  - `/goal` を送ると、一定間隔の読み出しなしに Goal のピル（`Goal <1m`、0.16 の上向きのシェブロン付き）が出た。ポップオーバーは `In progress`、経過秒、反復の題を示した。停止すると、ピルのアイコンが一時停止に変わった。
+  - プラグインのログとブラウザの console に、エラーは無かった。検証の後に daemon とモデルのサーバーを止め、起動したプロセスが残っていないことと、この端末の `~/.zcode` が変わっていないことを確かめた。
+- **SDK**：開発 SDK を 0.16.2 にし、`npm run typecheck`、`npm test`（29 ファイル、287 tests）、`npm run build` が成功した。
+- **上流**：`git clone --shared` で作った v0.16.2（`2ee30f4`）の clone に対し、`NODE_PATH` を外して `npm run test:upstream` を実行した。0.16 で無くなった `setFeature` を `applyOptions` に置き換え、全項目が成功した。`NODE_PATH` を外すのは、mise で入れた Paseo CLI の `NODE_PATH` から `zod` が解決され、準備前の複製で `zod` が見つからないことの確認が成り立たないためである。
+
 # Paseo 0.16 で、保存した `plan_mode` を持つセッションを開けない（2026-11-20）
 
 [Issue #108](https://github.com/supermomonga/paseo-plugin-zcode-provider/issues/108) の対応。Paseo 0.16.1 の daemon では、ZCode のセッションで会話を始めると `ZCode operation failed (INVALID_CONFIGURATION)` になった。daemon を再起動した後は、保存したエージェントの履歴も開けなかった。

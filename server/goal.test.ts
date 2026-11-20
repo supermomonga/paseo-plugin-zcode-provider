@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GoalState } from "./vendor/zcode/packages/shared/src/zcode-protocol-v4/snapshot.js";
-import { GoalDirectory, goalView } from "./goal.js";
+import { GoalDirectory, goalView, serveGoals } from "./goal.js";
 import {
   formatGoalElapsed,
   goalInProgress,
@@ -107,14 +107,33 @@ describe("goalView", () => {
   });
 });
 
+// A session whose goal the test changes, as the V4 state would.
+function source(initial: GoalState | null = null) {
+  let current = initial;
+  const watchers = new Set<() => void>();
+  return {
+    read: () => current,
+    watch(changed: () => void) {
+      watchers.add(changed);
+      return () => watchers.delete(changed);
+    },
+    set(next: GoalState | null) {
+      current = next;
+      for (const changed of watchers) changed();
+    },
+    watchers,
+  };
+}
+const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
+
 describe("GoalDirectory", () => {
   it("lists the goals of the registered sessions", () => {
     const directory = new GoalDirectory();
-    let current: GoalState | null = null;
-    directory.register("agent-1", () => current);
-    directory.register("agent-2", () => goal({ status: "paused" }));
+    const first = source();
+    directory.register("agent-1", first);
+    directory.register("agent-2", source(goal({ status: "paused" })));
     expect(directory.views(0).map((v) => v.agentId)).toEqual(["agent-2"]);
-    current = goal();
+    first.set(goal());
     expect(directory.views(0).map((v) => [v.agentId, v.status])).toEqual([
       ["agent-1", "active"],
       ["agent-2", "paused"],
@@ -123,14 +142,77 @@ describe("GoalDirectory", () => {
 
   it("keeps an agent's newer session when the older one closes", () => {
     const directory = new GoalDirectory();
-    const forgetOld = directory.register("agent-1", () => goal());
-    const forgetNew = directory.register("agent-1", () =>
-      goal({ status: "paused" }),
+    const older = source(goal());
+    const forgetOld = directory.register("agent-1", older);
+    const forgetNew = directory.register(
+      "agent-1",
+      source(goal({ status: "paused" })),
     );
     forgetOld();
+    expect(older.watchers.size).toBe(0);
     expect(directory.views(0)).toMatchObject([{ status: "paused" }]);
     forgetNew();
     expect(directory.views(0)).toEqual([]);
+  });
+
+  it("tells once per tick when goals or open sessions change", async () => {
+    const directory = new GoalDirectory();
+    let calls = 0;
+    const stop = directory.watch(() => calls++);
+    const session = source();
+    const forget = directory.register("agent-1", session);
+    session.set(goal());
+    session.set(goal({ status: "verifying" }));
+    expect(calls).toBe(0);
+    await tick();
+    expect(calls).toBe(1);
+    session.set(goal({ status: "verified" }));
+    await tick();
+    expect(calls).toBe(2);
+    forget();
+    await tick();
+    expect(calls).toBe(3);
+    // A closed session's late change and a replaced session's are ignored.
+    session.set(goal());
+    const older = source(goal());
+    directory.register("agent-2", older);
+    directory.register("agent-2", source(goal()));
+    await tick();
+    expect(calls).toBe(4);
+    older.set(goal({ status: "paused" }));
+    await tick();
+    expect(calls).toBe(4);
+    stop();
+    directory.register("agent-3", source(goal()));
+    await tick();
+    expect(calls).toBe(4);
+  });
+});
+
+describe("serveGoals", () => {
+  it("sends the goals now and after each change until released", async () => {
+    const directory = new GoalDirectory();
+    const session = source(goal());
+    directory.register("agent-1", session);
+    const events: Array<{ goals: unknown[] }> = [];
+    const released = new AbortController();
+    serveGoals(directory)(
+      {},
+      {
+        push: async (event) => void events.push(event),
+        signal: released.signal,
+      },
+    );
+    expect(events).toMatchObject([{ goals: [{ status: "active" }] }]);
+    session.set(goal({ status: "paused", activeRunStartedAtMs: null }));
+    await tick();
+    expect(events.at(-1)).toMatchObject({
+      goals: [{ agentId: "agent-1", status: "paused", running: false }],
+    });
+    released.abort();
+    session.set(goal());
+    await tick();
+    expect(events).toHaveLength(2);
   });
 });
 

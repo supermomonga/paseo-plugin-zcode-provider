@@ -26,7 +26,23 @@ export function rowTimeline(
   switch (row.kind) {
     case "turnHeader":
       return;
-    case "userInput":
+    case "userInput": {
+      // From 3.18 another ZCode session (the Session tools) or a Desktop
+      // extension can send input. Paseo's user messages carry no sender, so it
+      // is shown as a notice that names it rather than as the user's message.
+      const sender =
+        row.source?.kind === "session"
+          ? `ZCode session ${row.source.sessionId}`
+          : row.source?.kind === "extension"
+            ? `ZCode extension ${row.source.pluginId}`
+            : undefined;
+      if (sender)
+        return {
+          id,
+          type: "notification",
+          level: "info",
+          message: `${sender} sent: ${row.text}`,
+        };
       return row.origin === "realUser"
         ? {
             id,
@@ -44,6 +60,7 @@ export function rowTimeline(
             ...(clientMessageId ? { clientMessageId } : {}),
           }
         : { id, type: "notification", level: "info", message: row.text };
+    }
     case "assistantText":
       return {
         id,
@@ -162,6 +179,15 @@ export function rowTimeline(
       };
     case "hookInvocation":
       return hookTimeline(id, row);
+    case "unreadable":
+      // ZCode 3.18 replaces a row of a snapshot or history page that this
+      // version's schemas cannot read, instead of rejecting the whole frame.
+      return {
+        id,
+        type: "notification",
+        level: "warning",
+        message: `Part of this ZCode conversation cannot be shown (${row.sourceKind}). Update the ZCode Provider plugin to show it.`,
+      };
     case "timelineMarker":
       // Paseo appends every notification it receives, so a changing row is
       // reported once, in its final state.
@@ -245,6 +271,10 @@ export function presentInteraction(
   const p = interaction.payload,
     id = interaction.interactionId;
   if (p.kind === "workspaceHookReview") return;
+  // ZCode 3.18 offers to install a plugin only to clients that declare
+  // pluginDiscoveryUi, which this provider does not, and strips the request
+  // from their snapshots.
+  if (p.kind === "pluginInstall") return;
   if (p.kind === "permission") {
     const options = p.options.filter((o) => o.optionId !== "fullAccess");
     const actions: ProviderPermissionAction[] = options.map((o) => {
@@ -481,5 +511,8 @@ function markerText(marker: TimelineMarkerPayload): string {
       return `ZCode is retrying the model request (attempt ${marker.attempt}).`;
     case "checkpointRestored":
       return "ZCode restored a file checkpoint.";
+    // The first turn of a task that ZCode Desktop started in a worktree.
+    case "worktreeCreated":
+      return `ZCode created the worktree ${marker.path} at ${marker.sha.slice(0, 12)}.`;
   }
 }

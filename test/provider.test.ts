@@ -32,7 +32,7 @@ it("accepts only after ACK even if rows and terminal state arrive first", async 
     ),
   ).toHaveLength(1);
 });
-it("hides the shared Browser and Computer Use tool from every input", async () => {
+it("hides the shared Browser and Computer Use tool and the Session tools that start work from every input", async () => {
   const f = await fixture();
   await f.open();
   await f.prompt();
@@ -45,7 +45,13 @@ it("hides the shared Browser and Computer Use tool from every input", async () =
     .map((c) => c.params.envelope.payload);
   expect(payloads).toHaveLength(2);
   for (const payload of payloads)
-    expect(payload.toolDisallowlist).toEqual(["mcp__node_repl__js"]);
+    expect(payload.toolDisallowlist).toEqual([
+      "mcp__node_repl__js",
+      "CreateSession",
+      "ForkSession",
+      "SendToSession",
+      "InterruptSession",
+    ]);
 });
 it("aggregates guide input and emits complete row snapshots with stable IDs", async () => {
   const f = await fixture();
@@ -901,4 +907,47 @@ it("offers guarded mode only on ZCode 3.15.1 and later", async () => {
       (c) => c.params?.envelope?.type === "switchCollaborationMode",
     )?.params.envelope.payload,
   ).toEqual({ mode: "guarded" });
+});
+
+// ZCode 3.18 sends a row this provider's schemas cannot read as it is; the
+// snapshot keeps it as a placeholder instead of failing the whole frame.
+it("opens a conversation that has a row of an unknown kind", async () => {
+  const f = await fixture();
+  const row = { ...f.host.rowBase(), kind: "futureRow", detail: "x" };
+  f.host.state.rows.window.push(row as never);
+  f.host.state.rows.totalCount = f.host.state.rows.window.length;
+  const ready = await f.open();
+  expect(ready.type).toBe("session.ready");
+  expect(
+    f.events.find(
+      (e) =>
+        e.type === "timeline.item" && e.item.id === `zcode:row:${row.rowId}`,
+    ),
+  ).toMatchObject({
+    item: { type: "notification", level: "warning" },
+  });
+});
+
+// ZCode 3.18 refuses input for a model it cannot use before admitting it.
+it("says why ZCode refused the input when its model is unavailable", async () => {
+  const f = await fixture();
+  await f.open();
+  f.host.failAdmission = "rejected";
+  f.host.rejectionReason = "modelUnavailable";
+  expect(await f.prompt("m1")).toMatchObject({
+    result: {
+      type: "failed",
+      error: {
+        code: "MODEL_UNAVAILABLE",
+        message: expect.stringMatching(
+          /^ZCode cannot use the selected model\./,
+        ),
+      },
+    },
+  });
+  f.host.rejectionReason = "somethingElse";
+  expect(await f.prompt("m2")).toMatchObject({
+    result: { error: { code: "NATIVE_INPUT_REJECTED" } },
+  });
+  expect(f.events.some((e) => e.type === "session.runtime_failed")).toBe(false);
 });

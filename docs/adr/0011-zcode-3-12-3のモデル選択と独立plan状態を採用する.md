@@ -12,6 +12,8 @@ links:
     kind: amends
   - target: 13
     kind: amendedby
+  - target: 30
+    kind: amendedby
 ---
 
 # ZCode 3.12.3のモデル選択と独立Plan状態を採用する

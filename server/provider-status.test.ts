@@ -59,7 +59,7 @@ describe("provider status", () => {
 
   it("is unavailable until the managed runtime is set up", async () => {
     const message =
-      "ZCode runtime is not set up. Install it in Settings → Plugins → zcode-provider → Settings → Runtime.";
+      "ZCode runtime is not set up. Install it in Settings → Plugins → ZCode Provider → Runtime.";
     const status = createRuntimeStatus({
       discover: async () => {
         throw new AdapterError("RUNTIME_SETUP_REQUIRED", message);

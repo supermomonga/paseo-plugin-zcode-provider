@@ -9,7 +9,7 @@ import {
 } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/snapshot.js";
 import type { ConversationDelta } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/delta.js";
 import type {
-  ConversationRow,
+  WireConversationRow as ConversationRow,
   TurnHeaderRow,
 } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/rows.js";
 import type { ConversationTopicWireCandidate } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/transport.js";
@@ -79,6 +79,8 @@ export class FakeBridge implements HostBridge {
   activeProductTurn?: string;
   deferConsumption = false;
   failAdmission?: "rejected" | "unknown";
+  /** The reason a rejected admission carries, such as 3.18's modelUnavailable. */
+  rejectionReason?: string;
   afterAdmit?: () => Promise<void>;
   private failures = new Set<(e: AdapterError) => void>();
   constructor(public current: SessionSnapshot) {
@@ -567,6 +569,9 @@ export class FakeBridge implements HostBridge {
               commandId,
               status: "rejected",
               revisionAtDecision: this.state.revision,
+              ...(this.rejectionReason
+                ? { reasonCode: this.rejectionReason }
+                : {}),
             };
             break;
           }
@@ -706,6 +711,9 @@ export class FakeBridge implements HostBridge {
               commandId,
               status: "rejected",
               revisionAtDecision: this.state.revision,
+              ...(this.rejectionReason
+                ? { reasonCode: this.rejectionReason }
+                : {}),
             };
             break;
           }

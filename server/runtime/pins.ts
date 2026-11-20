@@ -53,14 +53,15 @@ export const MANAGED_NODE_ARCHIVES: Readonly<
 };
 
 // Published by .github/workflows/zcode-runtime-release.yml from the pinned
-// source with patches/zcode applied (ADR 19). The same archive serves every
-// managed platform.
-export const MANAGED_ZCODE_VERSION = "3.17.2";
+// source with patches/zcode applied (ADR 19), with the credential store's
+// native module (ADR 32) and the Windows runtime hosts (ADR 33) added. The
+// same archive serves every managed platform.
+export const MANAGED_ZCODE_VERSION = "3.18.2";
 const MANAGED_ZCODE_RELEASE = `${MANAGED_ZCODE_VERSION}-paseo.1`;
 export const MANAGED_ZCODE_ARCHIVE: PinnedArchive = {
   url: `https://github.com/supermomonga/paseo-plugin-zcode-provider/releases/download/zcode-runtime-v${MANAGED_ZCODE_RELEASE}/zcode-runtime-${MANAGED_ZCODE_RELEASE}.tar.gz`,
-  sha256: "24e3a9b03260d7b800958ccba4cfdc8233eee67936170636da79d440245bd15d",
-  size: 83_086_942,
+  sha256: "b6c0126d2257da87313f47185f0292ef701623fbc56ad725e22db3ffa16e243d",
+  size: 92_314_940,
 };
 
 export function managedPlatform(

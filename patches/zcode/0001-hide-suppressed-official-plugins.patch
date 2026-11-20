@@ -9,7 +9,7 @@ the same way it skips suppressedBuiltins, without writing any configuration.
 
 Target: NodePluginAdapter.discoverPluginsSync in
 apps/zcode-cli/packages/adapters/src/plugins/index.ts, which every plugin
-discovery path uses (ZCode a9fe401eede6e6e5e01be9048679c206fe6f02d9).
+discovery path uses (ZCode fec975905a2abd4c07e35c40d51fa097a2258ec9).
 
 Remove when: ZCode offers an official per-process way to hide official
 plugins, for example when ZCODE_CUA_PRODUCT_HELPER=0 hides cached
@@ -18,10 +18,10 @@ computer-use as resolveOfficialPluginRoots says it should.
 License: Apache-2.0, the license of the modified ZCode source.
 
 diff --git a/apps/zcode-cli/packages/adapters/src/plugins/index.ts b/apps/zcode-cli/packages/adapters/src/plugins/index.ts
-index 8d86c28..7d5ecbf 100644
+index 0ce1089..66daa09 100644
 --- a/apps/zcode-cli/packages/adapters/src/plugins/index.ts
 +++ b/apps/zcode-cli/packages/adapters/src/plugins/index.ts
-@@ -156,7 +156,14 @@ export class NodePluginAdapter implements PluginPort {
+@@ -207,7 +207,14 @@ export class NodePluginAdapter implements PluginPort {
        // 用插件的权威 id（manifest 名 @ marketplace）过滤，不依赖缓存文件是否已被物理删除——
        // 这样即便 app 升级遗留了旧版本缓存目录、或会话内 facade 持有过时配置，被卸载的内置插件
        // 也不会被重新发现。仅作用于 official 源，inline/cache（市场安装）不受影响。

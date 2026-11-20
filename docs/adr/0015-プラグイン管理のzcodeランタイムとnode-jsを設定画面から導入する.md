@@ -16,6 +16,10 @@ links:
     kind: amendedby
   - target: 20
     kind: amendedby
+  - target: 32
+    kind: amendedby
+  - target: 33
+    kind: amendedby
 ---
 
 # プラグイン管理のZCodeランタイムとNode.jsを設定画面から導入する

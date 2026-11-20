@@ -8,9 +8,10 @@ import {
   type RuntimeDiagnostic,
 } from "./diagnostics.js";
 
-type TurnFailureCode = Extract<
-  ZCodeErrorCode,
-  "NATIVE_TURN_FAILED" | `MODEL_${string}`
+// MODEL_UNAVAILABLE refuses input before a turn starts; it is no turn failure.
+type TurnFailureCode = Exclude<
+  Extract<ZCodeErrorCode, "NATIVE_TURN_FAILED" | `MODEL_${string}`>,
+  "MODEL_UNAVAILABLE"
 >;
 
 // Reasons without an entry fall back to the attribution source.
@@ -43,7 +44,7 @@ const messages: Record<
   ],
   MODEL_AUTH_FAILED: [
     "The model provider is not signed in or rejected the credentials",
-    "Check the account and model providers in the Account tab of the zcode-provider Settings.",
+    "Check the account and model providers in Settings → Plugins → ZCode Provider → Account.",
   ],
   MODEL_CONTEXT_EXCEEDED: [
     "The conversation exceeds the model's context window",

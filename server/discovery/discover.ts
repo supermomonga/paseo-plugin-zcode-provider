@@ -75,7 +75,7 @@ async function configuredPaths(environment: NodeJS.ProcessEnv): Promise<{
   if (managed === undefined)
     throw new AdapterError(
       "RUNTIME_SETUP_REQUIRED",
-      "ZCode runtime is not set up. Install it in Settings → Plugins → zcode-provider → Settings → Runtime.",
+      "ZCode runtime is not set up. Install it in Settings → Plugins → ZCode Provider → Runtime.",
     );
   return { ...managed, source: "managed" };
 }

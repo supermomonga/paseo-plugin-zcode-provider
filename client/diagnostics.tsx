@@ -21,7 +21,7 @@ function Installation({ result, theme, compact }: SectionProps) {
           label="Install root"
           hint={
             result.source === "managed"
-              ? "Managed runtime installed from the Settings screen"
+              ? "Managed runtime installed from the Runtime settings"
               : "PASEO_ZCODE_RUNTIME"
           }
         >

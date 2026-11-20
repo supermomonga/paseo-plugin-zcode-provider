@@ -6,7 +6,6 @@ import type {
 } from "@getpaseo/plugin/client";
 import {
   formatGoalElapsed,
-  goalInProgress,
   goalStatusLabel,
   zcodeGoals,
   type GoalView,
@@ -14,17 +13,12 @@ import {
 
 /** The provider ID the agents of this plugin carry. */
 const PROVIDER = "zcode";
-/** The least time between two reads of the goals. */
-const READ_SPACING_MS = 1_000;
-/**
- * A goal in progress changes without its agent changing in Paseo, as when
- * ZCode titles it, and Paseo 0.15 gives the daemon no way to tell a client.
- */
-const IN_PROGRESS_READ_MS = 10_000;
+/** How long to wait before following the goals again after a failure. */
+const RESUBSCRIBE_MS = 5_000;
 
 export type GoalPillHost = Pick<
   PluginClientContext,
-  "addComposerPill" | "rpc" | "paseo"
+  "addComposerPill" | "subscribe" | "paseo"
 >;
 
 type Timer = ReturnType<typeof setTimeout>;
@@ -37,7 +31,7 @@ interface Pill {
   workspaceId: string;
   registration: PluginButtonRegistration;
   goal: GoalView;
-  /** This client's clock when the daemon answered. */
+  /** This client's clock when the daemon's goals arrived. */
   readAt: number;
   shown: { title: string; icon: string; label: string };
 }
@@ -82,7 +76,8 @@ function present(goal: GoalView, readAt: number, now: number): Pill["shown"] {
 
 /**
  * Shows a pill above the composer of every ZCode agent that has a goal, next
- * to Paseo's Tasks (ADR 27). Returns the cleanup.
+ * to Paseo's Tasks (ADR 27). The daemon sends the goals whenever they change
+ * (ADR 30). Returns the cleanup.
  */
 export function followGoals(
   client: GoalPillHost,
@@ -92,11 +87,11 @@ export function followGoals(
   const agents = new Map<string, string>();
   const pills = new Map<string, Pill>();
   const lifetime = new AbortController();
-  let stopped = false,
-    reading = false,
-    again = false,
-    lastRead = Number.NEGATIVE_INFINITY;
-  let readTimer: Timer | undefined, labelTimer: Timer | undefined;
+  /** The goals the daemon sent last, and when they arrived. */
+  let goals: readonly GoalView[] = [],
+    receivedAt = 0;
+  let stopped = false;
+  let retryTimer: Timer | undefined, labelTimer: Timer | undefined;
 
   const hide = (agentId: string) => {
     pills.get(agentId)?.registration.remove();
@@ -157,53 +152,52 @@ export function followGoals(
       labelTimer = setTimeout(scheduleLabels, next * 1000);
   };
 
-  const apply = (goals: readonly GoalView[]) => {
-    const readAt = Date.now();
+  /** Shows the goals of the agents whose workspace this client knows. */
+  const apply = () => {
     const current = new Set<string>();
     for (const goal of goals) {
       const workspaceId = agents.get(goal.agentId);
       if (workspaceId === undefined) continue;
       current.add(goal.agentId);
-      show(goal, workspaceId, readAt);
+      show(goal, workspaceId, receivedAt);
     }
     for (const agentId of [...pills.keys()])
       if (!current.has(agentId)) hide(agentId);
     scheduleLabels();
   };
 
-  const read = async () => {
-    reading = true;
-    lastRead = Date.now();
-    try {
-      const { goals } = await client.rpc(zcodeGoals, {});
-      if (!stopped) apply(goals);
-    } catch (error) {
-      // The pills keep what they show; the next read replaces it.
-      if (!stopped) console.error("Reading ZCode goals failed", error);
-    } finally {
-      reading = false;
-      if (!stopped) {
-        if (again) refresh();
-        else if ([...pills.values()].some((p) => goalInProgress(p.goal)))
-          readTimer = setTimeout(refresh, IN_PROGRESS_READ_MS);
-      }
-    }
-  };
-
-  /** Reads the goals now, or as soon as the spacing allows. */
-  function refresh() {
+  const follow = () => {
     if (stopped) return;
-    if (reading) {
-      again = true;
-      return;
-    }
-    again = false;
-    cancel(readTimer);
-    readTimer = undefined;
-    const wait = lastRead + READ_SPACING_MS - Date.now();
-    if (wait > 0) readTimer = setTimeout(refresh, wait);
-    else void read();
-  }
+    // A refused subscription can both reject `ready` and close.
+    let retried = false;
+    const retry = (error?: Error) => {
+      if (stopped || retried) return;
+      retried = true;
+      if (error) console.error("Following ZCode goals failed", error);
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        follow();
+      }, RESUBSCRIBE_MS);
+    };
+    const handle = client.subscribe(
+      zcodeGoals,
+      {},
+      (event) => {
+        if (stopped) return;
+        goals = event.goals;
+        receivedAt = Date.now();
+        apply();
+      },
+      {
+        signal: lifetime.signal,
+        // The pills keep what they show until the goals arrive again.
+        onClosed: ({ error }) => retry(error),
+      },
+    );
+    handle.ready.catch((error: unknown) =>
+      retry(error instanceof Error ? error : new Error(String(error))),
+    );
+  };
 
   const track = (agent: {
     id: string;
@@ -224,7 +218,7 @@ export function followGoals(
         snapshot: ({ entries }) => {
           agents.clear();
           for (const { agent } of entries) track(agent);
-          refresh();
+          apply();
         },
         update: (message) => {
           if (message.type !== "agent_update") return;
@@ -232,7 +226,7 @@ export function followGoals(
           if (update.kind === "remove") {
             agents.delete(update.agentId);
             hide(update.agentId);
-          } else if (track(update.agent)) refresh();
+          } else if (track(update.agent)) apply();
         },
       });
       return undefined;
@@ -241,10 +235,12 @@ export function followGoals(
       if (!stopped) console.error("Observing Paseo agents failed", error);
     });
 
+  follow();
+
   return () => {
     stopped = true;
     lifetime.abort();
-    cancel(readTimer);
+    cancel(retryTimer);
     cancel(labelTimer);
     for (const pill of pills.values()) pill.registration.remove();
     pills.clear();

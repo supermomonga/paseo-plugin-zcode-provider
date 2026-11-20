@@ -95,10 +95,7 @@ try {
     events.findLast((e) => e.type === "session.config").config;
   const assertMode = (mode, plan) => {
     assert.equal(current().mode, mode);
-    assert.equal(
-      current().settings.find((s) => s.id === "plan_mode").value,
-      plan,
-    );
+    assert.equal(current().providerOptions.plan_mode, plan);
   };
   const config = {
     cwd: directory,
@@ -158,10 +155,10 @@ try {
   }
   await configure({ thinkingOption: defaultModel.thinkingOptions[0].id });
   for (const mode of ["build", "edit", "yolo"]) {
-    await configure({ mode, settings: { plan_mode: true } });
+    await configure({ mode, providerOptions: { plan_mode: true } });
     assertMode(mode, true);
   }
-  await configure({ settings: { plan_mode: false } });
+  await configure({ providerOptions: { plan_mode: false } });
   assertMode("yolo", false);
   await close();
   console.log(
@@ -185,7 +182,7 @@ try {
       model: defaultModel.id,
       thinkingOption: defaultModel.thinkingOptions[0].id,
       mode,
-      settings: { plan_mode: true },
+      providerOptions: { plan_mode: true },
     });
     assertMode(mode, true);
     const clientMessageId = `plan-${mode}-${behavior}`;
@@ -222,9 +219,7 @@ try {
     assertMode(mode, behavior === "deny");
     savedSettings = {
       mode: current().mode,
-      settings: Object.fromEntries(
-        current().settings.map((setting) => [setting.id, setting.value]),
-      ),
+      providerOptions: current().providerOptions,
     };
     console.log(
       JSON.stringify({

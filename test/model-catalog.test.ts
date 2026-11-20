@@ -46,13 +46,13 @@ it("preserves native Plan state on resume and keeps mode independent", async () 
   expect(
     f.events.filter((e) => e.type === "session.config").at(-1),
   ).toMatchObject({
-    config: { mode: "build", settings: [{ id: "plan_mode", value: true }] },
+    config: { mode: "build", providerOptions: { plan_mode: true } },
   });
   await f.send({
     type: "session.configure",
     sessionId: "public",
     requestId: "plan",
-    changes: { settings: { plan_mode: false } },
+    changes: { providerOptions: { plan_mode: false } },
   });
   await f.wait((e) => e.type === "request.completed" && e.requestId === "plan");
   expect(f.host.state.config).toMatchObject({
@@ -78,7 +78,7 @@ it.each([
     f.host.state.config.mode = mode === "yolo" ? "build" : "yolo";
     f.host.state.config.planEnabled = !plan;
     const ready = await f.open(
-      { mode, settings: { plan_mode: plan } },
+      { mode, providerOptions: { plan_mode: plan } },
       {
         version: 3,
         data: { kind: "native", sessionId: "session-1", cwd: f.cwd },
@@ -89,53 +89,78 @@ it.each([
     const configs = f.events.filter((e) => e.type === "session.config");
     expect(configs).toHaveLength(1);
     expect(configs[0]).toMatchObject({
-      config: { mode, settings: [{ id: "plan_mode", value: plan }] },
+      config: { mode, providerOptions: { plan_mode: plan } },
     });
     expect(f.events.indexOf(configs[0]!)).toBeLessThan(f.events.indexOf(ready));
   },
 );
 
-// Paseo 0.16 passes the saved options in `providerOptions` and repeats them in
-// `settings` (Issue #108).
-it.each([false, true])(
-  "reapplies Plan %s that Paseo passes in providerOptions on resume",
-  async (plan) => {
-    const f = await providerFixture();
-    cleanup.push(f.close);
-    f.host.state.config.planEnabled = !plan;
-    const ready = await f.open(
-      {
-        mode: "build",
-        settings: { plan_mode: plan },
-        providerOptions: { plan_mode: plan },
-      },
-      {
-        version: 3,
-        data: { kind: "native", sessionId: "session-1", cwd: f.cwd },
-      },
-    );
-    expect(ready.type).toBe("session.ready");
-    expect(f.host.state.config).toMatchObject({ planEnabled: plan });
-  },
-);
-
-it("opens with Plan given only in providerOptions", async () => {
+// Paseo repeats the options in the deprecated `settings`; only
+// `providerOptions` is read.
+it("ignores Plan given only in the deprecated settings", async () => {
   const f = await providerFixture();
   cleanup.push(f.close);
-  const ready = await f.open({ providerOptions: { plan_mode: true } });
+  const ready = await f.open({ settings: { plan_mode: true } });
   expect(ready.type).toBe("session.ready");
-  expect(f.host.state.config).toMatchObject({ planEnabled: true });
+  expect(f.host.state.config).toMatchObject({ planEnabled: false });
 });
 
-// Paseo 0.15 passes the composer's Plan in `settings` and the provider defaults
-// from `config.json` in `providerOptions`.
-it("prefers the agent's Plan in settings over a default in providerOptions", async () => {
+it("reports Plan as a composer control with its value in providerOptions", async () => {
   const f = await providerFixture();
   cleanup.push(f.close);
-  const ready = await f.open({
-    settings: { plan_mode: false },
-    providerOptions: { plan_mode: true },
+  await f.open({ providerOptions: { plan_mode: true } });
+  const config = f.events.filter((e) => e.type === "session.config").at(-1);
+  expect(config).toMatchObject({
+    config: {
+      controls: [
+        {
+          type: "toggle",
+          key: "plan_mode",
+          label: "Plan",
+          icon: "list-todo",
+          defaultValue: false,
+        },
+      ],
+      providerOptions: { plan_mode: true },
+    },
   });
-  expect(ready.type).toBe("session.ready");
+  expect(config).not.toHaveProperty("config.settings");
+});
+
+// Paseo returns an option to the provider's default with `null`.
+it("turns Plan off when Paseo resets plan_mode", async () => {
+  const f = await providerFixture();
+  cleanup.push(f.close);
+  await f.open({ providerOptions: { plan_mode: true } });
+  expect(f.host.state.config).toMatchObject({ planEnabled: true });
+  await f.send({
+    type: "session.configure",
+    sessionId: "public",
+    requestId: "reset",
+    changes: { providerOptions: { plan_mode: null } },
+  });
+  await f.wait(
+    (e) => e.type === "request.completed" && e.requestId === "reset",
+  );
+  expect(f.host.state.config).toMatchObject({ planEnabled: false });
+  expect(
+    f.events.filter((e) => e.type === "session.config").at(-1),
+  ).toMatchObject({ config: { providerOptions: { plan_mode: false } } });
+});
+
+it.each([
+  ["an unknown option", { model_effort: "high" }],
+  ["a Plan that is not a boolean", { plan_mode: "on" }],
+])("rejects %s in a configuration change", async (_, providerOptions) => {
+  const f = await providerFixture();
+  cleanup.push(f.close);
+  await f.open();
+  await f.send({
+    type: "session.configure",
+    sessionId: "public",
+    requestId: "bad",
+    changes: { providerOptions },
+  });
+  await f.wait((e) => e.type === "request.failed" && e.requestId === "bad");
   expect(f.host.state.config).toMatchObject({ planEnabled: false });
 });

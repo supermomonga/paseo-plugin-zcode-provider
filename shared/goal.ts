@@ -1,4 +1,4 @@
-import { defineRpc } from "@getpaseo/plugin";
+import { defineSubscription } from "@getpaseo/plugin";
 import { z } from "zod";
 
 // ZCode's goal as its Desktop status panel shows it (ADR 27): one row per
@@ -36,11 +36,12 @@ export const goalViewSchema = z
   .strict();
 export type GoalView = z.output<typeof goalViewSchema>;
 
-// The goals of the agents that have a ZCode session open on this host.
-export const zcodeGoals = defineRpc({
-  name: "zcode.goals",
+// The goals of the agents that have a ZCode session open on this host: all of
+// them when the subscription starts and again whenever they change (ADR 30).
+export const zcodeGoals = defineSubscription({
+  name: "zcode.goals.watch",
   input: z.object({}).strict(),
-  output: z.object({ goals: z.array(goalViewSchema) }).strict(),
+  event: z.object({ goals: z.array(goalViewSchema) }).strict(),
 });
 
 /** A goal that can change without the agent's state changing in Paseo. */

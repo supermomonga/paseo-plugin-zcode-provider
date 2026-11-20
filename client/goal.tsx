@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import { type PluginButtonContentProps, useRpc } from "@getpaseo/plugin/client";
+import {
+  type PluginButtonContentProps,
+  useSubscription,
+} from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import {
   formatGoalElapsed,
@@ -12,9 +15,6 @@ import {
 import { goalElapsedSeconds } from "./goal-pills";
 
 type Theme = PluginButtonContentProps["theme"];
-
-/** How often the open popover reads a goal that is in progress. */
-const READ_MS = 3_000;
 
 function statusColor(status: GoalView["status"], theme: Theme): string {
   switch (status) {
@@ -112,34 +112,23 @@ function Iteration({
 export function GoalPopover(props: PluginButtonContentProps) {
   const { theme, layout } = props;
   const agentId = props.context === "agent" ? props.agentId : undefined;
-  const fetchGoals = useRpc(zcodeGoals);
+  // The daemon sends the goals now and whenever they change (ADR 30).
   const [read, setRead] = useState<
-    { goal: GoalView | null; readAt: number } | "failed" | undefined
+    { goal: GoalView | null; readAt: number } | undefined
   >();
   const [now, setNow] = useState(() => Date.now());
+  const receive = useCallback(
+    ({ goals }: { goals: GoalView[] }) =>
+      setRead({
+        goal: goals.find((g) => g.agentId === agentId) ?? null,
+        readAt: Date.now(),
+      }),
+    [agentId],
+  );
+  const subscription = useSubscription(zcodeGoals, {}, receive);
+  const failed = read === undefined && subscription.status === "error";
 
-  useEffect(() => {
-    let open = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      try {
-        const { goals } = await fetchGoals({});
-        if (!open) return;
-        const goal = goals.find((g) => g.agentId === agentId) ?? null;
-        setRead({ goal, readAt: Date.now() });
-        if (goal && goalInProgress(goal)) timer = setTimeout(load, READ_MS);
-      } catch {
-        if (open) setRead("failed");
-      }
-    };
-    void load();
-    return () => {
-      open = false;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [fetchGoals, agentId]);
-
-  const goal = typeof read === "object" ? read.goal : null;
+  const goal = read?.goal ?? null;
   const running = goal?.running === true;
   useEffect(() => {
     if (!running) return;
@@ -157,14 +146,14 @@ export function GoalPopover(props: PluginButtonContentProps) {
     gap: 12,
     ...(layout.compact ? {} : { width: 320 }),
   };
-  if (typeof read !== "object" || !goal)
+  if (!read || !goal)
     return (
       <View style={frame}>
         <Text style={muted}>
-          {read === undefined
-            ? "Loading…"
-            : read === "failed"
-              ? "The goal could not be read."
+          {failed
+            ? "The goal could not be read."
+            : read === undefined
+              ? "Loading…"
               : "This agent has no goal."}
         </Text>
       </View>

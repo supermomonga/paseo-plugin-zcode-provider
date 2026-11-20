@@ -68,6 +68,7 @@ const snapshot = {
 };
 
 class FakeHost implements SettingsHost {
+  readonly diagnostic = { appVersion: "3.18.2" };
   readonly calls: { method: string; args: readonly unknown[] }[] = [];
   session: unknown = {
     status: "authenticated",
@@ -87,6 +88,7 @@ class FakeHost implements SettingsHost {
   readonly handlers: Record<string, () => unknown> = {
     "oauth.restoreCachedSessionState": () => this.session,
     "oauth.getActiveProvider": () => this.family,
+    "oauth.getProviders": () => [{ id: "zai" }, { id: "zai_cn" }],
     "oauth.cancelPending": () => undefined,
     "setting.get": () => ({}),
     "provider-settings.getView": () => ({
