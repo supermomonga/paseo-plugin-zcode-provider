@@ -887,6 +887,8 @@ function publicError(error: unknown): ProviderError {
       "ZCode runtime is not set up. Install it in Settings → Plugins → ZCode Provider → Runtime.",
     AUTH_REQUIRED:
       "No ZCode model provider is usable. Sign in or add a provider in Settings → Plugins → ZCode Provider → Account.",
+    MODEL_UNAVAILABLE:
+      "ZCode cannot use the selected model. Choose another model, or check the account and model providers in Settings → Plugins → ZCode Provider → Account.",
     PERSISTENCE_VERSION_UNSUPPORTED:
       "ZCode persistence version is unsupported. Create a new Paseo ZCode session.",
     PERSISTENCE_INVALID:

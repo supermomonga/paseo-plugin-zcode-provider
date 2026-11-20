@@ -243,6 +243,11 @@ it("keeps the session usable when ZCode rejects the goal", async () => {
     ),
   ).toMatchObject({ result: { type: "failed" } });
   expect(f.events.some((e) => e.type === "session.runtime_failed")).toBe(false);
+  // ZCode 3.18 refuses a goal for a model it cannot use.
+  f.host.rejectionReason = "modelUnavailable";
+  expect(failure(await f.command("m3", "Ship it"))).toMatch(
+    /^ZCode cannot use the selected model\./,
+  );
   f.host.failAdmission = undefined;
   expect(await f.prompt("m2")).toMatchObject({ result: { type: "turn" } });
   await completeTurn(f.host);

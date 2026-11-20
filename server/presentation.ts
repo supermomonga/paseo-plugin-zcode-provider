@@ -26,7 +26,23 @@ export function rowTimeline(
   switch (row.kind) {
     case "turnHeader":
       return;
-    case "userInput":
+    case "userInput": {
+      // From 3.18 another ZCode session (the Session tools) or a Desktop
+      // extension can send input. Paseo's user messages carry no sender, so it
+      // is shown as a notice that names it rather than as the user's message.
+      const sender =
+        row.source?.kind === "session"
+          ? `ZCode session ${row.source.sessionId}`
+          : row.source?.kind === "extension"
+            ? `ZCode extension ${row.source.pluginId}`
+            : undefined;
+      if (sender)
+        return {
+          id,
+          type: "notification",
+          level: "info",
+          message: `${sender} sent: ${row.text}`,
+        };
       return row.origin === "realUser"
         ? {
             id,
@@ -44,6 +60,7 @@ export function rowTimeline(
             ...(clientMessageId ? { clientMessageId } : {}),
           }
         : { id, type: "notification", level: "info", message: row.text };
+    }
     case "assistantText":
       return {
         id,

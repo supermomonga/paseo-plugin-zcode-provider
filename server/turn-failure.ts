@@ -8,9 +8,10 @@ import {
   type RuntimeDiagnostic,
 } from "./diagnostics.js";
 
-type TurnFailureCode = Extract<
-  ZCodeErrorCode,
-  "NATIVE_TURN_FAILED" | `MODEL_${string}`
+// MODEL_UNAVAILABLE refuses input before a turn starts; it is no turn failure.
+type TurnFailureCode = Exclude<
+  Extract<ZCodeErrorCode, "NATIVE_TURN_FAILED" | `MODEL_${string}`>,
+  "MODEL_UNAVAILABLE"
 >;
 
 // Reasons without an entry fall back to the attribution source.

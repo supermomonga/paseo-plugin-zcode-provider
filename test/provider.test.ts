@@ -921,3 +921,27 @@ it("opens a conversation that has a row of an unknown kind", async () => {
     item: { type: "notification", level: "warning" },
   });
 });
+
+// ZCode 3.18 refuses input for a model it cannot use before admitting it.
+it("says why ZCode refused the input when its model is unavailable", async () => {
+  const f = await fixture();
+  await f.open();
+  f.host.failAdmission = "rejected";
+  f.host.rejectionReason = "modelUnavailable";
+  expect(await f.prompt("m1")).toMatchObject({
+    result: {
+      type: "failed",
+      error: {
+        code: "MODEL_UNAVAILABLE",
+        message: expect.stringMatching(
+          /^ZCode cannot use the selected model\./,
+        ),
+      },
+    },
+  });
+  f.host.rejectionReason = "somethingElse";
+  expect(await f.prompt("m2")).toMatchObject({
+    result: { error: { code: "NATIVE_INPUT_REJECTED" } },
+  });
+  expect(f.events.some((e) => e.type === "session.runtime_failed")).toBe(false);
+});

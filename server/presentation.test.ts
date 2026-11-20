@@ -376,3 +376,33 @@ it("does not present a plugin installation offer", () => {
     }),
   ).toBeUndefined();
 });
+
+it("names another ZCode session or an extension that sent input", () => {
+  const input = (source: object) =>
+    rowTimeline({
+      rowId: 12,
+      turnId: "p",
+      productTurnId: "p",
+      entityId: "e",
+      createdAt: 1,
+      createdAtSeq: 1,
+      kind: "userInput",
+      origin: "realUser",
+      text: "Run the tests",
+      source,
+    } as any);
+  expect(input({ kind: "session", sessionId: "sess_1" })).toEqual({
+    id: "zcode:row:12",
+    type: "notification",
+    level: "info",
+    message: "ZCode session sess_1 sent: Run the tests",
+  });
+  expect(input({ kind: "extension", pluginId: "acme" })).toMatchObject({
+    type: "notification",
+    message: "ZCode extension acme sent: Run the tests",
+  });
+  // A plugin view in Desktop sends for the user.
+  expect(
+    input({ kind: "pluginUi", pluginId: "acme", toolCallId: "t" }),
+  ).toMatchObject({ type: "user_message", text: "Run the tests" });
+});

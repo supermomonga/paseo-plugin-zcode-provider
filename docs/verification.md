@@ -21,6 +21,9 @@ Issue #104 の対応。
 - **サインイン後の家族**：3.18 の Desktop は、サインインしたプロバイダーではなく、`oauth.getAccountAvailability` が返すアカウントの家族から決める。選んである家族を保ち、無ければアカウントの最初の家族にし、どちらも無ければ何も選ばない（`packages/ui/src/root/oauthProviderFamilySelectionRefresh.ts`）。BigModel に結び付いていない中国本土のアカウントは家族を持たない。プラグインも 3.18 以降はこの規則に従い、3.18 より前のランタイムではこれまでどおりサインインした家族に切り替える。プランは、選んでいなければ個人の Coding Plan にする（これまでどおり）。
 - **今のプロバイダー**：`oauth.getActiveProvider` は `zai_cn` を返しうる。プラグインはこれを `zai`・`bigmodel` の列挙で読んでいたので、中国本土でサインインしたアカウントでは Account の画面と利用量の読み出しが失敗した。文字列として読み、家族は ZCode の `resolveProviderFamilyDomainFromOAuthProvider` と同じく `zai`・`bigmodel` だけを家族とみなす。画面の Region は、サインインしたプロバイダーから出す。
 
+- **使えないモデルでの入力**：3.18 は、セッションのモデルを使えないとき、`sendText`（`/compact` を含む）と `sendGoalCommand`・`resumeGoal` を受け付ける前に、`reasonCode: "modelUnavailable"` で拒否する（`prompt-turn.ts`、`handlers/goal-compact.ts`）。プラグインはこれまでどおり ZCode の文言を出さず、コード `MODEL_UNAVAILABLE` と、モデルの選び直しと Account の確認を促す固定の文言で返す（ADR 23 と同じ扱い）。ほかの拒否は `NATIVE_INPUT_REJECTED` のままである。
+- **ほかのセッションからの入力**：3.18 の Session のツール（`SendToSession`）や Desktop の拡張が送った入力は、`userInput` 行の `source` が `session`・`extension` になる。Paseo のユーザーのメッセージには送り手を表す項目が無いので、ユーザーの発言としては出さず、送り手（セッションの ID か拡張の ID）を書いた通知として出す。Desktop のプラグインの画面（`pluginUi`・`genUi`）からの入力は利用者の操作なので、これまでどおりユーザーのメッセージとして出す。
+
 ## 管理下ランタイムのパッチ（ADR 19）
 
 - `patches/zcode/0001-hide-suppressed-official-plugins.patch` は、3.18.2 にもそのまま当たる（51 行ずれる）。対象の commit を書き換え、行番号を合わせた差分に作り直した。

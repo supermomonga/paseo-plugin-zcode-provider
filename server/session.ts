@@ -83,6 +83,21 @@ interface Run {
   stopping?: Promise<void>;
   buffered: NativeSessionEvent[];
 }
+// ZCode 3.18 refuses input for a model it cannot use before admitting it
+// (prompt-turn.ts and handlers/goal-compact.ts). The native message is not
+// passed on (ADR 23).
+const MODEL_UNAVAILABLE_REASON_CODE = "modelUnavailable";
+function inputRejected(
+  ack: { reasonCode?: string },
+  message: string,
+): AdapterError {
+  return ack.reasonCode === MODEL_UNAVAILABLE_REASON_CODE
+    ? new AdapterError(
+        "MODEL_UNAVAILABLE",
+        "ZCode cannot use the selected model",
+      )
+    : new AdapterError("NATIVE_INPUT_REJECTED", message);
+}
 export class ZCodeSession {
   readonly id: string;
   private readonly conversation: Conversation;
@@ -716,10 +731,7 @@ export class ZCodeSession {
           { commandId },
         );
         if (["failed", "rejected", "stale", "noop"].includes(ack.status))
-          throw new AdapterError(
-            "NATIVE_INPUT_REJECTED",
-            "ZCode rejected the input",
-          );
+          throw inputRejected(ack, "ZCode rejected the input");
         if (
           ack.status !== "accepted" ||
           ack.result?.type !== "inputAccepted" ||
@@ -795,10 +807,7 @@ export class ZCodeSession {
                 { commandId },
               );
         if (ack.status !== "accepted")
-          throw new AdapterError(
-            "NATIVE_INPUT_REJECTED",
-            "ZCode rejected the goal command",
-          );
+          throw inputRejected(ack, "ZCode rejected the goal command");
       },
     );
   }
@@ -843,7 +852,7 @@ export class ZCodeSession {
   /**
    * Admits one input into a run. `send` prepares and issues the command; it
    * calls `sending` before the command leaves and throws
-   * NATIVE_INPUT_REJECTED when ZCode refuses it.
+   * NATIVE_INPUT_REJECTED or MODEL_UNAVAILABLE when ZCode refuses it.
    */
   private async admit(
     previous: Run | undefined,
@@ -903,7 +912,8 @@ export class ZCodeSession {
       if (
         !sent ||
         (error instanceof AdapterError &&
-          error.code === "NATIVE_INPUT_REJECTED")
+          (error.code === "NATIVE_INPUT_REJECTED" ||
+            error.code === "MODEL_UNAVAILABLE"))
       ) {
         run.inputs.delete(commandId);
         this.admissions.delete(commandId);
