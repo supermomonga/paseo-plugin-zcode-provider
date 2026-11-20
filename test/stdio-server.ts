@@ -25,6 +25,13 @@ if (scenario === "bad-hello") {
     if (end < 0) return;
     const ack = JSON.parse(header.subarray(0, end).toString());
     if (ack.type !== "zcode-hello-ack") process.exit(2);
+    // ZCode 3.18's Server without a usable credential store (ADR 32).
+    if (scenario === "credential-store") {
+      process.stderr.write(
+        "fatal: Error: Remote credential storage unavailable.\n  code: 'CREDENTIAL_SECURE_STORAGE_UNAVAILABLE'\n",
+      );
+      process.exit(1);
+    }
     process.stdin.off("data", handshake);
     const input = new Emitter<VSBuffer>(),
       close = new Emitter<void>();

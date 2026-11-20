@@ -14,6 +14,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { runMain, validateVersion } from "./releases/common.mjs";
 import { verifyAppliedZCodePatches } from "./apply-zcode-patches.mjs";
@@ -21,7 +22,8 @@ import { loadZCodeManifest } from "./zcode-manifest.mjs";
 
 // Repackages the official integrated CLI archive, built from the pinned source
 // with patches/zcode applied (ADR 19). Only upstream license material, the
-// patches and build provenance are added.
+// patches, build provenance and the credential store's native module (ADR 32)
+// are added.
 export const RUNTIME_TAG_PREFIX = "zcode-runtime-v";
 // <ZCode version>-paseo.<n>; n counts patch revisions of one ZCode version.
 // Untagged builds use n = 0 and are never published.
@@ -39,6 +41,53 @@ export const UPSTREAM_NOTICE_FILES = [
   "NOTICE.md",
   "THIRD-PARTY-NOTICES.md",
 ];
+
+// ZCode 3.18's Server opens the OS credential store at startup through the
+// native @napi-rs/keyring, which the integrated distribution leaves out
+// (ADR 32). Desktop stages it with the official
+// scripts/stage-credential-keyring.mjs; the archive gets it for every managed
+// platform, from the packages pnpm installed for the pinned lockfile.
+export const KEYRING_PLATFORMS = [
+  "darwin-arm64",
+  "linux-x64",
+  "linux-arm64",
+  "win32-x64",
+  "win32-arm64",
+];
+export const KEYRING_PACKAGE = "@napi-rs/keyring";
+
+async function stageCredentialStore(source, root) {
+  try {
+    await access(join(root, "node_modules", KEYRING_PACKAGE));
+    throw new Error(
+      `Official archive already contains ${KEYRING_PACKAGE}; review ADR 32`,
+    );
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const { stageCredentialKeyring, keyringPlatformPackage } = await import(
+    pathToFileURL(join(source, "scripts/stage-credential-keyring.mjs")).href
+  );
+  const packages = [];
+  for (const platformKey of KEYRING_PLATFORMS) {
+    await stageCredentialKeyring({
+      sourceRoot: source,
+      targetRoot: root,
+      platformKey,
+    });
+    packages.push(keyringPlatformPackage(platformKey));
+  }
+  const version = async (name) =>
+    JSON.parse(
+      await readFile(join(root, "node_modules", name, "package.json"), "utf8"),
+    ).version;
+  return Promise.all(
+    [KEYRING_PACKAGE, ...packages].map(async (name) => ({
+      name,
+      version: await version(name),
+    })),
+  );
+}
 
 export function parseRuntimeRelease(release) {
   const match = RELEASE_PATTERN.exec(release);
@@ -156,6 +205,7 @@ export async function packageRuntime({ source, out, tag }) {
       }
       await copyFile(join(source, file), join(root, file));
     }
+    const addedPackages = await stageCredentialStore(source, root);
     // Apache-2.0 section 4(b): ship the changes themselves with the build.
     await mkdir(join(root, "patches"));
     for (const { file, path } of patches)
@@ -183,6 +233,8 @@ export async function packageRuntime({ source, out, tag }) {
           build: {
             script: "scripts/build-zcode.mjs",
             officialArchiveSha256: upstreamSha256,
+            // Staged with scripts/stage-credential-keyring.mjs (ADR 32).
+            addedPackages,
             node: process.version,
             workflowRun: run,
           },

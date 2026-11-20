@@ -24,6 +24,9 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 - ZCode Sites（3.17.2 の公式プラグイン `zcode-site`）でのデプロイ。CLI は Bash から `node` で動き、認証は Server の公式の経路を使うので、プラグインからも使えるとみて隠していない。サインインした実ランタイムで `zcode-site list` を試していない。
 - Goal のピル（ADR 27）の、Desktop ネイティブ画面とモバイル実機での表示。確認したのは一時 daemon の Web UI（1400px と 420px）である。実モデルでのゴールの実行（検証の応答は固定のモデルで確かめた）、複数のクライアントを同時に開いた場合、200 件を超えるエージェントがあるホストも未確認。
 - `/compact`（ADR 28）の、実モデルでの圧縮と、圧縮の最中の停止。確認は固定の応答を返すモデルで行った。ターンの途中で ZCode が自動で行う圧縮の最中の停止も確かめていない。
+- 中国本土のサインイン（ZCode 3.18 の `zai_cn`）。BigModel に結び付いたアカウントで家族が `bigmodel` になること、結び付いていないアカウントで家族を選ばないことは、偽の Server でだけ確かめた。実アカウントでは試していない。
+- 公式プラグイン `design`（ZCode 3.18）。skill とフックだけで Desktop を要さないと見て隠していないが、実ランタイムで有効にして試していない。
+- ZCode 3.18 の Session のツールのうち残したもの（ListSessions・ReadSession・WaitSessions・ListProjects・RenameSession・SetSessionArchived・SetSessionPinned）の実際の動作。隠した四つがモデルに出ないことは `test:stdio-runtime` で確かめる（ADR 31）。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 
 ## 今回追加しない機能
@@ -31,6 +34,11 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 Browser/Computer Use（このプロバイダでは動かないため、ADR 19 でモデルから隠す。[検証記録](verification.md)）、一般的な rewind、独立した Paseo 子エージェント管理、Hook 信頼レビュー画面、Workflow 操作 UI、Goal の操作ボタン（一時停止・再開は `/goal` コマンドと停止で行う。表示はピルで対応済み、ADR 27）、ゴールを消す操作（V4 にコマンドが無い）、カスタム system prompt、非永続会話、モデルへの JSON Schema 出力制約。通常の ZCode tools / skills / MCP は native に委ねる。
 
 Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグイン API の範囲でのみ対応する。本体変更や別の表示への置き換えは提案・実装しない。新しい公開 API が導入された時に契約と実 UI の両方を再評価する。
+
+## Paseo 0.16 で使えないもの
+
+- **バックグラウンドタスクの一覧と停止**：Paseo 0.16 は、Claude Code・Codex・OpenCode v2 のバックグラウンドの作業を入力欄の上に出し、止められる（`background_work` イベントと `stopBackgroundWork`）。0.16.2 のプラグイン Provider の API とアダプターには、これに当たるものが無い。ZCode 側には、V4 の `backgroundWorks` と `cancelBackgroundWork`、3.18 の `subagents.running[].stopControl` と `stopSubagent` がある。Paseo がプラグインに開いたら、ツール呼び出しとしての表示から移す。
+- **プラグインギャラリー**：0.16 の組み込みのギャラリーは、`getpaseo/plugins` への申請を審査したプラグインだけを出す（PNG のアイコン、`OVERVIEW.md`、依存の固定などが要る）。外部への申請になるので、このリポジトリの変更とは別に扱う。
 
 ## Paseo 0.11 の公開 API の採用（ADR 18）
 

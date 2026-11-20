@@ -26,6 +26,13 @@ Issue #104 の対応。
 
 - **Session のツール（ADR 31）**：3.18 の Session のツールは、stdio の Server でも有効になる（`createLocalServices` が `appControlService` を常に作り、`appControlEnabled` が真になる）。このうち、ほかのセッションで作業を始める・止める CreateSession・ForkSession・SendToSession・InterruptSession を、すべての `sendText` の `toolDisallowlist` に加えた。ZCode はターンのツールをこの名前で除き（`turn-tool-visibility.ts`）、ToolSearch の候補もそこから作る。読み取りのツールと、名前の変更・アーカイブ・ピン留めは残す。
 
+## 資格情報ストア（ADR 32）
+
+- **起動しない**：一時ディレクトリでビルドした 3.18.2 の公式の配布物（`zcode-3.18.2.tar.gz`、sha256 `6b1e458f…`、Node.js 24.14.0、Linux x64）を、隔離した HOME で起動すると、Server は hello の直後に `fatal: Error: Remote credential storage unavailable`（`CREDENTIAL_SECURE_STORAGE_UNAVAILABLE`）で終了した。`test:stdio-runtime` は、カタログの取得で `NATIVE_PROTOCOL_ERROR` になった。配布物には、Agent の下に `@napi-rs/keyring` の JS だけがあり、Server から読める場所にもネイティブのパッケージにも無い。
+- **`--prepare-credentials`**：同じ配布物を `--prepare-credentials` 付きで起動すると `stdio mode ready` まで進み、`~/.zcode/v2/credential-secret`（0600、43 バイト）ができた。
+- **keyring**：`scripts/package-zcode-runtime.mjs` で 5 プラットフォーム分の `@napi-rs/keyring` 2.1.2 を加えた書庫（`zcode-runtime-3.18.2-paseo.0.tar.gz`、sha256 `c23f5f14…`、92,087,051 バイト）を展開し、`server/remote` からモジュールを解決して読み込めることを確かめた。この端末には使える OS のストアが無く、読み出しはネイティブ層の `Couldn't access platform storage` で失敗した。OS のストアに結び付いたデータでの起動は、確かめていない。
+- **実ランタイム**：この書庫に対し、プラグインの `test:stdio-runtime` が全項目を通った。公開済みの 3.17.2-paseo.1（sha256 `24e3a9b0…`）でも全項目が通り、3.18 より前の Server には `--prepare-credentials` を付けない。隔離したデータに `credential-secret` ができることも確かめる。`test:native-restore` は、これまでどおり失敗した（明示の設定の無い再開で `{ mode: "yolo", plan: false }`、期待は `{ mode: "edit", plan: true }`）。ADR 14 の保証の外の不具合は 3.18.2 でも残る。
+
 ## 管理下ランタイムのパッチ（ADR 19）
 
 - `patches/zcode/0001-hide-suppressed-official-plugins.patch` は、3.18.2 にもそのまま当たる（51 行ずれる）。対象の commit を書き換え、行番号を合わせた差分に作り直した。

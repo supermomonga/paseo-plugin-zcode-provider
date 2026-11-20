@@ -452,6 +452,16 @@ try {
   });
   const { catalog } = await wait((e) => e.type === "catalog");
   assert.ok(catalog.models.length);
+  // ZCode 3.18 opens its credential store before serving anything. Data that
+  // is not bound to the OS store gets a private key file from
+  // --prepare-credentials (ADR 32).
+  if (gte(identity.appVersion, "3.18.0"))
+    assert.ok(
+      (await readdir(join(directory, ".zcode"), { recursive: true })).some(
+        (file) => file.endsWith("credential-secret"),
+      ),
+      "The Server must prepare its private credential key",
+    );
   // Guarded ("Autonomous mode") exists from ZCode 3.15.1.
   const guarded = gte(identity.appVersion, "3.15.1");
   const contentFilter = gte(identity.appVersion, "3.17.1");
@@ -947,6 +957,12 @@ try {
           patched
             ? "unsupported plugins and tool hidden (patched runtime)"
             : "unsupported tool hidden, plugins visible (unpatched runtime)",
+          ...(gte(identity.appVersion, "3.18.0")
+            ? [
+                "Session tools that start or stop work hidden",
+                "Server started with --prepare-credentials",
+              ]
+            : []),
         ],
         model: "local deterministic fixture",
         sharedUserData: "not accessed",

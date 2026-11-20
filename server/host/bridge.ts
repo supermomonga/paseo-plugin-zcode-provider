@@ -28,6 +28,33 @@ import {
 import type { Logger } from "../logger.js";
 import { PROVIDER_VERSION } from "../build-info.js";
 import { UNSUPPORTED_CAPABILITY_ENVIRONMENT } from "../unsupported-capabilities.js";
+import { atLeast } from "../mapping.js";
+
+// ZCode 3.18's Server opens its credential store before it serves anything
+// (ADR 32). `--prepare-credentials`, which Desktop passes to the Servers it
+// starts on remote hosts, creates a private key file when the data directory
+// is not yet bound to the OS store; otherwise the Server uses that store.
+const CREDENTIAL_STORE_MINIMUM_APP_VERSION = "3.18.0";
+// The code of the Server's fatal error when it cannot open the store. Only
+// this fixed code is matched; the Server's output is never logged.
+const CREDENTIAL_STORE_FAILURE = "CREDENTIAL_SECURE_STORAGE_UNAVAILABLE";
+export function credentialStoreUnavailable(): AdapterError {
+  return new AdapterError(
+    "CREDENTIAL_STORE_UNAVAILABLE",
+    "ZCode could not open its credential store. When ZCode Desktop shares this machine's ZCode data, its key is in the system's credential store (Keychain, Credential Manager or Secret Service), which must be unlocked and reachable from the Paseo daemon.",
+  );
+}
+export function serverArguments(runtime: DiscoveredRuntime): string[] {
+  return [
+    runtime.paths.serverEntry,
+    ...(atLeast(
+      runtime.identity.appVersion,
+      CREDENTIAL_STORE_MINIMUM_APP_VERSION,
+    )
+      ? ["--prepare-credentials"]
+      : []),
+  ];
+}
 
 export type SettingsChannel =
   | "oauth"
@@ -104,6 +131,7 @@ export class ZCodeHostBridge implements HostBridge {
   private protocol?: SocketProtocol;
   private readonly ready: Promise<void>;
   private readonly subscriptions = new Set<HostSubscription>();
+  private credentialStoreFailed = false;
   private constructor(
     private readonly child: ChildProcessWithoutNullStreams,
     private readonly runtime: DiscoveredRuntime,
@@ -115,21 +143,37 @@ export class ZCodeHostBridge implements HostBridge {
         resolve();
         if (!this.closing)
           this.fail(
-            new AdapterError(
-              "NATIVE_EXITED",
-              "ZCode Server exited",
-              {},
-              {},
-              { ...this.diagnostic, exitCode: code ?? 1 },
-            ),
+            this.credentialStoreFailed
+              ? credentialStoreUnavailable()
+              : new AdapterError(
+                  "NATIVE_EXITED",
+                  "ZCode Server exited",
+                  {},
+                  {},
+                  { ...this.diagnostic, exitCode: code ?? 1 },
+                ),
           );
       });
     });
-    child.stderr.resume(); // Never log raw native output: it may contain credentials or prompts.
+    // Never log raw native output: it may contain credentials or prompts. Only
+    // the fixed code of a credential store failure is looked for.
+    let tail = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      tail = (tail + chunk.toString("utf8")).slice(-4096);
+      if (tail.includes(CREDENTIAL_STORE_FAILURE))
+        this.credentialStoreFailed = true;
+    });
     child.stdin.on("error", () =>
       this.fail(new AdapterError("NATIVE_EXITED", "ZCode Server input closed")),
     );
-    this.ready = this.initialize();
+    this.ready = this.initialize().catch(async (error: unknown) => {
+      // The Server exits right after the handshake; its stderr explains why.
+      await Promise.race([
+        this.exited,
+        new Promise((resolve) => setTimeout(resolve, 1000)),
+      ]);
+      throw this.credentialStoreFailed ? credentialStoreUnavailable() : error;
+    });
     void this.ready.catch((error) => this.fail(error));
   }
   static start(
@@ -139,7 +183,7 @@ export class ZCodeHostBridge implements HostBridge {
     workspace = runtime.paths.installRoot,
   ): ZCodeHostBridge {
     assertRuntimeSupported(runtime);
-    const child = spawn(runtime.paths.executable, [runtime.paths.serverEntry], {
+    const child = spawn(runtime.paths.executable, serverArguments(runtime), {
       cwd: workspace,
       env: {
         ...runtimeEnvironment(environment),

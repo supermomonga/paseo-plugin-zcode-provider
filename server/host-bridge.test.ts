@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import { ZCodeHostBridge } from "./host/bridge.js";
+import { serverArguments, ZCodeHostBridge } from "./host/bridge.js";
 import type { DiscoveredRuntime } from "./discovery/types.js";
 import { logger } from "./logger.js";
 let directory: string, runtime: DiscoveredRuntime;
@@ -155,4 +155,31 @@ it("closes active subscriptions through EOF without racing an unsubscribe RPC", 
   );
   await expect(bridge.close()).resolves.toBeUndefined();
   await expect(bridge.close()).resolves.toBeUndefined();
+});
+
+// ZCode 3.18 opens its credential store before serving anything (ADR 32).
+it("starts 3.18 Servers so that they prepare a credential key", () => {
+  const at = (appVersion: string) =>
+    serverArguments({
+      ...runtime,
+      identity: { ...runtime.identity, appVersion },
+    });
+  expect(at("3.17.2")).toEqual([runtime.paths.serverEntry]);
+  expect(at("3.18.2")).toEqual([
+    runtime.paths.serverEntry,
+    "--prepare-credentials",
+  ]);
+});
+it("reports a Server that cannot open its credential store", async () => {
+  const bridge = ZCodeHostBridge.start(runtime, logger, {
+    ...process.env,
+    STDIO_SCENARIO: "credential-store",
+  });
+  try {
+    await expect(
+      bridge.request("initialize", {}, z.unknown()),
+    ).rejects.toMatchObject({ code: "CREDENTIAL_STORE_UNAVAILABLE" });
+  } finally {
+    await bridge.close();
+  }
 });

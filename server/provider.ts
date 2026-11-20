@@ -26,7 +26,11 @@ import {
   discoverRuntime,
   runRuntimeSmoke,
 } from "./discovery/discover.js";
-import { ZCodeHostBridge, type HostBridge } from "./host/bridge.js";
+import {
+  credentialStoreUnavailable,
+  ZCodeHostBridge,
+  type HostBridge,
+} from "./host/bridge.js";
 import { createRuntimeStatus } from "./provider-status.js";
 import { logger } from "./logger.js";
 import { MINIMUM_ZCODE_VERSION } from "./discovery/manifest.js";
@@ -887,6 +891,7 @@ function publicError(error: unknown): ProviderError {
       "ZCode runtime is not set up. Install it in Settings → Plugins → ZCode Provider → Runtime.",
     AUTH_REQUIRED:
       "No ZCode model provider is usable. Sign in or add a provider in Settings → Plugins → ZCode Provider → Account.",
+    CREDENTIAL_STORE_UNAVAILABLE: credentialStoreUnavailable().message,
     MODEL_UNAVAILABLE:
       "ZCode cannot use the selected model. Choose another model, or check the account and model providers in Settings → Plugins → ZCode Provider → Account.",
     PERSISTENCE_VERSION_UNSUPPORTED:
