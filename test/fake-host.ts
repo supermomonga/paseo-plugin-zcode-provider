@@ -9,7 +9,7 @@ import {
 } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/snapshot.js";
 import type { ConversationDelta } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/delta.js";
 import type {
-  ConversationRow,
+  WireConversationRow as ConversationRow,
   TurnHeaderRow,
 } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/rows.js";
 import type { ConversationTopicWireCandidate } from "../server/vendor/zcode/packages/shared/src/zcode-protocol-v4/transport.js";

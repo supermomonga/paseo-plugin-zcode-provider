@@ -310,3 +310,69 @@ it("reports model changes with providers and without the reasoning level", () =>
     message: "Model switched magpie/GLM-5.3-Flash → magpie/auto/glm-5.3-flash",
   });
 });
+
+// ZCode 3.18 keeps a frame whose row it cannot parse and puts a placeholder in
+// its place (`displayConversationRowSchema`).
+it("shows a row that ZCode's schemas could not read as a warning", () => {
+  expect(
+    rowTimeline({
+      kind: "unreadable",
+      rowId: 10,
+      turnId: "p",
+      createdAt: 1,
+      createdAtSeq: 1,
+      sourceKind: "futureRow",
+    }),
+  ).toEqual({
+    id: "zcode:row:10",
+    type: "notification",
+    level: "warning",
+    message:
+      "Part of this ZCode conversation cannot be shown (futureRow). Update the ZCode Provider plugin to show it.",
+  });
+});
+
+it("reports the worktree of a task that ZCode Desktop started in one", () => {
+  expect(
+    rowTimeline({
+      rowId: 11,
+      turnId: "p",
+      productTurnId: "p",
+      entityId: "e",
+      createdAt: 1,
+      createdAtSeq: 1,
+      kind: "timelineMarker",
+      marker: {
+        type: "worktreeCreated",
+        path: "/work/.zcode/worktrees/task",
+        sha: "0123456789abcdef0123",
+        ref: null,
+        output: "",
+      },
+    } as any),
+  ).toMatchObject({
+    type: "notification",
+    message:
+      "ZCode created the worktree /work/.zcode/worktrees/task at 0123456789ab.",
+  });
+});
+
+it("does not present a plugin installation offer", () => {
+  expect(
+    presentInteraction({
+      interactionId: "install-1",
+      kind: "pluginInstall",
+      anchorRowId: null,
+      createdAt: 1,
+      payload: {
+        kind: "pluginInstall",
+        pluginId: "design@zcode-plugins-official",
+        name: "design",
+        reason: "Design checks",
+        action: "install",
+        scope: "user",
+        toolCallId: "tool-1",
+      },
+    }),
+  ).toBeUndefined();
+});

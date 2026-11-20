@@ -1,3 +1,26 @@
+# ZCode 3.18.2 への追従（2026-11-20）
+
+Issue #104 の対応。
+
+## 上流のソース
+
+- `git ls-remote --tags --refs https://github.com/zai-org/ZCode.git` は、`refs/tags/v3.18.2` に `fec975905a2abd4c07e35c40d51fa097a2258ec9` を示した。ルートの `package.json` は `3.18.2` で、`main` から辿れる。親は 3.18.1（`c5904686`）と 3.18.0（`b95ebaff`）の `chore: sync ZCode source` で、どちらもタグが無い。その前が `v3.17.2`（`a9fe401`）である。ソースの基準を `v3.18.2` に移した。
+- 同梱するファイルは 139 になった。`zcode-protocol-v4/command.ts` が読む `zcode-protocol/index.ts` が、3.18 で `app-control/contract.ts` を通して、非公開のワークスペースパッケージ `@zcode/session-control/contracts` を読むようになった。同期スクリプトに、`@zcode/session-control/contracts` と `#session-control/*` を相対パスに読み替える規則を加えた。
+
+## V4 の契約の変更とこのプロバイダ
+
+- **読めない行**：スナップショットの `rows.window` と `rows/range` の行は、`displayConversationRowSchema` で読むようになった。読めない行は、フレームを拒否せずに `kind: "unreadable"` の行に置き換わる（`rows.ts`）。差分（`row.appended`・`row.upserted`）は、これまでどおり厳密に読む。3.17.2 のスキーマのままだと、新しい種類の値（入力の出どころ `session`・`extension`、マーカー `worktreeCreated` など）を含むフレームで接続ごと失敗する。読めない行は、種類を添えた警告の通知として出す。
+- **新しいマーカー**：`worktreeCreated` は、Desktop が管理する worktree で始めたタスクの最初のターンに付く。worktree の場所と commit を通知に出す。
+- **新しい対話**：`pendingInteractions` の種類に `pluginInstall` が加わった。Server は、`clientHello` で `pluginDiscoveryUi` を宣言した接続にだけプラグインの導入を勧め、それ以外の接続のスナップショットからは取り除く（`conversation-topic-publisher.ts` の `pluginInstallSnapshotForConnection`）。このプロバイダは宣言しないので、表示しない。
+- **権限の確認**：`modeSwitch` と、選択肢 `allowAndSwitchGuarded`・`fullAccess` が加わった。どちらも `options` には入らず、`fullAccessOption` か `modeSwitch` で示される。`options` だけを出すこれまでの扱いで足りる。
+- **使っていない追加**：`stopSubagent`、キューの編集のロック（`lockQueueItemEdit` など）、`commands/query` の `turn`、`v4/conversation/contextComposition`、冷えた再開の `workspace`（管理された worktree のセッションだけに要る）。
+
+## 管理下ランタイムのパッチ（ADR 19）
+
+- `patches/zcode/0001-hide-suppressed-official-plugins.patch` は、3.18.2 にもそのまま当たる（51 行ずれる）。対象の commit を書き換え、行番号を合わせた差分に作り直した。
+- **まだ要るか**：要る。3.18.2 でも、公式プラグインを検出から外すのは、ユーザー設定の `suppressedBuiltins` だけである（`adapters/src/plugins/index.ts`）。`ZCODE_CUA_PRODUCT_HELPER=0` は、3.17.2 では `resolveOfficialPluginRoots` が Computer Use のキャッシュを外すのに使っていたが、3.18 ではこの関数から設定の参照が無くなり、Computer Use の broker（`services/src/node.ts`）と「元に戻す」の入口だけを止める。Browser Use は既定で有効（`defaultEnabled: true`）のままで、Visualize は 3.18 で既定で無効になったが、Desktop で有効にした利用者には `~/.zcode` を共有する管理下ランタイムでも出る。削除の条件（ZCode がプロセスごとに公式プラグインを隠す公式の手段を持つこと）は満たされていない。
+- **新しい公式プラグイン**：3.18 で増えたのは `design`（0.7.2）だけである。skill とフックとスクリプトだけで MCP サーバーを持たず、既定で無効である。Desktop のブラウザのデザインモードは、ホストのツールに有る場合だけ使う作りなので、隠さない。
+
 # Paseo 0.16.0〜0.16.2 への追従（2026-11-20）
 
 Issue #105〜#107 の対応。v0.15.4（`1c00b365`）と v0.16.2（`2ee30f4164af42ba209236ab3a31bf9532592fc3`）の `packages/plugin`、`plugin-provider.ts`、プラグインのコンパイラと準備処理を比べた。0.16.1 と 0.16.2 の変更履歴に、プラグインの API の変更は無い。

@@ -902,3 +902,22 @@ it("offers guarded mode only on ZCode 3.15.1 and later", async () => {
     )?.params.envelope.payload,
   ).toEqual({ mode: "guarded" });
 });
+
+// ZCode 3.18 sends a row this provider's schemas cannot read as it is; the
+// snapshot keeps it as a placeholder instead of failing the whole frame.
+it("opens a conversation that has a row of an unknown kind", async () => {
+  const f = await fixture();
+  const row = { ...f.host.rowBase(), kind: "futureRow", detail: "x" };
+  f.host.state.rows.window.push(row as never);
+  f.host.state.rows.totalCount = f.host.state.rows.window.length;
+  const ready = await f.open();
+  expect(ready.type).toBe("session.ready");
+  expect(
+    f.events.find(
+      (e) =>
+        e.type === "timeline.item" && e.item.id === `zcode:row:${row.rowId}`,
+    ),
+  ).toMatchObject({
+    item: { type: "notification", level: "warning" },
+  });
+});
