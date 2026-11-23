@@ -1,6 +1,6 @@
 // `/goal` and its alias `/target`. The Server's text input does not interpret
 // them: ZCode Desktop reads the command itself and sends a V4 goal command
-// (packages/ui/src/v4/slashCommands.ts at fec9759, unchanged since a9fe401).
+// (packages/ui/src/v4/slashCommands.ts at a4b4445, unchanged since a9fe401).
 // The first word decides, as there and in ZCode's terminal UI, so an objective
 // cannot begin with one of the action words.
 export type GoalCommand =

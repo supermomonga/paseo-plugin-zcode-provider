@@ -1,7 +1,7 @@
 import { gte, parse } from "semver";
 import type { RuntimeIdentity } from "./types.js";
 
-export const ZCODE_SOURCE_COMMIT = "fec975905a2abd4c07e35c40d51fa097a2258ec9";
+export const ZCODE_SOURCE_COMMIT = "a4b4445141eb7d3b3e99eada9292775383bfc44e";
 export const MINIMUM_ZCODE_VERSION = { app: "3.14.0", cli: "0.16.9" } as const;
 export const MINIMUM_NODE_VERSION = "24.14.0";
 
@@ -33,4 +33,4 @@ export function assessCompatibility(identity: RuntimeIdentity): {
 }
 
 // Last reviewed public changelog release; source versions are not releases.
-export const LAST_REVIEWED_ZCODE_RELEASE = "3.18.2";
+export const LAST_REVIEWED_ZCODE_RELEASE = "4.0.0";

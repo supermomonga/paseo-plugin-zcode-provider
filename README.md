@@ -84,7 +84,7 @@ export PASEO_ZCODE_NODE=/absolute/path/to/node       # ordinary Node.js 24.14.0 
 
 Session environment variables are forwarded, subject to ZCode's own proxy, certificate and runtime environment handling. As Desktop does, the plugin sets `ZCODE_APP_VERSION` to the runtime's ZCode version, so model requests report it instead of the CLI's version.
 
-The source baseline is `a9fe401eede6e6e5e01be9048679c206fe6f02d9` (ZCode 3.17.2, upstream tag `v3.17.2`). The managed runtime passed the stdio runtime contract on all five managed platforms in CI. See the [verification record](docs/verification.md) for exact coverage.
+The source baseline is `a4b4445141eb7d3b3e99eada9292775383bfc44e` (ZCode 4.0.0, upstream tag `v4.0.0`). The managed runtime passed the stdio runtime contract on all five managed platforms in CI. See the [verification record](docs/verification.md) for exact coverage.
 
 ## Behavior
 
