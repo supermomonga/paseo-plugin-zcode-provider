@@ -47,7 +47,7 @@ To publish a ZCode runtime, update the source baseline first, then push an annot
 npm run check:zcode-patches -- /absolute/ZCode   # read-only; CI runs it on the pinned source
 ```
 
-When a patch no longer applies to a new baseline, make the same change in an isolated checkout of the new source, regenerate the diff with `git diff`, keep the header, and run `test:stdio-runtime` on a runtime built from it. Its ADR 19 check places Computer Use, Browser Use and a control plugin in the isolated plugin cache, then requires the first two to be hidden from discovery and the model on a runtime whose `BUILD-INFO.json` lists the patch, and visible on an unpatched runtime. The per-turn `toolDisallowlist` is checked on both.
+When a patch no longer applies to a new baseline, make the same change in an isolated checkout of the new source, regenerate the diff with `git diff`, keep the header, and run `test:stdio-runtime` on a runtime built from it. Its ADR 19 check places Computer Use, Browser Use and a control plugin in the isolated plugin cache and lists them in the bundled marketplace partition, as Desktop does when it seeds them, then requires the first two to be hidden from discovery and the model on a runtime whose `BUILD-INFO.json` lists the patch, and visible on an unpatched runtime. The per-turn `toolDisallowlist` is checked on both. The patch changes every place that applies the user configuration's `suppressedBuiltins` to official plugins: plugin discovery and, from 4.0, `readEnabledPlugins` in `live-inventory.ts`, from which an open session's skill catalog and MCP configuration read the plugins of that partition. When a new baseline adds such a place, extend the patch.
 
 ## Build an isolated integrated CLI
 

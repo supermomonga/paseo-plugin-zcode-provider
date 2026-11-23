@@ -241,13 +241,12 @@ try {
   );
   // Official plugin caches as ZCode Desktop installs them into the shared
   // storage, plus a control that must stay visible (ADR 19).
+  const officialCache = join(
+    directory,
+    ".zcode/cli/plugins/cache/zcode-plugins-official",
+  );
   for (const [plugin, skill] of Object.entries(FIXTURE_PLUGINS)) {
-    const pluginRoot = join(
-      directory,
-      ".zcode/cli/plugins/cache/zcode-plugins-official",
-      plugin,
-      "0.0.0-fixture",
-    );
+    const pluginRoot = join(officialCache, plugin, "0.0.0-fixture");
     await mkdir(join(pluginRoot, ".zcode-plugin"), { recursive: true });
     await mkdir(join(pluginRoot, "skills", skill), { recursive: true });
     await writeFile(
@@ -263,6 +262,29 @@ try {
       `---\nname: ${skill}\ndescription: Contract fixture skill.\n---\n\nFixture.\n`,
     );
   }
+  // Desktop also lists the official plugins it seeded in the bundled
+  // marketplace partition (writeOfficialMarketplace in bundled-plugins.ts).
+  // Discovery then reads the official plugins from it, and from 4.0 so do an
+  // open session's skill catalog and MCP configuration (live-inventory.ts).
+  const marketplace = join(
+    directory,
+    ".zcode/cli/plugins/marketplaces/zcode-plugins-official",
+  );
+  await mkdir(marketplace, { recursive: true });
+  await writeFile(
+    join(marketplace, "bundled-marketplace.json"),
+    JSON.stringify({
+      version: 1,
+      manifest: {
+        name: "zcode-plugins-official",
+        plugins: Object.keys(FIXTURE_PLUGINS).map((name) => ({
+          name,
+          version: "0.0.0-fixture",
+          cachePath: join(officialCache, name, "0.0.0-fixture"),
+        })),
+      },
+    }),
+  );
   await writeFile(
     join(directory, ".zcode/cli/config.json"),
     JSON.stringify({
