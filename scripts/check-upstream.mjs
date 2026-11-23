@@ -665,6 +665,8 @@ async function checkContributions({
   const [source] = sources;
   assert.equal(source.id, "zcode");
   assert.match(source.id, /^[a-z][a-z0-9._-]*$/);
+  // Paseo 0.17.2 starts the card hidden where this provider is inactive.
+  assert.deepEqual(source.providers, ["zcode"]);
   assert.equal(typeof source.discover, "function");
   assert.equal(typeof source.fetch, "function");
   assert.equal(typeof source.input.parseAsync, "function");
