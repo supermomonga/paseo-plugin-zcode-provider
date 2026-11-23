@@ -170,10 +170,11 @@ it("starts 3.18 Servers so that they prepare a credential key", () => {
       identity: { ...runtime.identity, appVersion },
     });
   expect(at("3.17.2")).toEqual([runtime.paths.serverEntry]);
-  expect(at("3.18.2")).toEqual([
-    runtime.paths.serverEntry,
-    "--prepare-credentials",
-  ]);
+  for (const version of ["3.18.2", "4.0.0"])
+    expect(at(version)).toEqual([
+      runtime.paths.serverEntry,
+      "--prepare-credentials",
+    ]);
 });
 it("reports a Server that cannot open its credential store", async () => {
   const bridge = ZCodeHostBridge.start(runtime, logger, {
@@ -197,9 +198,10 @@ it("passes the bundled Windows runtime host to 3.18 Servers on Windows", () => {
   });
   const helper = windowsRuntimeHostPath(runtime.paths.installRoot, "arm64");
   const present = (path: string) => path === helper;
-  expect(
-    windowsRuntimeHostEnvironment(at("3.18.2"), {}, "win32", "arm64", present),
-  ).toEqual({ ZCODE_RUNTIME_HOST_PATH: helper });
+  for (const version of ["3.18.2", "4.0.0"])
+    expect(
+      windowsRuntimeHostEnvironment(at(version), {}, "win32", "arm64", present),
+    ).toEqual({ ZCODE_RUNTIME_HOST_PATH: helper });
   // Not needed before 3.18 or elsewhere; the daemon's own setting wins.
   expect(
     windowsRuntimeHostEnvironment(at("3.17.2"), {}, "win32", "arm64", present),

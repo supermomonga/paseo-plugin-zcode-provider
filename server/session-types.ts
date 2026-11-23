@@ -1,5 +1,6 @@
 import type {
   ProviderContent,
+  ProviderMetric,
   ProviderPermissionRequest,
   ProviderPermissionResponse,
   ProviderTimelineItem,
@@ -22,11 +23,14 @@ export type NativeSessionEvent =
     }
   | ({ type: "timeline"; turnId?: string } & NativeTimelineEntry)
   | { type: "usage_updated"; usage: ProviderUsage; turnId?: string }
+  | { type: "metrics_updated"; metrics: ProviderMetric[] }
   | {
       type: "turn_started" | "turn_completed" | "turn_canceled";
       turnId: string;
       usage?: ProviderUsage;
       reason?: string;
+      /** A completed turn's footer (ADR 36). */
+      metrics?: ProviderMetric[];
     }
   | {
       type: "turn_failed" | "runtime_failed";

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DiscoveredRuntime } from "./discovery/types.js";
 import { AdapterError } from "./errors.js";
 import { createRuntimeStatus } from "./provider-status.js";
+import type { SetupState } from "./runtime/managed.js";
 
 const runtime = (
   overrides: Partial<DiscoveredRuntime> = {},
@@ -32,17 +33,16 @@ const runtime = (
 });
 
 describe("provider status", () => {
-  it("reports the runtime in Paseo's diagnostic format without paths", async () => {
+  it("reports the runtime as rows of Paseo's diagnostic report without paths", async () => {
     const status = createRuntimeStatus({ discover: async () => runtime() });
     const result = await status({});
     expect(ProviderStatusSchema.parse(result)).toEqual(result);
     expect(result).toEqual({
       available: true,
       diagnostic: [
-        "ZCode",
-        "  Runtime: managed, Server 3.14.3, Agent 0.16.9",
-        "  Node.js: 24.21.0",
-        "  Platform: darwin-arm64",
+        "Runtime: managed, Server 3.14.3, Agent 0.16.9",
+        "Node.js: 24.21.0",
+        "Platform: darwin-arm64",
       ].join("\n"),
     });
     expect(result.diagnostic).not.toContain("/data/");
@@ -69,7 +69,7 @@ describe("provider status", () => {
     expect(ProviderStatusSchema.parse(result)).toEqual(result);
     expect(result).toEqual({
       available: false,
-      diagnostic: `ZCode\n  Error: ${message}`,
+      diagnostic: message,
     });
   });
 
@@ -84,7 +84,7 @@ describe("provider status", () => {
     });
     expect(await status()).toEqual({
       available: false,
-      diagnostic: "ZCode\n  Error: ZCode Server 3.13.0 is older than 3.14.0",
+      diagnostic: "ZCode Server 3.13.0 is older than 3.14.0",
     });
   });
 
@@ -97,8 +97,39 @@ describe("provider status", () => {
     const result = await status();
     expect(result).toEqual({
       available: false,
-      diagnostic: "ZCode\n  Error: ZCode runtime could not be inspected",
+      diagnostic: "ZCode runtime could not be inspected",
     });
+  });
+
+  it("inspects again once setup installs or removes the runtime", async () => {
+    const listeners = new Set<(state: SetupState) => void>();
+    const installer = {
+      subscribe(listener: (state: SetupState) => void) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const discover = vi.fn(async () => runtime());
+    const status = createRuntimeStatus({ discover, installer, now: () => 0 });
+    const notify = (state: SetupState) => {
+      for (const listener of listeners) listener(state);
+    };
+    await status();
+    notify({
+      state: "running",
+      component: "zcode",
+      phase: "download",
+      receivedBytes: 0,
+      totalBytes: 1,
+    });
+    await status();
+    expect(discover).toHaveBeenCalledTimes(1);
+    notify({ state: "succeeded" });
+    await status();
+    expect(discover).toHaveBeenCalledTimes(2);
+    notify({ state: "idle" });
+    await status();
+    expect(discover).toHaveBeenCalledTimes(3);
   });
 
   it("inspects the runtime once per interval", async () => {

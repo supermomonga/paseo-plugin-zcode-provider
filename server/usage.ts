@@ -58,13 +58,18 @@ type Snapshot = z.output<typeof snapshotSchema>;
 
 // Z.ai Team Plan reports CREDIT_LIMIT where BigModel reports TOKENS_LIMIT.
 const TOKEN_LIMITS = new Set(["TOKENS_LIMIT", "CREDIT_LIMIT"]);
+const HOUR_SECONDS = 3600;
+const WEEK_SECONDS = 7 * 24 * HOUR_SECONDS;
 // The windows ZCode Desktop shows, identified by ZCode's unit codes
-// (packages/ui/src/CodingPlanUsageRemainingPanel.tsx).
+// (packages/ui/src/CodingPlanUsageRemainingPanel.tsx): 3 hours, 5 months,
+// 6 weeks. Paseo forecasts a window from its length; a month has no fixed
+// length, so the monthly windows have none, as in Paseo's own sources.
 const WINDOWS: readonly {
   id: string;
   label: string;
   shortLabel: string;
   summary?: boolean;
+  durationSeconds?(limit: QuotaLimit): number | undefined;
   matches(limit: QuotaLimit): boolean;
 }[] = [
   {
@@ -72,6 +77,7 @@ const WINDOWS: readonly {
     label: "5-hour",
     shortLabel: "5h",
     summary: true,
+    durationSeconds: () => 5 * HOUR_SECONDS,
     matches: (limit) =>
       TOKEN_LIMITS.has(limit.type) && limit.unit === 3 && limit.number === 5,
   },
@@ -80,6 +86,10 @@ const WINDOWS: readonly {
     label: "Weekly",
     shortLabel: "wk",
     summary: true,
+    durationSeconds: ({ number = 1 }) =>
+      Number.isInteger(number) && number > 0
+        ? number * WEEK_SECONDS
+        : undefined,
     matches: (limit) => TOKEN_LIMITS.has(limit.type) && limit.unit === 6,
   },
   {
@@ -142,9 +152,18 @@ export function usageReport(snapshot: Snapshot): UsageReport {
   }
   const limits = snapshot.quota?.limits ?? [];
   const windows: UsageWindow[] = [];
-  for (const { matches, ...definition } of WINDOWS) {
+  for (const { matches, durationSeconds, ...definition } of WINDOWS) {
     const limit = limits.find(matches);
-    if (limit) windows.push(usageWindow(definition, limit));
+    if (!limit) continue;
+    const duration = durationSeconds?.(limit);
+    windows.push(
+      usageWindow(
+        duration === undefined
+          ? definition
+          : { ...definition, durationSeconds: duration },
+        limit,
+      ),
+    );
   }
   if (snapshot.mcpQuota)
     windows.push(
@@ -294,6 +313,9 @@ export function createUsageSource(
     id: "zcode",
     label: "ZCode",
     icon: "icon.svg",
+    // Paseo 0.17.2 starts the card hidden on hosts where this provider is
+    // disabled or reports itself unavailable.
+    providers: [ZCODE_PROVIDER_ID],
     input: inputSchema,
     async discover(scope: UsageScope): Promise<UsageAccount[]> {
       const found = await accounts();

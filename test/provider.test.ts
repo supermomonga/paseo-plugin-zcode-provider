@@ -279,6 +279,53 @@ it("reports cumulative usage without adding repeated snapshots", async () => {
     ),
   ).toHaveLength(1);
 });
+it("reports ZCode's turn and session metrics", async () => {
+  const f = await fixture();
+  await f.open();
+  await f.prompt();
+  await f.host.append({
+    ...f.host.rowBase(),
+    kind: "assistantText",
+    text: "done",
+    state: "complete",
+  });
+  await f.host.finish("completedSuccess", undefined, {
+    endedAt: 4_001,
+    activeMs: 3_000,
+    modelDurationMs: 2_000,
+    toolDurationMs: 500,
+    outputTokens: 120,
+    fileChanges: { additions: 7, deletions: 2, files: 2 },
+  });
+  const completed = await f.wait(
+    (e) => e.type === "session.turn" && e.state === "completed",
+  );
+  expect(completed).toMatchObject({
+    metrics: [
+      { label: "Model", value: "model (high)" },
+      { label: "Speed", value: "~60 tok/s" },
+      { label: "Elapsed", value: "4.0s" },
+      { label: "Worked", value: "3.0s" },
+      { label: "Model time", value: "2.0s" },
+      { label: "Tool time", value: "0.5s" },
+      { label: "Output tokens", value: "120" },
+      { label: "Files changed", value: "2 (+7 −2)" },
+    ],
+  });
+  expect(
+    f.events.filter((e) => e.type === "session.metrics").at(-1),
+  ).toMatchObject({ metrics: [{ label: "Tokens", value: "20 ↑ · 10 ↓" }] });
+});
+
+it("publishes session metrics only when Paseo offers them", async () => {
+  const f = await fixture(undefined, ["session.metrics"]);
+  await f.open();
+  await f.prompt();
+  await completeTurn(f.host);
+  await f.wait((e) => e.type === "session.turn" && e.state === "completed");
+  expect(f.events.some((e) => e.type === "session.metrics")).toBe(false);
+});
+
 it("announces background continuation without fabricating user input", async () => {
   const f = await fixture();
   await f.open();

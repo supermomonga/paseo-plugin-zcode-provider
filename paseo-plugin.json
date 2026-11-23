@@ -2,6 +2,6 @@
   "id": "zcode-provider",
   "name": "ZCode Provider",
   "description": "Use ZCode models, tools and conversations through the official stdio Server of the ZCode CLI.",
-  "requirements": { "paseo": ">=0.16.0" },
+  "requirements": { "paseo": ">=0.17.1" },
   "build": [["npm", "ci", "--include=dev"]]
 }

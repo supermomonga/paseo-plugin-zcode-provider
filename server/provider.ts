@@ -71,6 +71,7 @@ export const CAPABILITIES = [
   "session.can_stop_runtime",
   "session.configure",
   "session.list",
+  "session.metrics",
   "session.persistence",
   "permission",
 ] as const satisfies readonly ProviderCapability[];
@@ -138,6 +139,7 @@ export function createZCodeProvider(
   status: ProviderRegistration["status"] = createRuntimeStatus(),
   timeline: () => TimelinePreferences = () => defaultTimelinePreferences,
   goals = new GoalDirectory(),
+  installation?: ProviderRegistration["installation"],
 ): ProviderRegistration {
   return {
     id: "zcode",
@@ -145,9 +147,13 @@ export function createZCodeProvider(
     description:
       "ZCode workspace agent with native planning, tools, and model selection",
     icon: "icon.svg",
+    // Paseo links it from the provider page's Troubleshooting section.
+    docsUrl:
+      "https://github.com/supermomonga/paseo-plugin-zcode-provider#readme",
     // No `command`: Paseo would look it up on PATH, but the runtime is the
     // plugin's managed installation or the PASEO_ZCODE_* override.
     status,
+    ...(installation ? { installation } : {}),
     async connect(request) {
       if (!request.versions.includes(PROVIDER_PROTOCOL_VERSION))
         throw new Error("ZCode requires provider protocol version 1");
@@ -794,6 +800,16 @@ export class ZCodeConnection implements ProviderConnection {
           state: "started",
         });
         break;
+      case "metrics_updated":
+        // A Paseo that did not offer session.metrics closes the connection
+        // on this event.
+        if (this.capabilities.includes("session.metrics"))
+          this.emit({
+            type: "session.metrics",
+            sessionId: id,
+            metrics: event.metrics,
+          });
+        break;
       case "turn_completed":
       case "turn_canceled":
         this.emit({
@@ -801,6 +817,7 @@ export class ZCodeConnection implements ProviderConnection {
           sessionId: id,
           turnId: event.turnId,
           state: event.type === "turn_completed" ? "completed" : "canceled",
+          ...(event.metrics?.length ? { metrics: event.metrics } : {}),
         });
         break;
       case "turn_failed":

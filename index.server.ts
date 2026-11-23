@@ -2,7 +2,9 @@ import { homedir } from "node:os";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { AccountService } from "./server/account.js";
 import { GoalDirectory, serveGoals } from "./server/goal.js";
+import { createInstallation } from "./server/installation.js";
 import { createHost, createZCodeProvider } from "./server/provider.js";
+import { createRuntimeStatus } from "./server/provider-status.js";
 import { ManagedRuntimeInstaller } from "./server/runtime/managed.js";
 import { createRuntimeSetupHandlers } from "./server/runtime-setup.js";
 import { createDiagnosticsHandler } from "./server/status.js";
@@ -23,18 +25,21 @@ export default function contribute(server: PluginServerContext): () => void {
     server.registerSettings(zcodeTimelineSettings),
   );
   const goals = new GoalDirectory();
+  // The Runtime tab and Paseo's provider page share one setup job.
+  const installer = new ManagedRuntimeInstaller();
   server.registerProvider(
     createZCodeProvider(
       undefined,
       undefined,
-      undefined,
+      createRuntimeStatus({ installer }),
       timeline.current,
       goals,
+      createInstallation(installer),
     ),
   );
   server.handle(zcodeGoals, serveGoals(goals));
   server.handle(zcodeDiagnostics, createDiagnosticsHandler());
-  const setup = createRuntimeSetupHandlers(new ManagedRuntimeInstaller());
+  const setup = createRuntimeSetupHandlers(installer);
   server.handle(zcodeRuntimeStatus, setup.status);
   server.handle(zcodeRuntimeInstall, setup.install);
   server.handle(zcodeRuntimeRemove, setup.remove);

@@ -16,11 +16,11 @@ ZCode は統合 CLI を配布していないため、このリポジトリは `z
 
 Node.js は利用者のマシンが nodejs.org の公式成果物を直接取得します。このリポジトリは Node.js を再配布しません。
 
-`server/vendor/zcode` は [zai-org/ZCode](https://github.com/zai-org/ZCode/tree/fec975905a2abd4c07e35c40d51fa097a2258ec9) の RPC、V4 契約、wire 組み立てと純粋な差分適用、Desktop の Goal 欄の行と経過時間を求める純粋関数（`packages/ui/src/v4/conversationGoalSummaryModel.ts`、ADR 27）、および必要なスキーマ依存を含みます。第一者コードは [上流 LICENSE](server/vendor/zcode/LICENSE) の Apache-2.0、RPC と wire codec の VS Code 由来部分は [MIT の通知](server/vendor/zcode/THIRD-PARTY-NOTICES.md) の条件を保持します。[上流 NOTICE](server/vendor/zcode/NOTICE.md) は全文を保持しており、上流製品全体の説明です。そこに記載された全機能・依存がプラグインへ同梱されることを意味しません。
+`server/vendor/zcode` は [zai-org/ZCode](https://github.com/zai-org/ZCode/tree/a4b4445141eb7d3b3e99eada9292775383bfc44e) の RPC、V4 契約、wire 組み立てと純粋な差分適用、Desktop の Goal 欄の行と経過時間を求める純粋関数（`packages/ui/src/v4/conversationGoalSummaryModel.ts`、ADR 27）、および必要なスキーマ依存を含みます。第一者コードは [上流 LICENSE](server/vendor/zcode/LICENSE) の Apache-2.0、RPC と wire codec の VS Code 由来部分は [MIT の通知](server/vendor/zcode/THIRD-PARTY-NOTICES.md) の条件を保持します。[上流 NOTICE](server/vendor/zcode/NOTICE.md) は全文を保持しており、上流製品全体の説明です。そこに記載された全機能・依存がプラグインへ同梱されることを意味しません。
 
 ファイルごとの出典・SHA-256、private workspace import の変更、第三者通知の抽出範囲を [provenance.json](server/vendor/zcode/provenance.json) に記録しています。取得・照合は `scripts/sync-zcode-source.mjs` で行います。`npm run build` はこれらのライセンス・通知を `dist/licenses/zcode` にも配置します。
 
-開発 SDK は `@getpaseo/plugin@0.16.2` です。ビルドは `@getpaseo/plugin/server/provider` と `zod` を外部モジュールとして維持し、Paseo に解決させます。
+開発 SDK は `@getpaseo/plugin@0.17.3` です。ビルドは `@getpaseo/plugin/server/provider` と `zod` を外部モジュールとして維持し、Paseo に解決させます。
 
 `icon.svg` は [Paseo main c424f829 の glm-acp-agent.svg](https://github.com/getpaseo/paseo/blob/c424f82922fcd36aa9cc9e473644bca04417b420/packages/app/src/assets/acp-provider-icons/glm-acp-agent.svg) のコピーです。この SVG は [ACP Registry の glm-acp-agent/icon.svg](https://github.com/agentclientprotocol/registry/blob/f3826ddd6e35951ea9b7fd0cf43c35a30c3c64cd/glm-acp-agent/icon.svg) とバイト単位で一致します。ACP Registry は Apache-2.0 で配布されており、その [LICENSE](vendor/acp-registry/LICENSE) を保持しています。アイコンは変更していません。商標への権利や公式の承認を示すものではありません。
 

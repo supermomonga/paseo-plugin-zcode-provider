@@ -478,6 +478,7 @@ describe("sign-in", () => {
   it("keeps the chosen family on ZCode 3.18 and switches to the sign-in's before", async () => {
     for (const [appVersion, expected] of [
       ["3.18.2", "bigmodel"],
+      ["4.0.0", "bigmodel"],
       ["3.17.2", "zai"],
     ] as const) {
       const { host, account } = service();

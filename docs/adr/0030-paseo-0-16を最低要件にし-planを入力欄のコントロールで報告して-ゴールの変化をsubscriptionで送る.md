@@ -12,6 +12,8 @@ links:
     kind: amends
   - target: 27
     kind: amends
+  - target: 34
+    kind: amendedby
 ---
 
 # Paseo 0.16を最低要件にし、Planを入力欄のコントロールで報告して、ゴールの変化をsubscriptionで送る

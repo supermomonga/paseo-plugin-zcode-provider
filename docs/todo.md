@@ -17,7 +17,7 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 - プロキシや社内ミラーのみの環境での取得。現状は nodejs.org と GitHub への直接接続が必要で、失敗時は環境変数の上書きで回避する。
 - Desktop ネイティブ画面とモバイル実機での操作。Electron Helper / 通常 Node の両 daemon 起動と、実 Web UI の入力・質問・承認・停止・再起動復元は確認済み（[検証記録](verification.md)）。
 - macOS x64（管理下セットアップの対象外）、長時間ツール/MCP 子プロセスを含む異常終了時の回収は未検証。
-- native の長い会話・世代変更・子エージェントからの権限要求。background continuation は、`run_in_background` の Bash の結果が届くまでを契約試験で確認した。現在の契約試験の結果と実行確認を混同しない。
+- native の長い会話・世代変更・子エージェントからの権限要求。background continuation は、`run_in_background` の Bash と、バックグラウンドのサブエージェントの結果が届くまでを契約試験で確認した。現在の契約試験の結果と実行確認を混同しない。
 - アイドル時の解放（ADR 25）で、完了したがまだ届いていないバックグラウンドの結果が失われるか。固定ソースの V4 の状態は、届けた後も `resultPending` を残すので区別できない。ZCode が届けた項目を消すようになったら、扱いを見直す。
 - Desktop でアーカイブした会話。ZCode 3.16 の `session/list` はアーカイブを除かなくなり、Paseo の一覧にも出る。アーカイブはサービス側のタスク索引（`zcodeTaskService`）にあるので、公式サービスで除外できるか確認する。
 - プロジェクトの MCP の信頼（ZCode 3.17）。Desktop の Settings → MCP Servers で付けた信頼が、プラグインの Server のセッションにも効くか。保存先は共有の `~/.zcode/security/workspace-mcp-trust-v1.json` で、ローカルのワークスペースは解決済みのパスで識別される（ソースからの推定）。シンボリックリンク経由のフォルダーでは一致しない可能性がある。
@@ -26,6 +26,9 @@ Paseo・ZCode 本体の改変は禁止。対応範囲はこの Provider に限�
 - `/compact`（ADR 28）の、実モデルでの圧縮と、圧縮の最中の停止。確認は固定の応答を返すモデルで行った。ターンの途中で ZCode が自動で行う圧縮の最中の停止も確かめていない。
 - 中国本土のサインイン（ZCode 3.18 の `zai_cn`）。BigModel に結び付いたアカウントで家族が `bigmodel` になること、結び付いていないアカウントで家族を選ばないことは、偽の Server でだけ確かめた。実アカウントでは試していない。
 - 公式プラグイン `design`（ZCode 3.18）。skill とフックだけで Desktop を要さないと見て隠していないが、実ランタイムで有効にして試していない。
+- 文書系の公式プラグイン（`documents`・`pdf`・`presentations`・`spreadsheets`）。ZCode 4.0 で、仕上がりを画像で確かめるサブエージェント（`visual-judge`）が無くなり、LibreOffice を呼ぶスクリプトが加わった。Desktop は LibreOffice・Python などを自前で導入して Agent の `PATH` に足すが、それは Desktop のローカルの Host だけで、プラグインの Server では利用者の `PATH` にあるものを使う。Desktop を要さないと見て隠していないが、実ランタイムで文書を作って試していない。
+- プロジェクトのプラグインの信頼（ZCode 4.0）。プロジェクトの `.zcode/config.json` の `plugins.dirs` で宣言したプラグインは、利用者が Desktop の設定で信頼するまで無効になる（`workspace-plugin-trust`）。記録は Hook の信頼と同じ利用者のストアにあるので、Desktop で付けた信頼はプラグインの Server にも効くはずだが、試していない。V4 の状態には MCP や Hook のような未信頼の印が無いので、プラグインは警告を出せない。
+- GLM-5.4（ZCode 4.0 の変更履歴）。モデルの一覧は Server の `model-selection` と `provider-settings` から読み、画像入力の可否も ZCode のモデル設定（`inputFormat.supportsImage`）に従うので、プラグインに手当ては無い。GLM-5.4 は公開ソースの `config/provider/zcode-builtin.json` には無く、ZCode の配信する設定で加わる。Coding Plan のアカウントでの一覧と画像付きの入力は試していない。
 - ZCode 3.18 の Session のツールのうち残したもの（ListSessions・ReadSession・WaitSessions・ListProjects・RenameSession・SetSessionArchived・SetSessionPinned）の実際の動作。隠した四つがモデルに出ないことは `test:stdio-runtime` で確かめる（ADR 31）。
 - 統合 CLI の remote terminal 用 node-pty 配置。Provider はその terminal API を呼ばず、Agent Bash は検証済みだが、upstream 配布の問題として追跡する。
 
@@ -35,16 +38,19 @@ Browser/Computer Use（このプロバイダでは動かないため、ADR 19 �
 
 Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグイン API の範囲でのみ対応する。本体変更や別の表示への置き換えは提案・実装しない。新しい公開 API が導入された時に契約と実 UI の両方を再評価する。
 
-## Paseo 0.16 で使えないもの
+## Paseo 0.17 で使えないもの
 
-- **バックグラウンドタスクの一覧と停止**：Paseo 0.16 は、Claude Code・Codex・OpenCode v2 のバックグラウンドの作業を入力欄の上に出し、止められる（`background_work` イベントと `stopBackgroundWork`）。0.16.2 のプラグイン Provider の API とアダプターには、これに当たるものが無い。ZCode 側には、V4 の `backgroundWorks` と `cancelBackgroundWork`、3.18 の `subagents.running[].stopControl` と `stopSubagent` がある。Paseo がプラグインに開いたら、ツール呼び出しとしての表示から移す。
+- **バックグラウンドタスクの一覧と停止**：Paseo 0.16 は、Claude Code・Codex・OpenCode v2 のバックグラウンドの作業を入力欄の上に出し、止められる（`background_work` イベントと `stopBackgroundWork`）。0.17.3 のプラグイン Provider の API とアダプターにも、これに当たるものが無い。ZCode 側には、V4 の `backgroundWorks` と `cancelBackgroundWork`、3.18 の `subagents.running[].stopControl` と `stopSubagent` がある。Paseo がプラグインに開いたら、ツール呼び出しとしての表示から移す。ZCode 4.0 は、Desktop の設定「Always run subagents in the background」（共有の設定 `agentAlwaysBackgroundEnabled`、既定で有効）に従い、すべてのサブエージェントをバックグラウンドで動かす。Paseo の停止は前景のターンの `stop` で、サブエージェントは動き続け、結果は ZCode が自分で始めるターンで届く（Desktop は会話の上の欄から `stopSubagent` で止める。`apps/zcode-cli/docs/design/v2/tool/07-subagent.md`）。その間は `session.can_stop_runtime` が解放を拒む。この差は 4.0 で広がったので、Paseo の対応を優先して確かめる。
+- **プラグインが加える指示**：0.17.1 から、ほかのプラグインが `agent.open.before` の `appendSystemPrompt` でエージェントに指示を加えられる。アダプターはこれをシステムプロンプトにまとめて渡すが、ZCode の V4 の Server にはシステムプロンプトを渡す手段が無いので、`INVALID_CONFIGURATION` で断る（ADR 34）。指示を加えるプラグインを入れたホストでは、ZCode のエージェントを開けない。ZCode が公式の手段を持ったら見直す。
+- **ターンの入力トークンとキャッシュ**：0.17.2 のターンの統計のうち、入力トークンとキャッシュの命中率は、ZCode の `turnHeader` に無いので出さない（ADR 36）。ZCode のセッションの累計の差分は、ほかのクライアントからの要求を区別できない。
+- **開き直した履歴の統計**：このプラグインは、履歴を項目だけで再生し、ターンの完了を送らないので、開き直した履歴のターンには統計が付かない。
 - **プラグインギャラリー**：0.16 の組み込みのギャラリーは、`getpaseo/plugins` への申請を審査したプラグインだけを出す（PNG のアイコン、`OVERVIEW.md`、依存の固定などが要る）。外部への申請になるので、このリポジトリの変更とは別に扱う。
 
 ## Paseo 0.11 の公開 API の採用（ADR 18）
 
 `ProviderRegistration.status()` と usage source を採用した（[ADR 18](adr/0018-paseo-0-11のprovider-statusとusage-sourceでランタイムの可用性とcoding-planの利用量を表示する.md)）。残る項目は次のとおり。
 
-- **ZCode エージェント単位の利用量**：0.16.2 の Paseo も、プラグイン Provider のセッションでアカウントを探索しない（`plugin-provider.ts` の `PluginAgentSession` に `usageSession()` が無い）ため、エージェントのポップオーバーに利用量が出ない。プラグインはセッションの範囲の探索に対応済みなので、Paseo が探索するようになったら表示を確認する。
+- **ZCode エージェント単位の利用量**：0.17 の Paseo は、プラグイン Provider のセッションにも `usageSession()` を持たせたが、接続に使った起動（Provider の `command` から解決したもの）がある時だけ返す（`plugin-provider.ts` の `PluginAgentSession.usageSession`）。このプラグインは `command` を持たないので null になり、エージェントのポップオーバーに利用量が出ない。プラグインはセッションの範囲の探索に対応済みなので、Paseo が `command` の無い Provider でも探索するようになったら表示を確認する。
 - **Team Plan と Start Plan の利用量**：Desktop は Team Plan に組織とプロジェクトを含む動的なアカウントアクセスを渡し、Start Plan は残高として別に表示する。同じ経路を公式サービスで再現できるか確認してから対応する。
 - **サインイン状態の可用性**：`status()` はランタイムだけを検査する。未サインインやモデルが無い状態は、Server を起動しないと分からないため、従来どおりセッション作成時に知らせる。
-- **初期 usage**：0.10.3、0.11.0-beta.5、0.12.0 でも、`session.ready` 前に送った使用量は購読者へ再通知されない。0.16.2 のアダプターも、ready 前のイベントは履歴に積むだけで購読者へ流さない。0.11.0-beta.4 の変更（getpaseo/paseo#6089）は、初回ターン前のメーターをアプリ側で空表示にするものである。制約は残る。
+- **初期 usage**：0.10.3、0.11.0-beta.5、0.12.0 でも、`session.ready` 前に送った使用量は購読者へ再通知されない。0.17.3 のアダプターも、ready 前のイベントは履歴に積むだけで購読者へ流さない。0.11.0-beta.4 の変更（getpaseo/paseo#6089）は、初回ターン前のメーターをアプリ側で空表示にするものである。制約は残る。

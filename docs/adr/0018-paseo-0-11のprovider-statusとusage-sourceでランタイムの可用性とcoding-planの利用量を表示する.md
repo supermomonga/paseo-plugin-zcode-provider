@@ -10,6 +10,10 @@ links:
     kind: amends
   - target: 25
     kind: amendedby
+  - target: 34
+    kind: amendedby
+  - target: 35
+    kind: amendedby
 ---
 
 # Paseo 0.11のProvider statusとusage sourceでランタイムの可用性とCoding Planの利用量を表示する

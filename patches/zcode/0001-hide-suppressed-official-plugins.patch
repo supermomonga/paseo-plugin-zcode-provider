@@ -4,12 +4,21 @@ Purpose: paseo-plugin-zcode-provider (ADR 19) runs ZCode in a standalone
 Server that shares ~/.zcode with ZCode Desktop. Computer Use cannot start its
 Helper there and Browser Use has no browser, yet the skills that Desktop
 installed are still offered to the model. The provider lists such plugin IDs,
-comma-separated, in PASEO_ZCODE_SUPPRESSED_PLUGINS. Discovery then skips them
-the same way it skips suppressedBuiltins, without writing any configuration.
+comma-separated, in PASEO_ZCODE_SUPPRESSED_PLUGINS. Plugin discovery and the
+enabled plugins of an open session then skip them the same way they skip
+suppressedBuiltins, without writing any configuration.
 
-Target: NodePluginAdapter.discoverPluginsSync in
-apps/zcode-cli/packages/adapters/src/plugins/index.ts, which every plugin
-discovery path uses (ZCode fec975905a2abd4c07e35c40d51fa097a2258ec9).
+Target: the two places that apply suppressedBuiltins to official plugins in
+ZCode a4b4445141eb7d3b3e99eada9292775383bfc44e:
+- NodePluginAdapter.discoverPluginsSync in
+  apps/zcode-cli/packages/adapters/src/plugins/index.ts, which every plugin
+  discovery path uses;
+- readEnabledPlugins in
+  apps/zcode-cli/packages/adapters/src/plugins/live-inventory.ts (4.0), from
+  which an open session's skill catalog and MCP configuration read the
+  official plugins listed in the bundled marketplace partition. It has no
+  discovery request, so it reads the Agent process's environment, which the
+  Server passes on.
 
 Remove when: ZCode offers an official per-process way to hide official
 plugins, for example when ZCODE_CUA_PRODUCT_HELPER=0 hides cached
@@ -18,10 +27,10 @@ computer-use as resolveOfficialPluginRoots says it should.
 License: Apache-2.0, the license of the modified ZCode source.
 
 diff --git a/apps/zcode-cli/packages/adapters/src/plugins/index.ts b/apps/zcode-cli/packages/adapters/src/plugins/index.ts
-index 0ce1089..66daa09 100644
+index 48c211a..77ca7f3 100644
 --- a/apps/zcode-cli/packages/adapters/src/plugins/index.ts
 +++ b/apps/zcode-cli/packages/adapters/src/plugins/index.ts
-@@ -207,7 +207,14 @@ export class NodePluginAdapter implements PluginPort {
+@@ -208,7 +208,14 @@ export class NodePluginAdapter implements PluginPort {
        // 用插件的权威 id（manifest 名 @ marketplace）过滤，不依赖缓存文件是否已被物理删除——
        // 这样即便 app 升级遗留了旧版本缓存目录、或会话内 facade 持有过时配置，被卸载的内置插件
        // 也不会被重新发现。仅作用于 official 源，inline/cache（市场安装）不受影响。
@@ -37,3 +46,23 @@ index 0ce1089..66daa09 100644
          continue;
        }
        if (seen.has(loaded.id)) {
+diff --git a/apps/zcode-cli/packages/adapters/src/plugins/live-inventory.ts b/apps/zcode-cli/packages/adapters/src/plugins/live-inventory.ts
+index dd66069..74b4ed1 100644
+--- a/apps/zcode-cli/packages/adapters/src/plugins/live-inventory.ts
++++ b/apps/zcode-cli/packages/adapters/src/plugins/live-inventory.ts
+@@ -312,7 +312,14 @@ export async function readEnabledPlugins(
+     )
+       continue;
+     seen.add(loaded.id);
+-    if (loaded.source === "official" && input.plugins.suppressedBuiltins.includes(loaded.id))
++    if (
++      loaded.source === "official" &&
++      (input.plugins.suppressedBuiltins.includes(loaded.id) ||
++        // paseo-plugin-zcode-provider (ADR 19): hide official plugins that the provider cannot run.
++        (process.env.PASEO_ZCODE_SUPPRESSED_PLUGINS ?? "")
++          .split(",")
++          .some((id) => id.trim() === loaded.id))
++    )
+       continue;
+     if (
+       !(

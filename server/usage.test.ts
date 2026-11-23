@@ -198,6 +198,10 @@ describe("usage source discovery", () => {
     expect(starts).toBe(2);
   });
 
+  it("names the ZCode provider for Paseo's default visibility", () => {
+    expect(fixture().usage.source.providers).toEqual(["zcode"]);
+  });
+
   it("scopes session discovery to ZCode agents on the plan", async () => {
     const { usage } = fixture();
     const session = (provider: string, model?: string) =>
@@ -260,6 +264,7 @@ describe("usage source fetch", () => {
           label: "5-hour",
           shortLabel: "5h",
           summary: true,
+          durationSeconds: 5 * 3600,
           usedPct: 31,
           remainingPct: 69,
           resetsAt,
@@ -270,6 +275,7 @@ describe("usage source fetch", () => {
           label: "Weekly",
           shortLabel: "wk",
           summary: true,
+          durationSeconds: 7 * 86400,
           usedPct: 75,
           remainingPct: 25,
           resetsAt,
@@ -295,6 +301,28 @@ describe("usage source fetch", () => {
         },
       ],
     });
+  });
+
+  it("gives the token windows their length so Paseo can forecast them", () => {
+    const report = usageReport({
+      quota: {
+        level: "pro",
+        limits: [
+          limit("TOKENS_LIMIT", 6, 2, 10),
+          limit("TIME_LIMIT", 5, 1, 10),
+        ],
+      },
+    });
+    expect(report).toMatchObject({
+      status: "available",
+      windows: [
+        { id: "weekly", durationSeconds: 2 * 7 * 86400 },
+        { id: "tool_calls" },
+      ],
+    });
+    // A month has no fixed length.
+    if (report.status === "available")
+      expect(report.windows[1]).not.toHaveProperty("durationSeconds");
   });
 
   it("treats Team Plan credit limits as token windows", () => {

@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { rsort, valid } from "semver";
 import { z } from "zod";
 import { AdapterError } from "../errors.js";
 import {
@@ -134,6 +135,72 @@ export async function isInstalled(
   }
 }
 
+/**
+ * A component in the managed directory: the pinned one when it is installed,
+ * otherwise the newest earlier install that setup left behind (a plugin
+ * update pins a new version without installing it).
+ */
+export interface InstalledComponent {
+  /** The version its marker records. */
+  readonly version: string;
+  /** It is the pinned archive, not only the same version. */
+  readonly pinned: boolean;
+}
+
+export interface InstalledVersions {
+  readonly node?: InstalledComponent;
+  readonly zcode?: InstalledComponent;
+  /** Both pinned components are installed, so discovery can use them. */
+  readonly pinned: boolean;
+}
+
+export async function installedVersions(
+  layout: ManagedLayout,
+): Promise<InstalledVersions> {
+  const [node, zcode] = await Promise.all([
+    isInstalled(layout.node),
+    isInstalled(layout.zcode),
+  ]);
+  const earlier = { node: [] as string[], zcode: [] as string[] };
+  if (!node || !zcode)
+    for (const entry of await readdir(layout.root).catch(() => [])) {
+      const id = entry.startsWith("node-v")
+        ? "node"
+        : entry.startsWith("zcode-")
+          ? "zcode"
+          : undefined;
+      if (id === undefined) continue;
+      const version = await readMarker(join(layout.root, entry));
+      if (version !== undefined && valid(version)) earlier[id].push(version);
+    }
+  const pick = (
+    installed: boolean,
+    pinned: string,
+    found: string[],
+  ): InstalledComponent | undefined => {
+    if (installed) return { version: pinned, pinned: true };
+    const [newest] = rsort(found);
+    return newest === undefined
+      ? undefined
+      : { version: newest, pinned: false };
+  };
+  return {
+    node: pick(node, layout.node.version, earlier.node),
+    zcode: pick(zcode, layout.zcode.version, earlier.zcode),
+    pinned: node && zcode,
+  };
+}
+
+async function readMarker(directory: string): Promise<string | undefined> {
+  try {
+    return markerSchema.parse(
+      JSON.parse(await readFile(join(directory, MARKER), "utf8")),
+    ).version;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Paths for discovery when both pinned components are installed. */
 export async function resolveManagedRuntime(
   environment: NodeJS.ProcessEnv = process.env,
@@ -209,6 +276,7 @@ const setupFailure = (message: string, cause?: unknown) =>
  */
 export class ManagedRuntimeInstaller {
   private current: SetupState = { state: "idle" };
+  private readonly listeners = new Set<(state: SetupState) => void>();
   private job: Promise<void> | undefined;
   private readonly fetchImpl: typeof fetch;
   private readonly extract: (
@@ -244,23 +312,34 @@ export class ManagedRuntimeInstaller {
     return this.current;
   }
 
+  /** Calls `listener` with every change of the setup state. */
+  subscribe(listener: (state: SetupState) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private set(state: SetupState): void {
+    this.current = state;
+    for (const listener of this.listeners) listener(state);
+  }
+
   /** Starts setup unless it is already running; returns whether it started. */
   start(): boolean {
     if (this.job !== undefined) return false;
-    this.current = {
+    this.set({
       state: "running",
       component: "node",
       phase: "download",
       receivedBytes: 0,
       totalBytes: this.layout()?.node.archive.size ?? 0,
-    };
+    });
     this.job = this.install()
       .then(
         () => {
-          this.current = { state: "succeeded" };
+          this.set({ state: "succeeded" });
         },
         (error: unknown) => {
-          this.current = {
+          this.set({
             state: "failed",
             code:
               error instanceof AdapterError
@@ -270,7 +349,7 @@ export class ManagedRuntimeInstaller {
               error instanceof AdapterError
                 ? error.message
                 : "ZCode runtime setup failed",
-          };
+          });
         },
       )
       .finally(() => {
@@ -297,7 +376,7 @@ export class ManagedRuntimeInstaller {
         error,
       );
     }
-    this.current = { state: "idle" };
+    this.set({ state: "idle" });
   }
 
   private async install(): Promise<void> {
@@ -445,13 +524,13 @@ export class ManagedRuntimeInstaller {
     phase: SetupProgress["phase"],
     receivedBytes = component.archive.size,
   ): void {
-    this.current = {
+    this.set({
       state: "running",
       component: component.id,
       phase,
       receivedBytes,
       totalBytes: component.archive.size,
-    };
+    });
   }
 
   private async removeStaleVersions(layout: ManagedLayout): Promise<void> {

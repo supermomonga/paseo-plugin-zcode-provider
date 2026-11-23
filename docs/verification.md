@@ -1,3 +1,97 @@
+# ZCode 4.0.0 への追従（2026-11-23）
+
+Issue #115 の対応。
+
+## 上流のソース
+
+- `git ls-remote --tags --refs https://github.com/zai-org/ZCode.git` は、`refs/tags/v4.0.0` に `a4b4445141eb7d3b3e99eada9292775383bfc44e` を示した。ルートの `package.json` は `4.0.0` で、`main` から辿れる。親は `v3.18.2`（`fec9759`）で、間にタグの無い同期の commit は無い。ソースの基準を `v4.0.0` に移した（差分は 2,209 ファイル）。
+- 同梱するファイルは 139 のままで、同期スクリプトの読み替えの規則も足さずに済んだ。変わったのは、V4 の任意の項目の追加（下記）、`proxy-channel.ts` の「Method not found」の判定関数、アプリの設定（`replyLanguage`、`agentAlwaysBackgroundEnabled` など）とプラグインの情報（`workspaceTrust`、ストアの `regions`）のスキーマである。
+
+## V4 の契約の変更とこのプロバイダ
+
+- **追加は任意の項目だけ**：`backgroundWorks[].resultSummary`、`subagents.ended`、`goal.summaryHidden`、スナップショットと差分の `activitySummaryDismissed`・`completedActivityCount`、セッションの一覧の `hasCompactWork`、`deletionPreviewBatch` と通知 `v4/telemetry/turn-admission`。行（`rows.ts`）、対話、マーカー、ゴールの状態、`control`、`activeWorks` の種類、コマンドは変わらない。プラグインは同梱したスキーマで読むので、読み落としは無い。`summaryHidden` は公開ソースの UI でも使われていない。
+- **`lastError`（ADR 23）**：`ModelFailureReason` と帰属の列挙は変わらない。変更履歴の「プレーンテキストを提供元のエラーコードと見誤らない」は表示の修正で、プラグインは帰属の値をこれまでどおり検査してから出す。
+- **独立した圧縮**：4.0 の圧縮は `phase` を変えないが、`activeWorks` に `compact` が載る。プラグインのアイドルの判定は `activeWorks` が空であることを求めるので、変更は要らない（`test:stdio-runtime` の圧縮の項目が通る）。
+
+## サブエージェントは常にバックグラウンド
+
+- 4.0 の Agent（と別名の Task）は、`run_in_background` の引数を持たず、常にバックグラウンドで動く（`core/src/tool/handlers/agent.ts` の `createAgentToolEntry`）。stdio の Server は、アプリの設定 `agentAlwaysBackgroundEnabled`（Desktop の「Always run subagents in the background」、既定で有効）を Agent に渡す（`services/src/node.ts`）。共有の設定を書き換えることになるので、プラグインは変えない。
+- バックグラウンドのサブエージェントは `activeWorks` に載らず、`subagents.running` と `backgroundWorks` に載る。Agent を呼んだターンは完了し、結果は ZCode が自分で始めるターンで届く。`session.can_stop_runtime` はその間解放を拒む（ADR 25）。`test:stdio-runtime` に、サブエージェントのモデルへの要求を止めておき、ターンの完了後も解放を拒み、結果を届けるターンの後に許すことを確かめる項目を加えた。引数は、Agent が `run_in_background` を持つランタイム（3.18 以前）ではそれを付ける。
+- Paseo 0.17.3 のプラグインの API にも、バックグラウンドの作業を出す・止める手段が無い。ZCode 4.0 では、ツールの呼び出しとして出るサブエージェントを Paseo から止められない（[todo](todo.md)）。
+
+## サービスと起動
+
+- **Account と利用量（ADR 17・18）**：`oauth`・`setting`・`provider-settings`・`usage-stats` のメソッドと列挙は変わらない。`oauthService.ts` の変更は、サインインの有効期限をサーバーの時計で計るようにした内部の修正である。
+- **モデル**：GLM-5.4 は、公開ソースの `config/provider/zcode-builtin.json` には無く、ZCode が配信する設定（`provider-node` の `zcode-builtin-remote-synchronizer.ts`）で加わる。プラグインはモデルを Server から読み、画像入力の可否も ZCode のモデル設定に従うので、変更は要らない。
+- **Server の起動**：stdio の入口（`packages/server/src/entry-stdio.ts`）は、これまでどおり `--prepare-credentials` で鍵を用意する。資格情報のファイルの場所は `getCredentialsFilePath()` にまとめられ、`ZCODE_CREDENTIALS_FILE` があればそれを使う（Source Server Core だけが設定する）。`zcode-server-cli` は、同じマシンの Desktop が OS のストアに結び付けた場合に Server 自身のストアを使うようになったが、プラグインの使う stdio の Server には関係しない。Windows の補助（ADR 33）は、ソース（`main.cpp`）が変わったが、呼び出し方（`ZCODE_RUNTIME_HOST_PATH`）は同じである。
+- **ビルド**：`scripts/build-zcode.mjs`・`stage-credential-keyring.mjs`・`build-windows-runtime-host.mjs` は変わらない。Node.js は `>=24.0.0`、pnpm は 10.33.2 のままである。統合 CLI の配布物の配置（`MANAGED_ZCODE_FILES`）も変わらず、`@napi-rs/keyring` はまだ含まれない。
+- **版の判定**：3.18 以降で変わる扱い（`--prepare-credentials`、Windows の補助、サインイン後の家族）は semver で比べているので、4.0.0 でも 3.18 以降として扱う。テストに 4.0.0 を加えた。
+
+## 管理下ランタイムのパッチ（ADR 19）
+
+- `patches/zcode/0001-hide-suppressed-official-plugins.patch` は 4.0.0 にもそのまま当たる（1 行ずれる）。
+- **漏れ**：4.0 は、開いたセッションの skill の一覧と MCP の設定を、設定とプラグインの変化に追従する仕組み（`adapters/src/plugins/live-inventory.ts` の `readEnabledPlugins`、`skills/catalog.ts`、`mcp/config-loader.ts`）から読むようになった。ここは公式プラグインを、起動時の検出の結果ではなく bundled のマーケットプレイスのパーティション（Desktop が公式プラグインを入れるときに書く `marketplaces/zcode-plugins-official/bundled-marketplace.json`）から読み、`suppressedBuiltins` だけで外す。そのため、Desktop のデータを共有すると、パッチを当てたランタイムでも Computer Use と Browser Use の skill がモデルに出る。`test:stdio-runtime` の ADR 19 の準備に、Desktop と同じパーティションを加えると、元のパッチで作った 4.0.0 のランタイムは `computer-use:computer-use skill visibility` で失敗した。公開済みの 3.18.2-paseo.1 は、同じ準備でも全項目を通る。
+- **変更**：パッチに `readEnabledPlugins` の同じ判定を加えた（ADR 37）。この関数には検出の要求が無いので、Agent のプロセスの環境変数（Server が渡す）を読む。対象・目的・削除の条件の説明を書き直した。
+- **まだ要るか**：要る。4.0 でも、公式プラグインを外すのは利用者の設定の `suppressedBuiltins` だけで、プロセスごとに外す公式の手段は無い。`resolveOfficialPluginRoots` の `suppressedBuiltins` は「旧い呼び出し元のための引数」になった。4.0 で加わった、単独の CLI が Computer Use の broker をプロセスの中で動かす仕組み（`mintStandaloneCuaCredentialsIfEligible`）は、macOS と Windows の対話の CLI だけで、プロトコルのモード（`app-server`）では使わない。
+- **新しい公式プラグインは無い**：版が上がっただけである。文書系（`documents`・`pdf`・`presentations`・`spreadsheets`）は、仕上がりを画像で確かめるサブエージェント（`visual-judge`）が無くなり、LibreOffice を呼ぶスクリプトが加わった。Desktop を要さないので隠さない。プラグインのストアを地域で絞る変更（`regions`）は Desktop の画面だけに関わる。ツールで加わったのは MCP サーバーの接続を待つ `WaitForMcpServers` だけで、Session のツール（ADR 31）は変わらない。
+
+## 実ランタイム（Linux x64）
+
+- **ビルド**：`git clone --no-checkout` で作った一時ディレクトリの `a4b4445` に、`scripts/apply-zcode-patches.mjs` でパッチを当て、Node.js 24.14.0 と pnpm 10.33.2 で `pnpm install --frozen-lockfile`、`pnpm exec tsc -b packages/shared`、`ZCODE_ENV=production node scripts/build-zcode.mjs --base-url https://example.invalid/zcode/` を実行し、`scripts/package-zcode-runtime.mjs` で公開しない `4.0.0-paseo.0` を作った（Windows の補助は含めない）。CLI は 0.18.0 である。
+  - 元のパッチ（SHA-256 `b3d2ef1a…`）：公式の書庫 `6b632978c80e9a56820cdd52ba43d942adda79e0eb18f81ca79385ca3e8d76fc`、書庫 `9ec35e1918ca83f22e44f41127cab460e679b340d578fd900015ab9c54bb8c86`（90,766,383 バイト）、Agent `e3e5883e…`。
+  - 広げたパッチ（SHA-256 `0d522d0f…`）：公式の書庫 `1a6a2126a0bad3049440b1c6ace0b9b4621e607d8a56190c74f0948f2d6a44d4`、書庫 `d8e52b34def9de124959c1c53473b1d455d842236cd0966255eb921a60056bfc`（90,769,582 バイト）、Agent `08e12756…`、Server `bd039104…`（両方で同じ）。
+- **`test:stdio-runtime`**：元のパッチのランタイムは、これまでの準備では全項目を通り、bundled のパーティションを加えると上記のとおり失敗した。広げたパッチのランタイムは、パーティションとサブエージェントの項目を加えた全 30 項目を通った。公開済みの 3.18.2-paseo.1 を一時の `XDG_DATA_HOME` に `npm run setup:managed-runtime` で入れたもの（Node.js 24.21.0）も、全 30 項目を通った。
+- **`test:native-restore`**：これまでどおり失敗した（明示の設定の無い再開で `{ mode: "yolo", plan: false }`、期待は `{ mode: "edit", plan: true }`）。ADR 14 の保証の外の不具合は 4.0.0 でも残る。
+- **確かめていないこと**：パッチを当てないランタイムでの ADR 19 の項目、Windows と macOS、リリースのワークフローでのビルド、実モデル（`test:e2e`）、Paseo の停止がバックグラウンドのサブエージェントを止めないこと（ソースからの判断）。
+
+## 実モデルの E2E
+
+- 4.0.0-paseo.1 を固定した commit の CI で、`test:e2e` の `check-steering-runtime.mjs` が `stop-run running Bash: unexpected session.turn completed` で失敗し、再実行でも同じだった。直近のイベントは文章の行だけで、Bash の呼び出しが無かった。固定前の 3.18.2-paseo.1 では通っていた。
+- **原因**：4.0 の Bash は、前景で `sleep N`（N ≥ 25）から始まるコマンドを、フックと権限の前に拒否する（`core/src/tool/handlers/bash-semantics.ts` の `FOREGROUND_SLEEP_MIN_SECONDS`、設計は `apps/zcode-cli/docs/design/v2/tool/04-bash.md` の「前台 sleep 拦截」）。Bash の説明にもそう書かれる（`bash-prompt.ts`）。停止の試験が頼んだ `sleep 30` を、モデルは説明に従って実行しなかった。最初の `sleep 5` は閾値より短いので実行された。
+- **変更**：停止の試験の依頼を `sleep 20` にした。割り込みは Bash の実行中に送るので、20 秒で足りる。プラグインの動作は変わらない。
+
+## 公開と固定
+
+- **PR の CI**：PR #116 で、リリースのワークフローは 4.0.0 から書庫を作り、5 プラットフォーム（darwin-arm64、linux-x64、linux-arm64、win-x64、win-arm64）で `test:stdio-runtime` の全項目を通した。win-x64 と darwin-arm64 のログでも、`appVersion` が `4.0.0` で、バックグラウンドのサブエージェントと ADR 19 の項目が通ったことを確かめた。CI の契約試験（固定した 3.18.2-paseo.1）と実モデルの E2E も通った。
+- **公開**：`zcode-runtime-v4.0.0-paseo.1` を `99487fe` に push した。run 45196753039 が、ビルド、5 プラットフォームの検証、証明をして、latest ではないリリースとして公開した。
+- **書庫**：`zcode-runtime-4.0.0-paseo.1.tar.gz`、90,937,718 バイト、SHA-256 `20c044ebf19a2006cac09635daab1d880dd27d68ee1c3a2b0c0b770e174a6069`。取得した書庫は `SHA256SUMS` と一致し、`gh attestation verify` は、タグの `zcode-runtime-release.yml` とソース `99487fe` を示した。`BUILD-INFO.json` は、ソース `a4b4445`、パッチ（SHA-256 `0d522d0f…`）、公式の書庫 `0a7f9883…`、`@napi-rs/keyring` 2.1.2 と 5 つのネイティブのパッケージ、`tools/runtime-host/win32-x64/zcode-runtime-host.exe`（SHA-256 `e8be6957…`）と `win32-arm64`（`72ba9c10…`）を記録している。
+- **固定**：`server/runtime/pins.ts` をこの書庫にした。一時の `XDG_DATA_HOME` に `npm run setup:managed-runtime` で導入し（Linux x64）、管理下ランタイムとしての `test:stdio-runtime` が全項目を通った。既存の利用者は、Runtime の画面か、Paseo の Provider の画面の Update で導入し直す（ADR 35）。
+
+# Paseo 0.17.1〜0.17.3 への追従（2026-11-23）
+
+Issue #112〜#114 の対応。v0.16.2（`2ee30f4`）と v0.17.3（`dd7c0499a8c311fae7b3244722a64d73cc178e4a`）の `packages/plugin`、`packages/protocol`、`plugin-provider.ts`、usage source、プラグインのコンパイラと準備処理を比べた。0.17.0 は変更履歴に無く、0.17.3 はプラグインの API を変えていない。
+
+## 変更履歴とこのプロバイダ
+
+- **診断のレポート**：0.17 のアダプターは、Provider のラベルを見出しにし、起動コマンドの解決の行を加え、利用できる時は `status()` の `diagnostic` を一行ずつ字下げして、利用できない時は `Error:` の行の値にする（`getDiagnostic`、getpaseo/paseo#10487）。見出しと字下げを自分で付けていたこのプラグインでは、v0.17.3 に対する `test:upstream` で `ZCode\n  ZCode\n  Runtime: test` になった。`command` の無いこのプロバイダには、コマンドの解決の行は付かない。
+- **インストール**：`ProviderRegistration.installation`（`installUrl`・`updateUrl`・`inspect`・`checkForUpdates`・`update`）が加わった（getpaseo/paseo#9568）。Paseo は `inspect` を 30 秒、更新の確認を 1 時間使い回し、版が変わると確認をやり直す。Update のボタンは確認の結果にかかわらず出て、成功すると Provider を検出し直す（`provider-installations.ts`）。
+- **統計**：能力 `session.metrics`、イベント `session.metrics`、完了したターンの `metrics` が加わった（getpaseo/paseo#10496）。ターンに `Model` の行が無いと、daemon はエージェントのモデルの ID を付ける（`agent-manager.ts` の `settleTurnMetrics`）。このプラグインのモデルの ID は符号化した JSON なので、何も報告しないと `["paseo-e2e","GLM-5.3-Flash",null]` のような文字列が出る。
+- **利用量**：枠の長さ `durationSeconds` からの予測（getpaseo/paseo#10289）、source とアカウントの Provider の対応付けによるカードの初期表示（getpaseo/paseo#10491）が加わった。`isProviderActive` は Provider の `isAvailable` を使うので、このプラグインではランタイムの検出の結果になる。
+- **docs のリンク**：`docsUrl` が加わり、Provider の画面の Troubleshooting から開く。
+- **エージェント単位の利用量**：プラグインのセッションにも `usageSession()` が加わったが、接続に使った起動（Provider の `command` から解決したもの）がある時だけ返す。このプラグインは `command` を持たないので、ポップオーバーには利用量が出ない。
+- **プラグインの指示**：`agent.open.before` の `appendSystemPrompt` が加わり、アダプターはシステムプロンプトにまとめて渡す（getpaseo/paseo#9781）。組み込みのプラグインは使っていない。ZCode の V4 の Server にはシステムプロンプトを渡す手段が無いので、これまでどおり断る。
+- **変更が要らないもの**：steer は `prompt.steer` を取り決めた時だけ提供されるようになった（このプロバイダは取り決める）。Provider が閉じたセッションは開き直されるようになった（getpaseo/paseo#10153）。履歴の取り込みが `ImportedHistory` になった。思考の段階の既定値は、モデルが自分の選択肢を持つ時はそのモデルの既定値だけを使うようになった（このプロバイダは各モデルに既定値を付ける）。30 分ごとのモデル一覧の更新（getpaseo/paseo#10481）は、手動の更新と同じく一時の Server を起動して閉じる。コンパイラはサブプロセスで動くようになったが、`test:upstream` が読むファイルと引数は同じである。
+
+## 変更（ADR 34〜36）
+
+- **最低要件**：`requirements.paseo` を `>=0.17.1` にした。`test:upstream` は 0.16.2 の daemon が拒否することを確かめる。
+- **診断**：`status()` の `diagnostic` を、行だけ（利用できない時は理由だけ）にした（ADR 34）。
+- **利用量**：5 時間と週の枠に長さを付け、usage source に `providers: ["zcode"]` を付けた（ADR 34）。
+- **インストール**：管理下のディレクトリの印から版を読み、固定した版と比べ、Runtime の画面と同じ `ManagedRuntimeInstaller` で導入する `installation` を登録した。固定した版はリリース名（`3.18.2-paseo.1`）で、前の版は印の ZCode の版で示す。導入と削除の後は `status()` の使い回しをやめる（ADR 35）。
+- **統計**：`turnHeader` と `usage` から、ターンの `Model`・`Speed`・`Elapsed`・`Worked`・`Model time`・`Tool time`・`Output tokens`・`Files changed` と、セッションの `Tokens`・`Cache (last reply)` を報告する（ADR 36）。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-23）
+
+- **SDK**：開発 SDK を 0.17.3 にし、`npm run typecheck`、`npm test`、`npm run build`、`npm run format:check` が成功した。
+- **上流**：v0.17.3 の作業ツリー（`git worktree add --detach`）に対し、`NODE_PATH` を外して `npm run test:upstream` を実行し、全項目が成功した。加えた確認は、実アダプターの `getDiagnostic` の見出しと字下げと `Error:` の行、`installation` の `installUrl` と `inspect`、`turn_completed` の `metrics` と `session_metrics_updated`、コンパイルした登録の `docsUrl`・`installation`・usage source の `providers` である。
+- **実 UI**：`@getpaseo/cli@0.17.3` の一時 daemon（`env -i` で HOME・XDG・`PASEO_HOME` を一時ディレクトリにし、loopback のポート、relay は無効、Web UI と plugins は有効）に、作業ツリーの複製を導入した。ZCode のモデルは、固定の応答を返すローカルのサーバーにした。管理下のディレクトリには、前の版の導入を模した印（ZCode 3.17.2 と、SHA-256 の違う Node.js 24.21.0）だけを置いた。ヘッドレス Chromium（1400×900）で次を確かめた。
+  - Settings → Providers → ZCode に、Version `3.17.2 (Node.js 24.21.0)`、Update available `3.18.2-paseo.1 (Node.js 24.21.0)`、Update のボタン、Troubleshooting の Docs が出た。
+  - Diagnostic report は `ZCode` の見出しの下に `Error: ZCode runtime is not set up. …` を出した。
+  - Update を押すと、Node.js と ZCode ランタイムの取得・展開・検証の行が順に出て、`Installed ZCode runtime 3.18.2-paseo.1 (Node.js 24.21.0).` で終わった。版は `3.18.2-paseo.1 (Node.js 24.21.0)`、更新の確認は Up to date になり、前の版のディレクトリは消えた。Paseo はすぐに Provider を検出し直し、モデルの一覧（GLM-5.3-Flash、GLM-5.3）が出た。Diagnostic report は `Runtime: managed, Server 3.18.2, Agent 0.17.1`・`Node.js: 24.21.0`・`Platform: linux-x64` を字下げして出した。
+  - ZCode のエージェントのターンの Turn stats は、`Model: GLM-5.3-Flash (max)`・`Elapsed`・`Output tokens: 96` を出した。このランタイムは通常のターンにモデルの時間を記録しないので、`Speed` と `Model time` は出ない。最初の確認では ZCode の作業の時間（2.6s）が `Elapsed`（2.5s）より長く出たので、待ちがあって短い時だけ出すようにした。コンテキストの詳細には、`Tokens: 12.4K ↑ · 96 ↓` と `Cache (last reply): 89%`（緑）が出た。
+  - プラグインを読み込み直した後も、Paseo がセッションを開き直し、次のメッセージが完了した。daemon とブラウザのエラーは、読み込み直しの間に ZCode が使えなかったことによるもの（Goal の購読は後で購読し直した）と、関係の無い OpenCode のものだけだった。daemon とモデルのサーバーを止め、起動したプロセスが残っていないことと、実環境の `~/.zcode` のログに一時ディレクトリが出てこないことを確かめた。
+- **確かめていないもの**：Coding Plan のアカウントでの利用量の予測とカードの初期表示（サインインしていない）、Paseo 0.17.1 と 0.17.2 の実 daemon、`PASEO_ZCODE_RUNTIME` を使う時の Provider の画面、承認の待ちがあるターンの `Worked`、`Files changed`。
+
 # ZCode 3.18.2 への追従（2026-11-20）
 
 Issue #104 の対応。

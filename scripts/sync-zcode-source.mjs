@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, posix, resolve } from "node:path";
 import ts from "typescript";
 
-export const ZCODE_SOURCE_COMMIT = "fec975905a2abd4c07e35c40d51fa097a2258ec9";
+export const ZCODE_SOURCE_COMMIT = "a4b4445141eb7d3b3e99eada9292775383bfc44e";
 const checkout = resolve(
   process.argv.slice(2).find((arg) => arg !== "--write") ??
     `${process.env.HOME}/ghq/github.com/zai-org/ZCode`,

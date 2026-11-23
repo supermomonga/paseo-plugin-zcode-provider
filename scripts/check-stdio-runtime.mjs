@@ -52,6 +52,9 @@ let connection,
   modelCalls = 0;
 // What the completion verifier answers next in the goal scenarios.
 let goalVerdicts = [];
+// The subagent scenario holds the child's model request here until released.
+const SUBAGENT_TASK = "Reply with the subagent fixture result.";
+let heldSubagent;
 const responses = new Set();
 const modelRequests = [];
 // A stdio MCP server with one tool, as Paseo would pass to a session.
@@ -136,7 +139,9 @@ const modelServer = createServer(async (req, res) => {
         ? "AskUserQuestion"
         : scenario === "permission"
           ? "Write"
-          : "Bash";
+          : scenario === "subagent"
+            ? "Agent"
+            : "Bash";
     const tool = input.tools?.find((t) => t.function.name === toolName);
     // Each turn toward a goal only replies; the verifier decides the rest.
     // A compaction asks for a summary and rejects tool calls.
@@ -176,10 +181,20 @@ const modelServer = createServer(async (req, res) => {
                   description: "Outlive the foreground turn",
                   run_in_background: true,
                 }
-              : {
-                  command: "printf ZCODE_STDIO_BASH_OK",
-                  description: "Verify native shell execution",
-                };
+              : scenario === "subagent"
+                ? {
+                    description: "Fixture subagent",
+                    prompt: SUBAGENT_TASK,
+                    // ZCode 4.0 runs every subagent in the background and
+                    // offers no such parameter; earlier runtimes need it.
+                    ...(tool?.function.parameters?.properties?.run_in_background
+                      ? { run_in_background: true }
+                      : {}),
+                  }
+                : {
+                    command: "printf ZCODE_STDIO_BASH_OK",
+                    description: "Verify native shell execution",
+                  };
     const delta = useTool
       ? {
           tool_calls: [
@@ -206,11 +221,26 @@ const modelServer = createServer(async (req, res) => {
       res.end("data: [DONE]\n\n");
       return;
     }
-    res.write(`data: ${JSON.stringify(chunk(delta, null))}\n\n`);
-    res.write(
-      `data: ${JSON.stringify(chunk({}, useTool ? "tool_calls" : "stop"))}\n\n`,
-    );
-    res.end("data: [DONE]\n\n");
+    const reply = () => {
+      res.write(`data: ${JSON.stringify(chunk(delta, null))}\n\n`);
+      res.write(
+        `data: ${JSON.stringify(chunk({}, useTool ? "tool_calls" : "stop"))}\n\n`,
+      );
+      res.end("data: [DONE]\n\n");
+    };
+    // The subagent's own request ends with its task as the user's message;
+    // the parent's next request ends with the Agent call's result instead.
+    const last = input.messages?.at(-1);
+    if (
+      scenario === "subagent" &&
+      !useTool &&
+      last?.role === "user" &&
+      JSON.stringify(last.content).includes(SUBAGENT_TASK)
+    ) {
+      heldSubagent = reply;
+      return;
+    }
+    reply();
   } catch (error) {
     res.destroy(error);
   }
@@ -241,13 +271,12 @@ try {
   );
   // Official plugin caches as ZCode Desktop installs them into the shared
   // storage, plus a control that must stay visible (ADR 19).
+  const officialCache = join(
+    directory,
+    ".zcode/cli/plugins/cache/zcode-plugins-official",
+  );
   for (const [plugin, skill] of Object.entries(FIXTURE_PLUGINS)) {
-    const pluginRoot = join(
-      directory,
-      ".zcode/cli/plugins/cache/zcode-plugins-official",
-      plugin,
-      "0.0.0-fixture",
-    );
+    const pluginRoot = join(officialCache, plugin, "0.0.0-fixture");
     await mkdir(join(pluginRoot, ".zcode-plugin"), { recursive: true });
     await mkdir(join(pluginRoot, "skills", skill), { recursive: true });
     await writeFile(
@@ -263,6 +292,29 @@ try {
       `---\nname: ${skill}\ndescription: Contract fixture skill.\n---\n\nFixture.\n`,
     );
   }
+  // Desktop also lists the official plugins it seeded in the bundled
+  // marketplace partition (writeOfficialMarketplace in bundled-plugins.ts).
+  // Discovery then reads the official plugins from it, and from 4.0 so do an
+  // open session's skill catalog and MCP configuration (live-inventory.ts).
+  const marketplace = join(
+    directory,
+    ".zcode/cli/plugins/marketplaces/zcode-plugins-official",
+  );
+  await mkdir(marketplace, { recursive: true });
+  await writeFile(
+    join(marketplace, "bundled-marketplace.json"),
+    JSON.stringify({
+      version: 1,
+      manifest: {
+        name: "zcode-plugins-official",
+        plugins: Object.keys(FIXTURE_PLUGINS).map((name) => ({
+          name,
+          version: "0.0.0-fixture",
+          cachePath: join(officialCache, name, "0.0.0-fixture"),
+        })),
+      },
+    }),
+  );
   await writeFile(
     join(directory, ".zcode/cli/config.json"),
     JSON.stringify({
@@ -724,6 +776,25 @@ try {
   );
   assert.ok(continuation);
   assert.equal(await canStopRuntime(), true);
+  // A background subagent, as ZCode 4.0 starts every subagent, likewise keeps
+  // the runtime while it runs and until its result is delivered.
+  heldSubagent = undefined;
+  await prompt("subagent");
+  const launcher = await terminal();
+  assert.equal(launcher.state, "completed");
+  for (let i = 0; i < 1500 && !heldSubagent; i++)
+    await new Promise((r) => setTimeout(r, 10));
+  assert.ok(heldSubagent, "The subagent must request the model");
+  assert.equal(await canStopRuntime(), false);
+  heldSubagent();
+  const delivered = await wait(
+    (e) =>
+      e.type === "session.turn" &&
+      e.state === "completed" &&
+      e.turnId !== launcher.turnId,
+  );
+  assert.ok(delivered);
+  assert.equal(await canStopRuntime(), true);
   // /goal is the Server's goal command, not text (ADR 27). ZCode works toward
   // the goal in turns it starts itself until the verifier passes it.
   assert.deepEqual(goals.views(), []);
@@ -944,6 +1015,7 @@ try {
           ...(contentFilter ? ["content-filtered reply"] : []),
           "restart after failure",
           "idle runtime kept for background Bash",
+          "idle runtime kept for a background subagent",
           "goal set, continued and verified",
           "goal paused by stop and resumed",
           "compaction with instructions completed",
