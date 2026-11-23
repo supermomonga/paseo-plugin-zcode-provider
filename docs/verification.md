@@ -44,6 +44,13 @@ Issue #115 の対応。
 - **`test:native-restore`**：これまでどおり失敗した（明示の設定の無い再開で `{ mode: "yolo", plan: false }`、期待は `{ mode: "edit", plan: true }`）。ADR 14 の保証の外の不具合は 4.0.0 でも残る。
 - **確かめていないこと**：パッチを当てないランタイムでの ADR 19 の項目、Windows と macOS、リリースのワークフローでのビルド、実モデル（`test:e2e`）、Paseo の停止がバックグラウンドのサブエージェントを止めないこと（ソースからの判断）。
 
+## 公開と固定
+
+- **PR の CI**：PR #116 で、リリースのワークフローは 4.0.0 から書庫を作り、5 プラットフォーム（darwin-arm64、linux-x64、linux-arm64、win-x64、win-arm64）で `test:stdio-runtime` の全項目を通した。win-x64 と darwin-arm64 のログでも、`appVersion` が `4.0.0` で、バックグラウンドのサブエージェントと ADR 19 の項目が通ったことを確かめた。CI の契約試験（固定した 3.18.2-paseo.1）と実モデルの E2E も通った。
+- **公開**：`zcode-runtime-v4.0.0-paseo.1` を `99487fe` に push した。run 45196753039 が、ビルド、5 プラットフォームの検証、証明をして、latest ではないリリースとして公開した。
+- **書庫**：`zcode-runtime-4.0.0-paseo.1.tar.gz`、90,937,718 バイト、SHA-256 `20c044ebf19a2006cac09635daab1d880dd27d68ee1c3a2b0c0b770e174a6069`。取得した書庫は `SHA256SUMS` と一致し、`gh attestation verify` は、タグの `zcode-runtime-release.yml` とソース `99487fe` を示した。`BUILD-INFO.json` は、ソース `a4b4445`、パッチ（SHA-256 `0d522d0f…`）、公式の書庫 `0a7f9883…`、`@napi-rs/keyring` 2.1.2 と 5 つのネイティブのパッケージ、`tools/runtime-host/win32-x64/zcode-runtime-host.exe`（SHA-256 `e8be6957…`）と `win32-arm64`（`72ba9c10…`）を記録している。
+- **固定**：`server/runtime/pins.ts` をこの書庫にした。一時の `XDG_DATA_HOME` に `npm run setup:managed-runtime` で導入し（Linux x64）、管理下ランタイムとしての `test:stdio-runtime` が全項目を通った。既存の利用者は、Runtime の画面か、Paseo の Provider の画面の Update で導入し直す（ADR 35）。
+
 # Paseo 0.17.1〜0.17.3 への追従（2026-11-23）
 
 Issue #112〜#114 の対応。v0.16.2（`2ee30f4`）と v0.17.3（`dd7c0499a8c311fae7b3244722a64d73cc178e4a`）の `packages/plugin`、`packages/protocol`、`plugin-provider.ts`、usage source、プラグインのコンパイラと準備処理を比べた。0.17.0 は変更履歴に無く、0.17.3 はプラグインの API を変えていない。
