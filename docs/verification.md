@@ -44,6 +44,12 @@ Issue #115 の対応。
 - **`test:native-restore`**：これまでどおり失敗した（明示の設定の無い再開で `{ mode: "yolo", plan: false }`、期待は `{ mode: "edit", plan: true }`）。ADR 14 の保証の外の不具合は 4.0.0 でも残る。
 - **確かめていないこと**：パッチを当てないランタイムでの ADR 19 の項目、Windows と macOS、リリースのワークフローでのビルド、実モデル（`test:e2e`）、Paseo の停止がバックグラウンドのサブエージェントを止めないこと（ソースからの判断）。
 
+## 実モデルの E2E
+
+- 4.0.0-paseo.1 を固定した commit の CI で、`test:e2e` の `check-steering-runtime.mjs` が `stop-run running Bash: unexpected session.turn completed` で失敗し、再実行でも同じだった。直近のイベントは文章の行だけで、Bash の呼び出しが無かった。固定前の 3.18.2-paseo.1 では通っていた。
+- **原因**：4.0 の Bash は、前景で `sleep N`（N ≥ 25）から始まるコマンドを、フックと権限の前に拒否する（`core/src/tool/handlers/bash-semantics.ts` の `FOREGROUND_SLEEP_MIN_SECONDS`、設計は `apps/zcode-cli/docs/design/v2/tool/04-bash.md` の「前台 sleep 拦截」）。Bash の説明にもそう書かれる（`bash-prompt.ts`）。停止の試験が頼んだ `sleep 30` を、モデルは説明に従って実行しなかった。最初の `sleep 5` は閾値より短いので実行された。
+- **変更**：停止の試験の依頼を `sleep 20` にした。割り込みは Bash の実行中に送るので、20 秒で足りる。プラグインの動作は変わらない。
+
 ## 公開と固定
 
 - **PR の CI**：PR #116 で、リリースのワークフローは 4.0.0 から書庫を作り、5 プラットフォーム（darwin-arm64、linux-x64、linux-arm64、win-x64、win-arm64）で `test:stdio-runtime` の全項目を通した。win-x64 と darwin-arm64 のログでも、`appVersion` が `4.0.0` で、バックグラウンドのサブエージェントと ADR 19 の項目が通ったことを確かめた。CI の契約試験（固定した 3.18.2-paseo.1）と実モデルの E2E も通った。

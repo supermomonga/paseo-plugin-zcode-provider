@@ -226,9 +226,12 @@ try {
     }),
   );
   events = [];
+  // ZCode 4.0 blocks a foreground `sleep` of 25 seconds or more and tells the
+  // model so in the Bash tool's description (FOREGROUND_SLEEP_MIN_SECONDS in
+  // bash-semantics.ts), so the model would answer without running it.
   await prompt(
     "stop-run",
-    "Integration test. Use the Bash tool to run `sleep 30` in the foreground, without run_in_background. Do not edit files.",
+    "Integration test. Use the Bash tool to run `sleep 20` in the foreground, without run_in_background. Do not edit files.",
   );
   await wait("stop-run running Bash", runningTool, turnEnded);
   await prompt(
