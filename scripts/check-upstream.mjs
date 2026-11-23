@@ -219,7 +219,11 @@ try {
       { op: "row.upserted", row: { ...row, text: "hello", state: "complete" } },
     ]);
     const done = waitForCompletion(session, turn.turnId);
-    await host.finish();
+    await host.finish("completedSuccess", undefined, {
+      endedAt: 2_001,
+      modelDurationMs: 1_000,
+      outputTokens: 50,
+    });
     await done;
     assert.equal(
       session
@@ -230,6 +234,20 @@ try {
       "hello",
     );
     assert.equal(events.filter((e) => e.type === "turn_completed").length, 1);
+    // Paseo 0.17.2 shows turn and session metrics (ADR 36). The Model row
+    // names the model, not the encoded model ID Paseo would fall back to.
+    assert.deepEqual(events.find((e) => e.type === "turn_completed").metrics, [
+      { label: "Model", value: "model (high)" },
+      { label: "Speed", value: "~50 tok/s" },
+      { label: "Elapsed", value: "2.0s" },
+      { label: "Model time", value: "1.0s" },
+      { label: "Output tokens", value: "50" },
+    ]);
+    assert.deepEqual(
+      events.filter((e) => e.type === "session_metrics_updated").at(-1)
+        ?.metrics,
+      [{ label: "Tokens", value: "20 ↑ · 10 ↓" }],
+    );
     // Paseo asks before releasing an idle runtime; ZCode background work keeps it.
     assert.equal(typeof session.canStopRuntime, "function");
     assert.equal(await session.canStopRuntime(), true);

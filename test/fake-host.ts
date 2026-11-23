@@ -216,6 +216,8 @@ export class FakeBridge implements HostBridge {
   async finish(
     state: TurnHeaderRow["state"] = "completedSuccess",
     lastError?: SessionErrorInfo,
+    /** What ZCode records on the turn's header when it ends. */
+    turn: Partial<TurnHeaderRow> = {},
   ) {
     const header = this.state.rows.window.find(
       (r): r is TurnHeaderRow =>
@@ -223,7 +225,12 @@ export class FakeBridge implements HostBridge {
     );
     await this.deltas([
       ...(header
-        ? [{ op: "row.upserted" as const, row: { ...header, state } }]
+        ? [
+            {
+              op: "row.upserted" as const,
+              row: { ...header, ...turn, state },
+            },
+          ]
         : []),
       {
         op: "state.updated",

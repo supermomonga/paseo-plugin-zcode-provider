@@ -54,6 +54,7 @@ import type {
 import { AdapterError } from "./errors.js";
 import { diagnosticError, formatDiagnostic } from "./diagnostics.js";
 import { turnFailure } from "./turn-failure.js";
+import { modelMetricValue, sessionMetrics, turnMetrics } from "./metrics.js";
 import type { TimelinePreferences } from "../shared/timeline.js";
 // ZCode's Plan is independent of its mode (ADR 11); Paseo draws it in the
 // composer from the agent's `plan_mode` option (ADR 30).
@@ -118,6 +119,7 @@ export class ZCodeSession {
   private unlistenFailure?: () => void;
   private previousConfig?: unknown;
   private previousUsage?: unknown;
+  private previousMetrics?: unknown;
   private readonly idleListeners = new Set<() => void>();
   private constructor(
     private readonly bridge: HostBridge,
@@ -324,6 +326,11 @@ export class ZCodeSession {
         turnId: this.active?.id,
       });
     }
+    const nextMetrics = sessionMetrics(this.state.usage);
+    if (!isDeepStrictEqual(nextMetrics, this.previousMetrics)) {
+      this.previousMetrics = nextMetrics;
+      this.emit({ type: "metrics_updated", metrics: nextMetrics });
+    }
     const ids = new Set(
       this.state.pendingInteractions.map((i) => i.interactionId),
     );
@@ -463,15 +470,22 @@ export class ZCodeSession {
         code: failure.code,
         diagnostic: formatDiagnostic(failure),
       });
-    } else
+    } else if (
+      run.cancelled ||
+      headers.some((h) => h.state === "completedInterrupted")
+    )
+      this.emit({ type: "turn_canceled", turnId: run.id });
+    else {
+      const config = this.state.config;
       this.emit({
-        type:
-          run.cancelled ||
-          headers.some((h) => h.state === "completedInterrupted")
-            ? "turn_canceled"
-            : "turn_completed",
+        type: "turn_completed",
         turnId: run.id,
+        metrics: turnMetrics(
+          headers,
+          modelMetricValue(config.modelSelection?.modelId, config.thought),
+        ),
       });
+    }
     this.changed();
   }
   private changed(): void {
@@ -540,6 +554,10 @@ export class ZCodeSession {
   subscribe(listener: (event: NativeSessionEvent) => void): () => void {
     this.listeners.add(listener);
     listener({ type: "usage_updated", usage: usage(this.state) });
+    // A session starts with no metrics, so an empty list is not news.
+    const metrics = sessionMetrics(this.state.usage);
+    this.previousMetrics = metrics;
+    if (metrics.length > 0) listener({ type: "metrics_updated", metrics });
     return () => this.listeners.delete(listener);
   }
   historyItems(): readonly NativeTimelineEntry[] {

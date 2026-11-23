@@ -71,6 +71,7 @@ export const CAPABILITIES = [
   "session.can_stop_runtime",
   "session.configure",
   "session.list",
+  "session.metrics",
   "session.persistence",
   "permission",
 ] as const satisfies readonly ProviderCapability[];
@@ -799,6 +800,16 @@ export class ZCodeConnection implements ProviderConnection {
           state: "started",
         });
         break;
+      case "metrics_updated":
+        // A Paseo that did not offer session.metrics closes the connection
+        // on this event.
+        if (this.capabilities.includes("session.metrics"))
+          this.emit({
+            type: "session.metrics",
+            sessionId: id,
+            metrics: event.metrics,
+          });
+        break;
       case "turn_completed":
       case "turn_canceled":
         this.emit({
@@ -806,6 +817,7 @@ export class ZCodeConnection implements ProviderConnection {
           sessionId: id,
           turnId: event.turnId,
           state: event.type === "turn_completed" ? "completed" : "canceled",
+          ...(event.metrics?.length ? { metrics: event.metrics } : {}),
         });
         break;
       case "turn_failed":

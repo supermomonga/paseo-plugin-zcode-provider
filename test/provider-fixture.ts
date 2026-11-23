@@ -11,7 +11,11 @@ import { SessionPersistenceStore } from "../server/persistence.js";
 import { GoalDirectory } from "../server/goal.js";
 import { FakeBridge, snapshot } from "./fake-host.js";
 import type { TimelinePreferences } from "../shared/timeline.js";
-export async function providerFixture(timeline?: () => TimelinePreferences) {
+export async function providerFixture(
+  timeline?: () => TimelinePreferences,
+  /** Capabilities this Paseo does not offer. */
+  withhold: readonly string[] = [],
+) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), "zcode-v4-test-")));
   const host = new FakeBridge(snapshot(cwd));
   const store = new SessionPersistenceStore(join(cwd, "state"));
@@ -22,7 +26,10 @@ export async function providerFixture(timeline?: () => TimelinePreferences) {
     undefined,
     timeline,
     goals,
-  ).connect({ versions: [1], capabilities: CAPABILITIES });
+  ).connect({
+    versions: [1],
+    capabilities: CAPABILITIES.filter((c) => !withhold.includes(c)),
+  });
   const events: ProviderEvent[] = [];
   connection.onEvent((e) => events.push(e));
   const wait = async (predicate: (e: ProviderEvent) => boolean) => {

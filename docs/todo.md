@@ -39,6 +39,8 @@ Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグ�
 
 - **バックグラウンドタスクの一覧と停止**：Paseo 0.16 は、Claude Code・Codex・OpenCode v2 のバックグラウンドの作業を入力欄の上に出し、止められる（`background_work` イベントと `stopBackgroundWork`）。0.17.3 のプラグイン Provider の API とアダプターにも、これに当たるものが無い。ZCode 側には、V4 の `backgroundWorks` と `cancelBackgroundWork`、3.18 の `subagents.running[].stopControl` と `stopSubagent` がある。Paseo がプラグインに開いたら、ツール呼び出しとしての表示から移す。
 - **プラグインが加える指示**：0.17.1 から、ほかのプラグインが `agent.open.before` の `appendSystemPrompt` でエージェントに指示を加えられる。アダプターはこれをシステムプロンプトにまとめて渡すが、ZCode の V4 の Server にはシステムプロンプトを渡す手段が無いので、`INVALID_CONFIGURATION` で断る（ADR 34）。指示を加えるプラグインを入れたホストでは、ZCode のエージェントを開けない。ZCode が公式の手段を持ったら見直す。
+- **ターンの入力トークンとキャッシュ**：0.17.2 のターンの統計のうち、入力トークンとキャッシュの命中率は、ZCode の `turnHeader` に無いので出さない（ADR 36）。ZCode のセッションの累計の差分は、ほかのクライアントからの要求を区別できない。
+- **開き直した履歴の統計**：このプラグインは、履歴を項目だけで再生し、ターンの完了を送らないので、開き直した履歴のターンには統計が付かない。
 - **プラグインギャラリー**：0.16 の組み込みのギャラリーは、`getpaseo/plugins` への申請を審査したプラグインだけを出す（PNG のアイコン、`OVERVIEW.md`、依存の固定などが要る）。外部への申請になるので、このリポジトリの変更とは別に扱う。
 
 ## Paseo 0.11 の公開 API の採用（ADR 18）
