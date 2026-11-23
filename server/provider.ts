@@ -145,6 +145,9 @@ export function createZCodeProvider(
     description:
       "ZCode workspace agent with native planning, tools, and model selection",
     icon: "icon.svg",
+    // Paseo links it from the provider page's Troubleshooting section.
+    docsUrl:
+      "https://github.com/supermomonga/paseo-plugin-zcode-provider#readme",
     // No `command`: Paseo would look it up on PATH, but the runtime is the
     // plugin's managed installation or the PASEO_ZCODE_* override.
     status,

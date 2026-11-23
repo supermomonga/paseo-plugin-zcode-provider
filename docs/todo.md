@@ -35,16 +35,17 @@ Browser/Computer Use（このプロバイダでは動かないため、ADR 19 �
 
 Paseo 標準の quota/リセット時刻/初期 usage 表示は公開プラグイン API の範囲でのみ対応する。本体変更や別の表示への置き換えは提案・実装しない。新しい公開 API が導入された時に契約と実 UI の両方を再評価する。
 
-## Paseo 0.16 で使えないもの
+## Paseo 0.17 で使えないもの
 
-- **バックグラウンドタスクの一覧と停止**：Paseo 0.16 は、Claude Code・Codex・OpenCode v2 のバックグラウンドの作業を入力欄の上に出し、止められる（`background_work` イベントと `stopBackgroundWork`）。0.16.2 のプラグイン Provider の API とアダプターには、これに当たるものが無い。ZCode 側には、V4 の `backgroundWorks` と `cancelBackgroundWork`、3.18 の `subagents.running[].stopControl` と `stopSubagent` がある。Paseo がプラグインに開いたら、ツール呼び出しとしての表示から移す。
+- **バックグラウンドタスクの一覧と停止**：Paseo 0.16 は、Claude Code・Codex・OpenCode v2 のバックグラウンドの作業を入力欄の上に出し、止められる（`background_work` イベントと `stopBackgroundWork`）。0.17.3 のプラグイン Provider の API とアダプターにも、これに当たるものが無い。ZCode 側には、V4 の `backgroundWorks` と `cancelBackgroundWork`、3.18 の `subagents.running[].stopControl` と `stopSubagent` がある。Paseo がプラグインに開いたら、ツール呼び出しとしての表示から移す。
+- **プラグインが加える指示**：0.17.1 から、ほかのプラグインが `agent.open.before` の `appendSystemPrompt` でエージェントに指示を加えられる。アダプターはこれをシステムプロンプトにまとめて渡すが、ZCode の V4 の Server にはシステムプロンプトを渡す手段が無いので、`INVALID_CONFIGURATION` で断る（ADR 34）。指示を加えるプラグインを入れたホストでは、ZCode のエージェントを開けない。ZCode が公式の手段を持ったら見直す。
 - **プラグインギャラリー**：0.16 の組み込みのギャラリーは、`getpaseo/plugins` への申請を審査したプラグインだけを出す（PNG のアイコン、`OVERVIEW.md`、依存の固定などが要る）。外部への申請になるので、このリポジトリの変更とは別に扱う。
 
 ## Paseo 0.11 の公開 API の採用（ADR 18）
 
 `ProviderRegistration.status()` と usage source を採用した（[ADR 18](adr/0018-paseo-0-11のprovider-statusとusage-sourceでランタイムの可用性とcoding-planの利用量を表示する.md)）。残る項目は次のとおり。
 
-- **ZCode エージェント単位の利用量**：0.16.2 の Paseo も、プラグイン Provider のセッションでアカウントを探索しない（`plugin-provider.ts` の `PluginAgentSession` に `usageSession()` が無い）ため、エージェントのポップオーバーに利用量が出ない。プラグインはセッションの範囲の探索に対応済みなので、Paseo が探索するようになったら表示を確認する。
+- **ZCode エージェント単位の利用量**：0.17 の Paseo は、プラグイン Provider のセッションにも `usageSession()` を持たせたが、接続に使った起動（Provider の `command` から解決したもの）がある時だけ返す（`plugin-provider.ts` の `PluginAgentSession.usageSession`）。このプラグインは `command` を持たないので null になり、エージェントのポップオーバーに利用量が出ない。プラグインはセッションの範囲の探索に対応済みなので、Paseo が `command` の無い Provider でも探索するようになったら表示を確認する。
 - **Team Plan と Start Plan の利用量**：Desktop は Team Plan に組織とプロジェクトを含む動的なアカウントアクセスを渡し、Start Plan は残高として別に表示する。同じ経路を公式サービスで再現できるか確認してから対応する。
 - **サインイン状態の可用性**：`status()` はランタイムだけを検査する。未サインインやモデルが無い状態は、Server を起動しないと分からないため、従来どおりセッション作成時に知らせる。
-- **初期 usage**：0.10.3、0.11.0-beta.5、0.12.0 でも、`session.ready` 前に送った使用量は購読者へ再通知されない。0.16.2 のアダプターも、ready 前のイベントは履歴に積むだけで購読者へ流さない。0.11.0-beta.4 の変更（getpaseo/paseo#6089）は、初回ターン前のメーターをアプリ側で空表示にするものである。制約は残る。
+- **初期 usage**：0.10.3、0.11.0-beta.5、0.12.0 でも、`session.ready` 前に送った使用量は購読者へ再通知されない。0.17.3 のアダプターも、ready 前のイベントは履歴に積むだけで購読者へ流さない。0.11.0-beta.4 の変更（getpaseo/paseo#6089）は、初回ターン前のメーターをアプリ側で空表示にするものである。制約は残る。

@@ -606,8 +606,8 @@ async function checkContributions({
   requireModule,
 }) {
   // The daemon checks requirements.paseo against its own version first.
-  await assert.rejects(compileDirectoryPlugin(candidate, "0.15.4"), {
-    message: /requires Paseo >=0\.16\.0/u,
+  await assert.rejects(compileDirectoryPlugin(candidate, "0.16.2"), {
+    message: /requires Paseo >=0\.17\.1/u,
   });
   const { serverBundle, clientBundle } = await compileDirectoryPlugin(
     candidate,
