@@ -8,6 +8,7 @@ import {
 } from "./discovery/discover.js";
 import { AdapterError } from "./errors.js";
 import { logger } from "./logger.js";
+import type { ManagedRuntimeInstaller } from "./runtime/managed.js";
 
 export interface RuntimeStatusOptions {
   readonly environment?: NodeJS.ProcessEnv;
@@ -15,6 +16,8 @@ export interface RuntimeStatusOptions {
   /** How long a result is reused. Paseo asks on every catalog load and agent start. */
   readonly ttlMs?: number;
   readonly now?: () => number;
+  /** Setup that installs or removes the runtime; either ends the reuse. */
+  readonly installer?: Pick<ManagedRuntimeInstaller, "subscribe">;
 }
 
 // Paseo 0.17 writes the report itself: it heads it with the provider's label,
@@ -67,6 +70,12 @@ export function createRuntimeStatus(options: RuntimeStatusOptions = {}) {
   const ttlMs = options.ttlMs ?? 30_000;
   const now = options.now ?? Date.now;
   let cached: { at: number; result: Promise<ProviderStatus> } | undefined;
+  // Paseo reads the status again right after an update from its provider
+  // page; a reused answer would still report the runtime as missing.
+  options.installer?.subscribe((state) => {
+    if (state.state === "succeeded" || state.state === "idle")
+      cached = undefined;
+  });
   return (_request?: ProviderStatusRequest): Promise<ProviderStatus> => {
     if (cached && now() - cached.at < ttlMs) return cached.result;
     const entry = { at: now(), result: check(environment, discover) };

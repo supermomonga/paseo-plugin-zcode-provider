@@ -48,6 +48,8 @@ An absolute `XDG_DATA_HOME` replaces the base directory on every OS. `PATH` and 
 
 **Remove** on the Runtime tab deletes the managed runtime; `paseo plugin remove` does not. ZCode settings, logins and conversations are kept.
 
+Paseo's provider page (**Settings → Providers → ZCode**) shows the installed runtime as `<ZCode runtime> (Node.js <version>)` and whether this plugin version pins another one. A plugin update can pin a new runtime; ZCode is then unavailable until you install it. **Update** there runs the same verified setup as the Runtime tab, and the two share one setup job (ADR 35). With `PASEO_ZCODE_RUNTIME`, the page shows that runtime's Server and Agent versions, and Update leaves it alone.
+
 ### Account and model providers
 
 The **Account** tab uses ZCode's own account and provider services, the same ones ZCode Desktop uses, through a ZCode Server that the plugin starts while the screen is in use. Changes are stored in ZCode's data on the daemon machine and are shared with ZCode Desktop and the CLI there.

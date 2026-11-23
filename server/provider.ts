@@ -138,6 +138,7 @@ export function createZCodeProvider(
   status: ProviderRegistration["status"] = createRuntimeStatus(),
   timeline: () => TimelinePreferences = () => defaultTimelinePreferences,
   goals = new GoalDirectory(),
+  installation?: ProviderRegistration["installation"],
 ): ProviderRegistration {
   return {
     id: "zcode",
@@ -151,6 +152,7 @@ export function createZCodeProvider(
     // No `command`: Paseo would look it up on PATH, but the runtime is the
     // plugin's managed installation or the PASEO_ZCODE_* override.
     status,
+    ...(installation ? { installation } : {}),
     async connect(request) {
       if (!request.versions.includes(PROVIDER_PROTOCOL_VERSION))
         throw new Error("ZCode requires provider protocol version 1");

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DiscoveredRuntime } from "./discovery/types.js";
 import { AdapterError } from "./errors.js";
 import { createRuntimeStatus } from "./provider-status.js";
+import type { SetupState } from "./runtime/managed.js";
 
 const runtime = (
   overrides: Partial<DiscoveredRuntime> = {},
@@ -98,6 +99,37 @@ describe("provider status", () => {
       available: false,
       diagnostic: "ZCode runtime could not be inspected",
     });
+  });
+
+  it("inspects again once setup installs or removes the runtime", async () => {
+    const listeners = new Set<(state: SetupState) => void>();
+    const installer = {
+      subscribe(listener: (state: SetupState) => void) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const discover = vi.fn(async () => runtime());
+    const status = createRuntimeStatus({ discover, installer, now: () => 0 });
+    const notify = (state: SetupState) => {
+      for (const listener of listeners) listener(state);
+    };
+    await status();
+    notify({
+      state: "running",
+      component: "zcode",
+      phase: "download",
+      receivedBytes: 0,
+      totalBytes: 1,
+    });
+    await status();
+    expect(discover).toHaveBeenCalledTimes(1);
+    notify({ state: "succeeded" });
+    await status();
+    expect(discover).toHaveBeenCalledTimes(2);
+    notify({ state: "idle" });
+    await status();
+    expect(discover).toHaveBeenCalledTimes(3);
   });
 
   it("inspects the runtime once per interval", async () => {

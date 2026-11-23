@@ -72,6 +72,8 @@ try {
       "packages/server/src/server/agent/plugin-provider.ts",
     ),
     provider: join(root, "server/provider.ts"),
+    installation: join(root, "server/installation.ts"),
+    managed: join(root, "server/runtime/managed.ts"),
     persistence: join(root, "server/persistence.ts"),
     goal: join(root, "server/goal.ts"),
     fake: join(root, "test/fake-host.ts"),
@@ -104,6 +106,8 @@ try {
 
   const { PluginAgentClientRegistry } = await load("adapter");
   const { createZCodeProvider } = await load("provider");
+  const { createInstallation } = await load("installation");
+  const { ManagedRuntimeInstaller } = await load("managed");
   const { SessionPersistenceStore } = await load("persistence");
   const { GoalDirectory, serveGoals } = await load("goal");
   const { FakeBridge, snapshot, completeTurn } = await load("fake");
@@ -138,6 +142,14 @@ try {
       status,
       undefined,
       goals,
+      // An empty data directory: no managed runtime is installed.
+      createInstallation(
+        new ManagedRuntimeInstaller(
+          { XDG_DATA_HOME: join(directory, "data") },
+          "linux-x64",
+        ),
+        { environment: {} },
+      ),
     );
   registry.replace([registration()]);
   try {
@@ -148,6 +160,18 @@ try {
     assert.deepEqual(await client.getDiagnostic(), {
       diagnostic: "ZCode\n  Runtime: test\n  Node.js: test",
     });
+    // Paseo's provider page reads the installation through the adapter
+    // (ADR 35); Install opens the setup instructions.
+    assert.equal(
+      client.installation.installUrl,
+      "https://github.com/supermomonga/paseo-plugin-zcode-provider#setup",
+    );
+    assert.deepEqual(
+      await client.installation.inspect({
+        signal: new AbortController().signal,
+      }),
+      { status: "not_installed" },
+    );
     const unavailableRegistry = new PluginAgentClientRegistry({
       warn(...args) {
         warnings.push(args);
@@ -660,6 +684,18 @@ async function checkContributions({
   assert.equal(registered.id, "zcode");
   assert.equal(typeof registered.status, "function");
   await readPluginProviderIcon(candidate, registered.icon);
+  // Paseo 0.17 links the docs from the provider page and runs the
+  // installation callbacks there (ADR 34, ADR 35).
+  assert.equal(
+    registered.docsUrl,
+    "https://github.com/supermomonga/paseo-plugin-zcode-provider#readme",
+  );
+  assert.equal(
+    registered.installation.installUrl,
+    "https://github.com/supermomonga/paseo-plugin-zcode-provider#setup",
+  );
+  for (const name of ["inspect", "checkForUpdates", "update"])
+    assert.equal(typeof registered.installation[name], "function");
   // Paseo checks these fields and the icon when registering a source.
   assert.equal(sources.length, 1);
   const [source] = sources;
