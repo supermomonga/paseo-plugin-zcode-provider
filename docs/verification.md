@@ -1,3 +1,49 @@
+# ZCode 4.0.0 への追従（2026-11-23）
+
+Issue #115 の対応。
+
+## 上流のソース
+
+- `git ls-remote --tags --refs https://github.com/zai-org/ZCode.git` は、`refs/tags/v4.0.0` に `a4b4445141eb7d3b3e99eada9292775383bfc44e` を示した。ルートの `package.json` は `4.0.0` で、`main` から辿れる。親は `v3.18.2`（`fec9759`）で、間にタグの無い同期の commit は無い。ソースの基準を `v4.0.0` に移した（差分は 2,209 ファイル）。
+- 同梱するファイルは 139 のままで、同期スクリプトの読み替えの規則も足さずに済んだ。変わったのは、V4 の任意の項目の追加（下記）、`proxy-channel.ts` の「Method not found」の判定関数、アプリの設定（`replyLanguage`、`agentAlwaysBackgroundEnabled` など）とプラグインの情報（`workspaceTrust`、ストアの `regions`）のスキーマである。
+
+## V4 の契約の変更とこのプロバイダ
+
+- **追加は任意の項目だけ**：`backgroundWorks[].resultSummary`、`subagents.ended`、`goal.summaryHidden`、スナップショットと差分の `activitySummaryDismissed`・`completedActivityCount`、セッションの一覧の `hasCompactWork`、`deletionPreviewBatch` と通知 `v4/telemetry/turn-admission`。行（`rows.ts`）、対話、マーカー、ゴールの状態、`control`、`activeWorks` の種類、コマンドは変わらない。プラグインは同梱したスキーマで読むので、読み落としは無い。`summaryHidden` は公開ソースの UI でも使われていない。
+- **`lastError`（ADR 23）**：`ModelFailureReason` と帰属の列挙は変わらない。変更履歴の「プレーンテキストを提供元のエラーコードと見誤らない」は表示の修正で、プラグインは帰属の値をこれまでどおり検査してから出す。
+- **独立した圧縮**：4.0 の圧縮は `phase` を変えないが、`activeWorks` に `compact` が載る。プラグインのアイドルの判定は `activeWorks` が空であることを求めるので、変更は要らない（`test:stdio-runtime` の圧縮の項目が通る）。
+
+## サブエージェントは常にバックグラウンド
+
+- 4.0 の Agent（と別名の Task）は、`run_in_background` の引数を持たず、常にバックグラウンドで動く（`core/src/tool/handlers/agent.ts` の `createAgentToolEntry`）。stdio の Server は、アプリの設定 `agentAlwaysBackgroundEnabled`（Desktop の「Always run subagents in the background」、既定で有効）を Agent に渡す（`services/src/node.ts`）。共有の設定を書き換えることになるので、プラグインは変えない。
+- バックグラウンドのサブエージェントは `activeWorks` に載らず、`subagents.running` と `backgroundWorks` に載る。Agent を呼んだターンは完了し、結果は ZCode が自分で始めるターンで届く。`session.can_stop_runtime` はその間解放を拒む（ADR 25）。`test:stdio-runtime` に、サブエージェントのモデルへの要求を止めておき、ターンの完了後も解放を拒み、結果を届けるターンの後に許すことを確かめる項目を加えた。引数は、Agent が `run_in_background` を持つランタイム（3.18 以前）ではそれを付ける。
+- Paseo 0.17.3 のプラグインの API にも、バックグラウンドの作業を出す・止める手段が無い。ZCode 4.0 では、ツールの呼び出しとして出るサブエージェントを Paseo から止められない（[todo](todo.md)）。
+
+## サービスと起動
+
+- **Account と利用量（ADR 17・18）**：`oauth`・`setting`・`provider-settings`・`usage-stats` のメソッドと列挙は変わらない。`oauthService.ts` の変更は、サインインの有効期限をサーバーの時計で計るようにした内部の修正である。
+- **モデル**：GLM-5.4 は、公開ソースの `config/provider/zcode-builtin.json` には無く、ZCode が配信する設定（`provider-node` の `zcode-builtin-remote-synchronizer.ts`）で加わる。プラグインはモデルを Server から読み、画像入力の可否も ZCode のモデル設定に従うので、変更は要らない。
+- **Server の起動**：stdio の入口（`packages/server/src/entry-stdio.ts`）は、これまでどおり `--prepare-credentials` で鍵を用意する。資格情報のファイルの場所は `getCredentialsFilePath()` にまとめられ、`ZCODE_CREDENTIALS_FILE` があればそれを使う（Source Server Core だけが設定する）。`zcode-server-cli` は、同じマシンの Desktop が OS のストアに結び付けた場合に Server 自身のストアを使うようになったが、プラグインの使う stdio の Server には関係しない。Windows の補助（ADR 33）は、ソース（`main.cpp`）が変わったが、呼び出し方（`ZCODE_RUNTIME_HOST_PATH`）は同じである。
+- **ビルド**：`scripts/build-zcode.mjs`・`stage-credential-keyring.mjs`・`build-windows-runtime-host.mjs` は変わらない。Node.js は `>=24.0.0`、pnpm は 10.33.2 のままである。統合 CLI の配布物の配置（`MANAGED_ZCODE_FILES`）も変わらず、`@napi-rs/keyring` はまだ含まれない。
+- **版の判定**：3.18 以降で変わる扱い（`--prepare-credentials`、Windows の補助、サインイン後の家族）は semver で比べているので、4.0.0 でも 3.18 以降として扱う。テストに 4.0.0 を加えた。
+
+## 管理下ランタイムのパッチ（ADR 19）
+
+- `patches/zcode/0001-hide-suppressed-official-plugins.patch` は 4.0.0 にもそのまま当たる（1 行ずれる）。
+- **漏れ**：4.0 は、開いたセッションの skill の一覧と MCP の設定を、設定とプラグインの変化に追従する仕組み（`adapters/src/plugins/live-inventory.ts` の `readEnabledPlugins`、`skills/catalog.ts`、`mcp/config-loader.ts`）から読むようになった。ここは公式プラグインを、起動時の検出の結果ではなく bundled のマーケットプレイスのパーティション（Desktop が公式プラグインを入れるときに書く `marketplaces/zcode-plugins-official/bundled-marketplace.json`）から読み、`suppressedBuiltins` だけで外す。そのため、Desktop のデータを共有すると、パッチを当てたランタイムでも Computer Use と Browser Use の skill がモデルに出る。`test:stdio-runtime` の ADR 19 の準備に、Desktop と同じパーティションを加えると、元のパッチで作った 4.0.0 のランタイムは `computer-use:computer-use skill visibility` で失敗した。公開済みの 3.18.2-paseo.1 は、同じ準備でも全項目を通る。
+- **変更**：パッチに `readEnabledPlugins` の同じ判定を加えた（ADR 37）。この関数には検出の要求が無いので、Agent のプロセスの環境変数（Server が渡す）を読む。対象・目的・削除の条件の説明を書き直した。
+- **まだ要るか**：要る。4.0 でも、公式プラグインを外すのは利用者の設定の `suppressedBuiltins` だけで、プロセスごとに外す公式の手段は無い。`resolveOfficialPluginRoots` の `suppressedBuiltins` は「旧い呼び出し元のための引数」になった。4.0 で加わった、単独の CLI が Computer Use の broker をプロセスの中で動かす仕組み（`mintStandaloneCuaCredentialsIfEligible`）は、macOS と Windows の対話の CLI だけで、プロトコルのモード（`app-server`）では使わない。
+- **新しい公式プラグインは無い**：版が上がっただけである。文書系（`documents`・`pdf`・`presentations`・`spreadsheets`）は、仕上がりを画像で確かめるサブエージェント（`visual-judge`）が無くなり、LibreOffice を呼ぶスクリプトが加わった。Desktop を要さないので隠さない。プラグインのストアを地域で絞る変更（`regions`）は Desktop の画面だけに関わる。ツールで加わったのは MCP サーバーの接続を待つ `WaitForMcpServers` だけで、Session のツール（ADR 31）は変わらない。
+
+## 実ランタイム（Linux x64）
+
+- **ビルド**：`git clone --no-checkout` で作った一時ディレクトリの `a4b4445` に、`scripts/apply-zcode-patches.mjs` でパッチを当て、Node.js 24.14.0 と pnpm 10.33.2 で `pnpm install --frozen-lockfile`、`pnpm exec tsc -b packages/shared`、`ZCODE_ENV=production node scripts/build-zcode.mjs --base-url https://example.invalid/zcode/` を実行し、`scripts/package-zcode-runtime.mjs` で公開しない `4.0.0-paseo.0` を作った（Windows の補助は含めない）。CLI は 0.18.0 である。
+  - 元のパッチ（SHA-256 `b3d2ef1a…`）：公式の書庫 `6b632978c80e9a56820cdd52ba43d942adda79e0eb18f81ca79385ca3e8d76fc`、書庫 `9ec35e1918ca83f22e44f41127cab460e679b340d578fd900015ab9c54bb8c86`（90,766,383 バイト）、Agent `e3e5883e…`。
+  - 広げたパッチ（SHA-256 `0d522d0f…`）：公式の書庫 `1a6a2126a0bad3049440b1c6ace0b9b4621e607d8a56190c74f0948f2d6a44d4`、書庫 `d8e52b34def9de124959c1c53473b1d455d842236cd0966255eb921a60056bfc`（90,769,582 バイト）、Agent `08e12756…`、Server `bd039104…`（両方で同じ）。
+- **`test:stdio-runtime`**：元のパッチのランタイムは、これまでの準備では全項目を通り、bundled のパーティションを加えると上記のとおり失敗した。広げたパッチのランタイムは、パーティションとサブエージェントの項目を加えた全 30 項目を通った。公開済みの 3.18.2-paseo.1 を一時の `XDG_DATA_HOME` に `npm run setup:managed-runtime` で入れたもの（Node.js 24.21.0）も、全 30 項目を通った。
+- **`test:native-restore`**：これまでどおり失敗した（明示の設定の無い再開で `{ mode: "yolo", plan: false }`、期待は `{ mode: "edit", plan: true }`）。ADR 14 の保証の外の不具合は 4.0.0 でも残る。
+- **確かめていないこと**：パッチを当てないランタイムでの ADR 19 の項目、Windows と macOS、リリースのワークフローでのビルド、実モデル（`test:e2e`）、Paseo の停止がバックグラウンドのサブエージェントを止めないこと（ソースからの判断）。
+
 # Paseo 0.17.1〜0.17.3 への追従（2026-11-23）
 
 Issue #112〜#114 の対応。v0.16.2（`2ee30f4`）と v0.17.3（`dd7c0499a8c311fae7b3244722a64d73cc178e4a`）の `packages/plugin`、`packages/protocol`、`plugin-provider.ts`、usage source、プラグインのコンパイラと準備処理を比べた。0.17.0 は変更履歴に無く、0.17.3 はプラグインの API を変えていない。
