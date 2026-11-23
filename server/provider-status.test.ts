@@ -32,17 +32,16 @@ const runtime = (
 });
 
 describe("provider status", () => {
-  it("reports the runtime in Paseo's diagnostic format without paths", async () => {
+  it("reports the runtime as rows of Paseo's diagnostic report without paths", async () => {
     const status = createRuntimeStatus({ discover: async () => runtime() });
     const result = await status({});
     expect(ProviderStatusSchema.parse(result)).toEqual(result);
     expect(result).toEqual({
       available: true,
       diagnostic: [
-        "ZCode",
-        "  Runtime: managed, Server 3.14.3, Agent 0.16.9",
-        "  Node.js: 24.21.0",
-        "  Platform: darwin-arm64",
+        "Runtime: managed, Server 3.14.3, Agent 0.16.9",
+        "Node.js: 24.21.0",
+        "Platform: darwin-arm64",
       ].join("\n"),
     });
     expect(result.diagnostic).not.toContain("/data/");
@@ -69,7 +68,7 @@ describe("provider status", () => {
     expect(ProviderStatusSchema.parse(result)).toEqual(result);
     expect(result).toEqual({
       available: false,
-      diagnostic: `ZCode\n  Error: ${message}`,
+      diagnostic: message,
     });
   });
 
@@ -84,7 +83,7 @@ describe("provider status", () => {
     });
     expect(await status()).toEqual({
       available: false,
-      diagnostic: "ZCode\n  Error: ZCode Server 3.13.0 is older than 3.14.0",
+      diagnostic: "ZCode Server 3.13.0 is older than 3.14.0",
     });
   });
 
@@ -97,7 +96,7 @@ describe("provider status", () => {
     const result = await status();
     expect(result).toEqual({
       available: false,
-      diagnostic: "ZCode\n  Error: ZCode runtime could not be inspected",
+      diagnostic: "ZCode runtime could not be inspected",
     });
   });
 

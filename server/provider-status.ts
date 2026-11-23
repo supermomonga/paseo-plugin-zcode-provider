@@ -17,12 +17,11 @@ export interface RuntimeStatusOptions {
   readonly now?: () => number;
 }
 
-// Same shape as Paseo's built-in provider diagnostics; the daemon appends the
-// model count and snapshot status as further indented lines.
-const format = (entries: readonly [string, string][]) =>
-  ["ZCode", ...entries.map(([label, value]) => `  ${label}: ${value}`)].join(
-    "\n",
-  );
+// Paseo 0.17 writes the report itself: it heads it with the provider's label,
+// indents each row of an available provider's diagnostic, and shows an
+// unavailable provider's diagnostic as the value of an `Error` row.
+const rows = (entries: readonly [string, string][]) =>
+  entries.map(([label, value]) => `${label}: ${value}`).join("\n");
 
 async function check(
   environment: NodeJS.ProcessEnv,
@@ -34,7 +33,7 @@ async function check(
     const { appVersion, cliVersion, nodeVersion, platform } = runtime.identity;
     return {
       available: true,
-      diagnostic: format([
+      diagnostic: rows([
         [
           "Runtime",
           `${runtime.source === "managed" ? "managed" : "PASEO_ZCODE_RUNTIME"}, Server ${appVersion}, Agent ${cliVersion}`,
@@ -49,14 +48,10 @@ async function check(
       logger.error("zcode.provider.status.failed", error);
     return {
       available: false,
-      diagnostic: format([
-        [
-          "Error",
-          error instanceof AdapterError
-            ? error.message
-            : "ZCode runtime could not be inspected",
-        ],
-      ]),
+      diagnostic:
+        error instanceof AdapterError
+          ? error.message
+          : "ZCode runtime could not be inspected",
     };
   }
 }

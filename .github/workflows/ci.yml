@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: getpaseo/paseo
-          ref: 2ee30f4164af42ba209236ab3a31bf9532592fc3 # v0.16.2
+          ref: dd7c0499a8c311fae7b3244722a64d73cc178e4a # v0.17.3
           path: paseo
           persist-credentials: false
       - name: Check out reference ZCode source

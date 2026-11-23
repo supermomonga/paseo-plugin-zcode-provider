@@ -118,7 +118,7 @@ try {
   });
   const available = {
     available: true,
-    diagnostic: "ZCode\n  Runtime: test",
+    diagnostic: "Runtime: test\nNode.js: test",
   };
   const registration = (status = async () => available) =>
     createZCodeProvider(
@@ -144,8 +144,9 @@ try {
     const client = registry.clients().zcode;
     // Paseo asks the registration's status() instead of connecting.
     assert.equal(await client.isAvailable(), true);
+    // Paseo heads the report with the label and indents the provider's rows.
     assert.deepEqual(await client.getDiagnostic(), {
-      diagnostic: available.diagnostic,
+      diagnostic: "ZCode\n  Runtime: test\n  Node.js: test",
     });
     const unavailableRegistry = new PluginAgentClientRegistry({
       warn(...args) {
@@ -155,14 +156,15 @@ try {
     unavailableRegistry.replace([
       registration(async () => ({
         available: false,
-        diagnostic: "ZCode\n  Error: ZCode runtime is not set up.",
+        diagnostic: "ZCode runtime is not set up.",
       })),
     ]);
     try {
-      assert.equal(
-        await unavailableRegistry.clients().zcode.isAvailable(),
-        false,
-      );
+      const unavailable = unavailableRegistry.clients().zcode;
+      assert.equal(await unavailable.isAvailable(), false);
+      assert.deepEqual(await unavailable.getDiagnostic(), {
+        diagnostic: "ZCode\n  Error: ZCode runtime is not set up.",
+      });
     } finally {
       await unavailableRegistry.shutdown();
     }
