@@ -1,3 +1,38 @@
+# Paseo 0.17.1〜0.17.3 への追従（2026-11-23）
+
+Issue #112〜#114 の対応。v0.16.2（`2ee30f4`）と v0.17.3（`dd7c0499a8c311fae7b3244722a64d73cc178e4a`）の `packages/plugin`、`packages/protocol`、`plugin-provider.ts`、usage source、プラグインのコンパイラと準備処理を比べた。0.17.0 は変更履歴に無く、0.17.3 はプラグインの API を変えていない。
+
+## 変更履歴とこのプロバイダ
+
+- **診断のレポート**：0.17 のアダプターは、Provider のラベルを見出しにし、起動コマンドの解決の行を加え、利用できる時は `status()` の `diagnostic` を一行ずつ字下げして、利用できない時は `Error:` の行の値にする（`getDiagnostic`、getpaseo/paseo#10487）。見出しと字下げを自分で付けていたこのプラグインでは、v0.17.3 に対する `test:upstream` で `ZCode\n  ZCode\n  Runtime: test` になった。`command` の無いこのプロバイダには、コマンドの解決の行は付かない。
+- **インストール**：`ProviderRegistration.installation`（`installUrl`・`updateUrl`・`inspect`・`checkForUpdates`・`update`）が加わった（getpaseo/paseo#9568）。Paseo は `inspect` を 30 秒、更新の確認を 1 時間使い回し、版が変わると確認をやり直す。Update のボタンは確認の結果にかかわらず出て、成功すると Provider を検出し直す（`provider-installations.ts`）。
+- **統計**：能力 `session.metrics`、イベント `session.metrics`、完了したターンの `metrics` が加わった（getpaseo/paseo#10496）。ターンに `Model` の行が無いと、daemon はエージェントのモデルの ID を付ける（`agent-manager.ts` の `settleTurnMetrics`）。このプラグインのモデルの ID は符号化した JSON なので、何も報告しないと `["paseo-e2e","GLM-5.3-Flash",null]` のような文字列が出る。
+- **利用量**：枠の長さ `durationSeconds` からの予測（getpaseo/paseo#10289）、source とアカウントの Provider の対応付けによるカードの初期表示（getpaseo/paseo#10491）が加わった。`isProviderActive` は Provider の `isAvailable` を使うので、このプラグインではランタイムの検出の結果になる。
+- **docs のリンク**：`docsUrl` が加わり、Provider の画面の Troubleshooting から開く。
+- **エージェント単位の利用量**：プラグインのセッションにも `usageSession()` が加わったが、接続に使った起動（Provider の `command` から解決したもの）がある時だけ返す。このプラグインは `command` を持たないので、ポップオーバーには利用量が出ない。
+- **プラグインの指示**：`agent.open.before` の `appendSystemPrompt` が加わり、アダプターはシステムプロンプトにまとめて渡す（getpaseo/paseo#9781）。組み込みのプラグインは使っていない。ZCode の V4 の Server にはシステムプロンプトを渡す手段が無いので、これまでどおり断る。
+- **変更が要らないもの**：steer は `prompt.steer` を取り決めた時だけ提供されるようになった（このプロバイダは取り決める）。Provider が閉じたセッションは開き直されるようになった（getpaseo/paseo#10153）。履歴の取り込みが `ImportedHistory` になった。思考の段階の既定値は、モデルが自分の選択肢を持つ時はそのモデルの既定値だけを使うようになった（このプロバイダは各モデルに既定値を付ける）。30 分ごとのモデル一覧の更新（getpaseo/paseo#10481）は、手動の更新と同じく一時の Server を起動して閉じる。コンパイラはサブプロセスで動くようになったが、`test:upstream` が読むファイルと引数は同じである。
+
+## 変更（ADR 34〜36）
+
+- **最低要件**：`requirements.paseo` を `>=0.17.1` にした。`test:upstream` は 0.16.2 の daemon が拒否することを確かめる。
+- **診断**：`status()` の `diagnostic` を、行だけ（利用できない時は理由だけ）にした（ADR 34）。
+- **利用量**：5 時間と週の枠に長さを付け、usage source に `providers: ["zcode"]` を付けた（ADR 34）。
+- **インストール**：管理下のディレクトリの印から版を読み、固定した版と比べ、Runtime の画面と同じ `ManagedRuntimeInstaller` で導入する `installation` を登録した。固定した版はリリース名（`3.18.2-paseo.1`）で、前の版は印の ZCode の版で示す。導入と削除の後は `status()` の使い回しをやめる（ADR 35）。
+- **統計**：`turnHeader` と `usage` から、ターンの `Model`・`Speed`・`Elapsed`・`Worked`・`Model time`・`Tool time`・`Output tokens`・`Files changed` と、セッションの `Tokens`・`Cache (last reply)` を報告する（ADR 36）。
+
+## 検証（Linux x64、Node.js 26.8.1、2026-11-23）
+
+- **SDK**：開発 SDK を 0.17.3 にし、`npm run typecheck`、`npm test`、`npm run build`、`npm run format:check` が成功した。
+- **上流**：v0.17.3 の作業ツリー（`git worktree add --detach`）に対し、`NODE_PATH` を外して `npm run test:upstream` を実行し、全項目が成功した。加えた確認は、実アダプターの `getDiagnostic` の見出しと字下げと `Error:` の行、`installation` の `installUrl` と `inspect`、`turn_completed` の `metrics` と `session_metrics_updated`、コンパイルした登録の `docsUrl`・`installation`・usage source の `providers` である。
+- **実 UI**：`@getpaseo/cli@0.17.3` の一時 daemon（`env -i` で HOME・XDG・`PASEO_HOME` を一時ディレクトリにし、loopback のポート、relay は無効、Web UI と plugins は有効）に、作業ツリーの複製を導入した。ZCode のモデルは、固定の応答を返すローカルのサーバーにした。管理下のディレクトリには、前の版の導入を模した印（ZCode 3.17.2 と、SHA-256 の違う Node.js 24.21.0）だけを置いた。ヘッドレス Chromium（1400×900）で次を確かめた。
+  - Settings → Providers → ZCode に、Version `3.17.2 (Node.js 24.21.0)`、Update available `3.18.2-paseo.1 (Node.js 24.21.0)`、Update のボタン、Troubleshooting の Docs が出た。
+  - Diagnostic report は `ZCode` の見出しの下に `Error: ZCode runtime is not set up. …` を出した。
+  - Update を押すと、Node.js と ZCode ランタイムの取得・展開・検証の行が順に出て、`Installed ZCode runtime 3.18.2-paseo.1 (Node.js 24.21.0).` で終わった。版は `3.18.2-paseo.1 (Node.js 24.21.0)`、更新の確認は Up to date になり、前の版のディレクトリは消えた。Paseo はすぐに Provider を検出し直し、モデルの一覧（GLM-5.3-Flash、GLM-5.3）が出た。Diagnostic report は `Runtime: managed, Server 3.18.2, Agent 0.17.1`・`Node.js: 24.21.0`・`Platform: linux-x64` を字下げして出した。
+  - ZCode のエージェントのターンの Turn stats は、`Model: GLM-5.3-Flash (max)`・`Elapsed`・`Output tokens: 96` を出した。このランタイムは通常のターンにモデルの時間を記録しないので、`Speed` と `Model time` は出ない。最初の確認では ZCode の作業の時間（2.6s）が `Elapsed`（2.5s）より長く出たので、待ちがあって短い時だけ出すようにした。コンテキストの詳細には、`Tokens: 12.4K ↑ · 96 ↓` と `Cache (last reply): 89%`（緑）が出た。
+  - プラグインを読み込み直した後も、Paseo がセッションを開き直し、次のメッセージが完了した。daemon とブラウザのエラーは、読み込み直しの間に ZCode が使えなかったことによるもの（Goal の購読は後で購読し直した）と、関係の無い OpenCode のものだけだった。daemon とモデルのサーバーを止め、起動したプロセスが残っていないことと、実環境の `~/.zcode` のログに一時ディレクトリが出てこないことを確かめた。
+- **確かめていないもの**：Coding Plan のアカウントでの利用量の予測とカードの初期表示（サインインしていない）、Paseo 0.17.1 と 0.17.2 の実 daemon、`PASEO_ZCODE_RUNTIME` を使う時の Provider の画面、承認の待ちがあるターンの `Worked`、`Files changed`。
+
 # ZCode 3.18.2 への追従（2026-11-20）
 
 Issue #104 の対応。
